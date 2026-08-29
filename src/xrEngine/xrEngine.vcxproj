@@ -429,6 +429,10 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy /D /Y "$(xrSdkDir)binaries\tbb12.dll" "$(OutDir)"</Command>
+      <Message>Deploying TBB runtime DLLs</Message>
+    </PostBuildEvent>
     <Manifest>
       <AdditionalManifestFiles>$(SolutionDir)xrEngine\as-invoker-manifest-part.xml;%(AdditionalManifestFiles)</AdditionalManifestFiles>
     </Manifest>
@@ -468,6 +472,10 @@
       <EnableCOMDATFolding>false</EnableCOMDATFolding>
       <LinkTimeCodeGeneration>Default</LinkTimeCodeGeneration>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy /D /Y "$(xrSdkDir)binaries\tbb12.dll" "$(OutDir)"</Command>
+      <Message>Deploying TBB runtime DLLs</Message>
+    </PostBuildEvent>
     <Manifest>
       <AdditionalManifestFiles>$(SolutionDir)xrEngine\as-invoker-manifest-part.xml;%(AdditionalManifestFiles)</AdditionalManifestFiles>
     </Manifest>
@@ -685,6 +693,10 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy /D /Y "$(xrSdkDir)binaries\tbb12.dll" "$(OutDir)"</Command>
+      <Message>Deploying TBB runtime DLLs</Message>
+    </PostBuildEvent>
     <Manifest>
       <AdditionalManifestFiles>$(SolutionDir)xrEngine\as-invoker-manifest-part.xml;%(AdditionalManifestFiles)</AdditionalManifestFiles>
     </Manifest>
