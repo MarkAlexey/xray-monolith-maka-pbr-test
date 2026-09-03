@@ -246,7 +246,10 @@ void CBlender_Compile::PassSET_ablend_aref(BOOL bATest, u32 aRef)
 {
 	clamp(aRef, 0u, 255u);
 	RS.SetRS(D3DRS_ALPHATESTENABLE, BC(bATest));
-	if (bATest) RS.SetRS(D3DRS_ALPHAREF, u32(aRef));
+	// Record the ref even when the fixed-function test is off: on DX10/11 the aref
+	// bodies read it through the m_AlphaRef constant, and a pass that authors nothing
+	// would otherwise inherit dx10State's default and clip against zero.
+	RS.SetRS(D3DRS_ALPHAREF, u32(aRef));
 }
 
 void CBlender_Compile::PassSET_Blend(BOOL bABlend, u32 abSRC, u32 abDST, BOOL bATest, u32 aRef)

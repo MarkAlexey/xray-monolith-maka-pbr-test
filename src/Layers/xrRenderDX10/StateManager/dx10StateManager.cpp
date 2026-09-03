@@ -30,7 +30,7 @@ void dx10StateManager::Reset()
 	m_pBlendState = 0;
 
 	m_uiStencilRef = 0;
-	m_uiAlphaRef = 0;
+	m_uiAlphaRef = 200;
 
 	m_bRSNeedApply = true;
 	m_bDSSNeedApply = true;
@@ -108,6 +108,12 @@ void dx10StateManager::SetStencilRef(UINT uiStencilRef)
 
 void dx10StateManager::SetAlphaRef(UINT uiAlphaRef)
 {
+	// A zero ref means the pass authored no alpha test at all. Fall back to the old
+	// def_aref literal so an aref shader body can never end up clipping against 0,
+	// which would make every partially transparent texel fully opaque.
+	if (!uiAlphaRef)
+		uiAlphaRef = 200;
+
 	if (m_uiAlphaRef != uiAlphaRef)
 	{
 		m_uiAlphaRef = uiAlphaRef;

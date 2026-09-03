@@ -518,6 +518,7 @@
     <ClInclude Include="..\xrRender\tga.h" />
     <ClInclude Include="..\xrRender\tss.h" />
     <ClInclude Include="..\xrRender\tss_def.h" />
+    <ClInclude Include="..\xrRender\aref_patch.h" />
     <ClInclude Include="..\xrRender\uber_deffer.h" />
     <ClInclude Include="..\xrRender\Utils\dxHashHelper.h" />
     <ClInclude Include="..\xrRender\VertexCache.h" />

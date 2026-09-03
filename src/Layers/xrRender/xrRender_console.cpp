@@ -467,6 +467,12 @@ int ps_r__tex_evict_age_frames = 1800;
 int ps_r__tex_evict_batch_size = 200;
 int ps_r__tex_evict_interval   = 600;
 
+// 1 serves def_aref as the live m_AlphaRef constant so alpha-tested bodies honour the
+// ref their pass authored; 0 restores the stock literal. Needs a shader cache clear.
+int ps_r__alpha_ref_live = 1;
+// 1 hashes the alpha-test threshold per pixel so TAA resolves a soft edge.
+int ps_r__alpha_dither = 1;
+
 //AVO: detail draw radius
 Flags32 ps_common_flags = {0}; // r1-only
 u32 ps_steep_parallax = 0;
@@ -1750,6 +1756,9 @@ void xrRender_initconsole()
 	CMD4(CCC_Integer, "r__tex_evict_age_frames", &ps_r__tex_evict_age_frames, 300, 36000);
 	CMD4(CCC_Integer, "r__tex_evict_batch_size", &ps_r__tex_evict_batch_size, 10,  1000 );
 	CMD4(CCC_Integer, "r__tex_evict_interval",   &ps_r__tex_evict_interval,   60,  3600 );
+	// Both need a shader cache clear and a restart: they change the served headers.
+	CMD4(CCC_Integer, "r__alpha_ref_live", &ps_r__alpha_ref_live, 0, 1);
+	CMD4(CCC_Integer, "r__alpha_dither", &ps_r__alpha_dither, 0, 1);
 	CMD3(CCC_Mask, "r__use_precompiled_shaders", &psDeviceFlags2, rsPrecompiledShaders); //Alundaio
 	CMD3(CCC_Mask, "r__enable_grass_shadow", &psDeviceFlags2, rsGrassShadow); //Alundaio
 	CMD3(CCC_Mask, "r__no_scale_on_fade", &psDeviceFlags2, rsNoScale); //Alundaio

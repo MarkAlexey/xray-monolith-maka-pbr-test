@@ -1031,6 +1031,8 @@ static HRESULT create_shader(
 }
 
 //--------------------------------------------------------------------------------------------------------------
+#include "../xrRender/aref_patch.h"
+
 class includer : public ID3DInclude
 {
 public:
@@ -1053,6 +1055,19 @@ public:
 		CopyMemory(data, R->pointer(), size);
 		data[size] = 0;
 		FS.r_close(R);
+
+
+		// The stock alpha-test bodies clip against the def_aref macro, not against the
+		// m_AlphaRef constant, so the ref a pass authors can never reach them. Rewrite
+		// the served header text at compile time to alias the two together.
+		u32 psize = 0;
+		u8* patched = aref_patch_serve(pFileName, data, size, psize);
+		if (patched)
+		{
+			xr_free(data);
+			data = patched;
+			size = psize;
+		}
 
 		*ppData = data;
 		*pBytes = size;
@@ -1687,7 +1702,11 @@ HRESULT CRender::shader_compile(
 
 	u32 source_crc = 0;
 	if (useGeneratedShaderCache)
+	{
 		source_crc = getShaderSourceCrc32(pSrcData, SrcDataLen, ::Render->getShaderPath());
+		// the served aref headers change with these switches, so they key the cache
+		source_crc ^= (ps_r__alpha_ref_live ? 0x5a000000 : 0) ^ (ps_r__alpha_dither ? 0x00a50000 : 0);
+	}
 
 	if (FS.exist(file_name))
 	{
@@ -1733,6 +1752,8 @@ HRESULT CRender::shader_compile(
 		includer Includer;
 		LPD3DBLOB pShaderBuf = NULL;
 		LPD3DBLOB pErrorBuf = NULL;
+		// the dithered edge is a pixel-shader-only rewrite, and MSAA already has ATOC
+		aref_patch_dither = ps_r__alpha_dither && ps_r__alpha_ref_live && 'p' == pTarget[0] && !o.dx10_msaa;
 		_result =
 			D3DCompile(
 				pSrcData,
@@ -1745,6 +1766,26 @@ HRESULT CRender::shader_compile(
 				&pShaderBuf,
 				&pErrorBuf
 			);
+
+		if (FAILED(_result) && aref_patch_dither)
+		{
+			// a body the dither cannot express retries on the plain alias
+			aref_patch_dither = false;
+			_RELEASE(pErrorBuf);
+			_result =
+			D3DCompile(
+				pSrcData,
+				SrcDataLen,
+				"", //NULL, //LPCSTR pFileName,	//	NVPerfHUD bug workaround.
+				defines, &Includer, pFunctionName,
+				pTarget,
+				Flags,
+				0,
+				&pShaderBuf,
+				&pErrorBuf
+			);
+		}
+		aref_patch_dither = false;
 
 		if (SUCCEEDED(_result))
 		{

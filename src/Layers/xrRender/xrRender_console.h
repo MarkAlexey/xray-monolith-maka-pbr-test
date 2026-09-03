@@ -361,6 +361,10 @@ extern ECORE_API int ps_r__tex_evict_age_frames;
 extern ECORE_API int ps_r__tex_evict_batch_size;
 extern ECORE_API int ps_r__tex_evict_interval;
 
+// the compile serves def_aref as the live m_AlphaRef constant, 0 restores the 200 literal
+extern ECORE_API int ps_r__alpha_ref_live;
+// 0 clips alpha-tested surfaces at the authored ref, 1 dithers the threshold for TAA
+extern ECORE_API int ps_r__alpha_dither;
 extern void xrRender_initconsole();
 extern BOOL xrRender_test_hw();
 

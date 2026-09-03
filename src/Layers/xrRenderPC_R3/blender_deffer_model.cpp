@@ -105,7 +105,7 @@ void CBlender_deffer_model::Compile(CBlender_Compile& C)
 		case SE_R2_NORMAL_HQ: // deffer
 			if (bUseATOC)
 			{
-				uber_deffer(C, true, "model", "base_atoc", bAref, 0, true);
+				uber_deffer(C, true, "model", "base_atoc", bAref, 0, true, false, oAREF.value);
 				C.r_Stencil(TRUE, D3DCMP_ALWAYS, 0xff, 0x7f, D3DSTENCILOP_KEEP, D3DSTENCILOP_REPLACE,
 				            D3DSTENCILOP_KEEP);
 				C.r_StencilRef(0x01);
@@ -115,7 +115,7 @@ void CBlender_deffer_model::Compile(CBlender_Compile& C)
 				C.r_End();
 			}
 
-			uber_deffer(C, true, "model", "base", bAref, 0, true);
+			uber_deffer(C, true, "model", "base", bAref, 0, true, false, oAREF.value);
 
 			C.r_Stencil(TRUE, D3DCMP_ALWAYS, 0xff, 0x7f, D3DSTENCILOP_KEEP, D3DSTENCILOP_REPLACE, D3DSTENCILOP_KEEP);
 			C.r_StencilRef(0x01);
@@ -125,7 +125,7 @@ void CBlender_deffer_model::Compile(CBlender_Compile& C)
 		case SE_R2_NORMAL_LQ: // deffer
 			if (bUseATOC)
 			{
-				uber_deffer(C, false, "model", "base_atoc", bAref, 0, true);
+				uber_deffer(C, false, "model", "base_atoc", bAref, 0, true, false, oAREF.value);
 				C.r_Stencil(TRUE, D3DCMP_ALWAYS, 0xff, 0x7f, D3DSTENCILOP_KEEP, D3DSTENCILOP_REPLACE,
 				            D3DSTENCILOP_KEEP);
 				C.r_StencilRef(0x01);
@@ -135,7 +135,7 @@ void CBlender_deffer_model::Compile(CBlender_Compile& C)
 				C.r_End();
 			}
 
-			uber_deffer(C, false, "model", "base", bAref, 0, true);
+			uber_deffer(C, false, "model", "base", bAref, 0, true, false, oAREF.value);
 			C.r_Stencil(TRUE, D3DCMP_ALWAYS, 0xff, 0x7f, D3DSTENCILOP_KEEP, D3DSTENCILOP_REPLACE, D3DSTENCILOP_KEEP);
 			C.r_StencilRef(0x01);
 			if (bUseATOC) C.RS.SetRS(D3DRS_ZFUNC, D3DCMP_EQUAL);
@@ -148,7 +148,7 @@ void CBlender_deffer_model::Compile(CBlender_Compile& C)
 				//else							C.r_Pass	("shadow_direct_model_aref","shadow_direct_base_aref",	FALSE);
 				//C.r_Sampler		("s_base",C.L_textures[0]);
 				C.r_Pass("shadow_direct_model_aref", "shadow_direct_base_aref", FALSE,TRUE,TRUE,FALSE, D3DBLEND_ZERO,
-				         D3DBLEND_ONE,TRUE, 220);
+				         D3DBLEND_ONE,TRUE, oAREF.value);
 				C.r_dx10Texture("s_base", C.L_textures[0]);
 				C.r_dx10Sampler("smp_base");
 				C.r_dx10Sampler("smp_linear");

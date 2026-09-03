@@ -312,6 +312,9 @@
     <ClInclude Include="dx10MinMaxSMBlender.h">
       <Filter>Shading templates</Filter>
     </ClInclude>
+    <ClInclude Include="..\xrRender\aref_patch.h">
+      <Filter>Shading templates</Filter>
+    </ClInclude>
     <ClInclude Include="..\xrRender\uber_deffer.h">
       <Filter>Shading templates</Filter>
     </ClInclude>
