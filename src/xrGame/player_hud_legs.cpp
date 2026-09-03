@@ -154,8 +154,50 @@ bool player_legs_controller::ensure_model(const shared_str& sect, const shared_s
     return true;
 }
 
-// TODO : clean up later
-float legs_spine_offset_y = 0.1f;
+// Applied as a plain world-space translation of the spine sub-tree (see
+// shift_bone_subtree_y below). Defaults to 0 because a non-zero value now moves
+// a real, fully posed torso and will tear it away from the pelvis at the waist.
+// Tunable at runtime via the g_legs_spine_offset_y console command.
+float legs_spine_offset_y = 0.0f;
+
+// Shifts an already-posed bone sub-tree along Y.
+//
+// The first-person body is a second instance of the actor visual that never has
+// any animation played on it, so every bone's blend vector is empty. Anything
+// that routes through Bone_Calculate() -> CLBone() -> BuildBoneMatrix() therefore
+// ends up in CKinematicsAnimated::LL_BoneMatrixBuild() with a blend count of
+// zero, where MixInterlerp() returns Q=(0,0,0,0) / T=(0,0,0). mk_xform() turns
+// that zero quaternion into the identity matrix, so the bone is assigned its
+// parent's transform verbatim and appears glued to it.
+//
+// The transforms copied from the animated actor are already in model space, so
+// the offset is just an additive translation. Doing it this way leaves the copied
+// pose - including any extra bones the outfit author added - intact.
+static void shift_bone_subtree_y(IKinematics* K, u16 root_id, float dy)
+{
+    if (!K || root_id == BI_NONE || fis_zero(dy))
+        return;
+
+    const u16 bone_count = K->LL_BoneCount();
+    if (root_id >= bone_count)
+        return;
+
+    for (u16 i = 0; i < bone_count; ++i)
+    {
+        u16 id = i;
+        while (id != BI_NONE && id != root_id)
+            id = K->LL_GetData(id).GetParentID();
+
+        if (id != root_id)
+            continue;
+
+        CBoneInstance& bi = K->LL_GetBoneInstance(i);
+        bi.mTransform.c.y += dy;
+        bi.mTransformHidden.c.y += dy;
+        bi.mRenderTransform.c.y += dy;
+    }
+}
+
 void player_legs_controller::copy_bones_from_actor(CActor* actor)
 {
     if (!actor || !m_model || !m_shadow_model)
@@ -173,13 +215,11 @@ void player_legs_controller::copy_bones_from_actor(CActor* actor)
     // Legs only for the main pass
     m_model->CopyBonesFrom(actor_K);
 
-    if (auto BoneID = m_model->LL_BoneID("bip01_spine"); BoneID != BI_NONE)
-    {
-        auto& BoneInstance = m_model->LL_GetData(BoneID);
-        auto& transform = m_model->LL_GetTransform(BoneInstance.GetParentID());
-        transform.c.y += legs_spine_offset_y;
-        m_model->Bone_Calculate(&BoneInstance, &transform);
-    }
+    // Do NOT call Bone_Calculate() here: this model has no animation blends,
+    // so rebuilding the spine sub-tree would overwrite every bone in it with
+    // its parent's transform. Shift the already-copied pose instead.
+    // (CopyBonesFrom already copies by bone name when the outfit adds extra bones.)
+    shift_bone_subtree_y(m_model, m_model->LL_BoneID("bip01_spine"), legs_spine_offset_y);
 
     static LPCSTR bonesToHide[] = { "bip01_neck", "bip01_l_upperarm", "bip01_r_upperarm" };
     for (const auto& bone : bonesToHide)
