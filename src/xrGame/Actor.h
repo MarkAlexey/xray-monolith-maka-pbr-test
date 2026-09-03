@@ -20,6 +20,7 @@
 #include "script_export_space.h"
 
 #include "player_hud_legs.h"
+#include "bone_spring.h"
 
 #ifdef STATIONARYMGUN_NEW
 #include "WeaponStatMgun.h"
@@ -330,6 +331,9 @@ public:
 	static void _BCL ShoulderCallback(CBoneInstance*);
 	static void _BCL HeadCallback(CBoneInstance*);
 	static void _BCL VehicleHeadCallback(CBoneInstance*);
+
+	// secondary-motion ("jiggle") bones, driven by bctCustom callbacks on this visual
+	CBoneSpringController m_bone_springs;
 
 	virtual const SRotation Orientation() const { return r_torso; };
 	SRotation& Orientation() { return r_torso; };

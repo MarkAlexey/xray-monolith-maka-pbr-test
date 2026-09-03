@@ -214,6 +214,16 @@ extern float legs_spine_offset_y;
 extern BOOL legs_in_demo_record;
 extern BOOL legs_in_low_crouch;
 extern BOOL legs_attach_to_camera;
+
+extern BOOL jiggle_enabled;
+extern float jiggle_stiffness;
+extern float jiggle_damping;
+extern float jiggle_max_offset;
+extern float jiggle_translate_gain;
+extern float jiggle_rotate_gain;
+extern float jiggle_bone_length;
+extern float jiggle_world_gain;
+extern int jiggle_axis;
 extern BOOL legs_render_attachments_shadow;
 
 extern BOOL r__actor_shadow_in_demo_record;
@@ -2897,6 +2907,18 @@ void CCC_RegisterCommands()
     CMD4(CCC_Integer, "g_legs_in_demo_record", &legs_in_demo_record, 0, 1);
     CMD4(CCC_Integer, "g_legs_in_low_crouch", &legs_in_low_crouch, 0, 1);
     CMD4(CCC_Integer, "g_legs_attach_to_camera", &legs_attach_to_camera, 0, 1);
+
+    // Secondary-motion bones. These are live: re-equipping the outfit reloads them from
+    // its ltx section, so tune here and then write the final numbers into the config.
+    CMD4(CCC_Integer, "g_jiggle_enabled", &jiggle_enabled, 0, 1);
+    CMD4(CCC_Float, "g_jiggle_stiffness", &jiggle_stiffness, 0.0f, 2000.0f);
+    CMD4(CCC_Float, "g_jiggle_damping", &jiggle_damping, 0.0f, 200.0f);
+    CMD4(CCC_Float, "g_jiggle_max_offset", &jiggle_max_offset, 0.0f, 0.5f);
+    CMD4(CCC_Float, "g_jiggle_translate_gain", &jiggle_translate_gain, 0.0f, 4.0f);
+    CMD4(CCC_Float, "g_jiggle_rotate_gain", &jiggle_rotate_gain, 0.0f, 8.0f);
+    CMD4(CCC_Float, "g_jiggle_bone_length", &jiggle_bone_length, 0.005f, 1.0f);
+    CMD4(CCC_Float, "g_jiggle_world_gain", &jiggle_world_gain, 0.0f, 4.0f);
+    CMD4(CCC_Integer, "g_jiggle_axis", &jiggle_axis, 0, 2);
     CMD4(CCC_Integer, "g_legs_render_attachments_shadow", &legs_render_attachments_shadow, 0, 1);
 
     CMD4(CCC_Integer, "r__actor_shadow_in_demo_record", &r__actor_shadow_in_demo_record, 0, 1);

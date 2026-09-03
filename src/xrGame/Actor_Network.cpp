@@ -720,6 +720,8 @@ namespace crash_saving {
 
 void CActor::net_Destroy()
 {
+	m_bone_springs.detach();
+
 	inherited::net_Destroy();
 
 	if (m_holder_id != ALife::_OBJECT_ID(-1))
@@ -827,6 +829,9 @@ void CActor::SetCallbacks()
 	V->LL_GetBoneInstance(u16(spine1_bone)).set_callback(bctCustom, Spin1Callback, this);
 	V->LL_GetBoneInstance(u16(shoulder_bone)).set_callback(bctCustom, ShoulderCallback, this);
 	V->LL_GetBoneInstance(u16(head_bone)).set_callback(bctCustom, HeadCallback, this);
+
+	// installed last: it skips any bone that already has a callback, so the four above win
+	m_bone_springs.install(this);
 }
 
 void CActor::ResetCallbacks()
@@ -841,10 +846,16 @@ void CActor::ResetCallbacks()
 	V->LL_GetBoneInstance(u16(spine1_bone)).reset_callback();
 	V->LL_GetBoneInstance(u16(shoulder_bone)).reset_callback();
 	V->LL_GetBoneInstance(u16(head_bone)).reset_callback();
+
+	m_bone_springs.remove();
 }
 
 void CActor::OnChangeVisual()
 {
+	// the visual (and every CBoneInstance in it) is about to be destroyed - drop the
+	// callback bookkeeping before it dangles. SetCallbacks() below reinstalls.
+	m_bone_springs.detach();
+
 	{
 		CPhysicsShell* tmp_shell = PPhysicsShell();
 		PPhysicsShell() = NULL;
