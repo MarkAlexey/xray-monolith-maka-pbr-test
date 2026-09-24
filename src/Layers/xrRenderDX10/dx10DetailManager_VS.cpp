@@ -5,6 +5,7 @@
 #include "../../xrEngine/environment.h"
 
 #include "../xrRenderDX10/dx10BufferUtils.h"
+#include <xmmintrin.h>
 
 // Vars to store wind prev frame data ( Motion vectors )
 static u32 prev_frame = -1;
@@ -188,6 +189,17 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 	c_ambient.set(desc.ambient.x, desc.ambient.y, desc.ambient.z);
 	c_hemi.set(desc.hemi_color.x, desc.hemi_color.y, desc.hemi_color.z);
 
+	bool sector_visible = RImplementation.GMBase.is_sector_visible(RImplementation.pOutdoorSector);
+	if (sector_visible && RImplementation.phase == CRender::PHASE_SMAP && L)
+		sector_visible = L->GMLight.is_sector_visible(RImplementation.pOutdoorSector);
+
+	// Prefetch spans SlotItem from the matrix to alpha_target
+	const int prefetch_ahead = 8;
+	const size_t prefetch_first = offsetof(SlotItem, mRotY_calculated);
+	const size_t prefetch_last = offsetof(SlotItem, alpha_target) + sizeof(float) - 1;
+
+	const bool alpha_step = RImplementation.phase == CRender::PHASE_NORMAL;
+
 	// Iterate
 	for (u32 O = 0; O < objects.size(); O++)
 	{
@@ -283,6 +295,8 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 
 				xr_vector<SlotItemVec*>::iterator _vI = vis.begin();
 				xr_vector<SlotItemVec*>::iterator _vE = vis.end();
+				if (!sector_visible)
+					_vI = _vE;
 				for (; _vI != _vE; _vI++)
 				{
 					SlotItemVec* items = *_vI;
@@ -290,23 +304,26 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 					SlotItemVecIt _iE = items->end();
 					for (; _iI != _iE; _iI++)
 					{
-						SlotItem& Instance = **_iI;
+						if (_iE - _iI > prefetch_ahead)
+						{
+							const char* P = (const char*)*(_iI + prefetch_ahead);
+							_mm_prefetch(P + prefetch_first, _MM_HINT_T0);
+							_mm_prefetch(P + prefetch_first + 64, _MM_HINT_T0);
+							_mm_prefetch(P + prefetch_last, _MM_HINT_T0);
+						}
 
-						if (!RImplementation.GMBase.is_sector_visible(RImplementation.pOutdoorSector))
-							continue;
+						SlotItem& Instance = **_iI;
 
 						if (RImplementation.phase == CRender::PHASE_SMAP && L)
 						{
-							if (!L->GMLight.is_sector_visible(RImplementation.pOutdoorSector))
-								continue;
-
 							if (L->position.distance_to_sqr(Instance.position) >= _sqr(L->range))
 								continue;
 						}
 
 						u32 base = dwBatch * 4;
 
-						Instance.alpha += GoToValue(Instance.alpha, Instance.alpha_target);
+						if (alpha_step)
+							Instance.alpha += GoToValue(Instance.alpha, Instance.alpha_target);
 
 						float scale = 1.f;
 
