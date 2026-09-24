@@ -133,6 +133,8 @@ void CDetailManager::cache_Decompress(Slot* S)
 	// Prepare to actual-bounds-calculations
 	Fbox Bounds;
 	Bounds.invalidate();
+	Fbox Origins;
+	Origins.invalidate();
 
 	// Decompressing itself
 	for (u32 z = 0; z <= d_size; z++)
@@ -299,6 +301,7 @@ RDEVICE.Statistic->TEST0.End		();
 			mXform.mul_43(Item.mRotY, mScale);
 			ItemBB.xform(Dobj->bv_bb, mXform);
 			Bounds.merge(ItemBB);
+			Origins.modify(Item_P);
 
 #ifndef _EDITOR
 #ifdef		DEBUG
@@ -359,4 +362,12 @@ RDEVICE.Statistic->TEST0.End		();
 	D.vis.clear();
 	D.vis.box.set(Bounds);
 	D.vis.box.getsphere(D.vis.sphere.P, D.vis.sphere.R);
+
+	Origins.merge(D.vis.box);
+	const Fvector& C = D.vis.sphere.P;
+	Fvector far_corner;
+	far_corner.set(_max(_abs(Origins.min.x - C.x), _abs(Origins.max.x - C.x)),
+	               _max(_abs(Origins.min.y - C.y), _abs(Origins.max.y - C.y)),
+	               _max(_abs(Origins.min.z - C.z), _abs(Origins.max.z - C.z)));
+	D.cull_R = far_corner.magnitude();
 }

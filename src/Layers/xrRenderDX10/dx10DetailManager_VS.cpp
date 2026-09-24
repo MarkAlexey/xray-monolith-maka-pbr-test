@@ -200,6 +200,17 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 
 	const bool alpha_step = RImplementation.phase == CRender::PHASE_NORMAL;
 
+	const bool cull = RImplementation.phase == CRender::PHASE_SMAP &&
+		(L ? ps_r__detail_shadow_cull != 0 : m_sun_cull != nullptr) &&
+		m_vis_bounds_frame == Device.dwFrame && m_vis_bounds[var_id].size() == list.size();
+	float cull_grow = 1.f;
+	bool cull_frustum = false;
+	if (cull)
+	{
+		cull_grow = 1.f + 4.f * _sqrt(wind.x * wind.x + wind.z * wind.z);
+		cull_frustum = L && (L->flags.type == IRender_Light::SPOT || L->flags.type == IRender_Light::OMNIPART);
+	}
+
 	// Iterate
 	for (u32 O = 0; O < objects.size(); O++)
 	{
@@ -297,9 +308,29 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 				xr_vector<SlotItemVec*>::iterator _vE = vis.end();
 				if (!sector_visible)
 					_vI = _vE;
+				const bool cull_obj = cull && m_vis_bounds[var_id][O].size() == vis.size();
 				for (; _vI != _vE; _vI++)
 				{
 					SlotItemVec* items = *_vI;
+
+					if (cull_obj)
+					{
+						Fsphere b = m_vis_bounds[var_id][O][_vI - vis.begin()];
+						bool culled;
+						if (L)
+						{
+							culled = L->position.distance_to_sqr(b.P) >= _sqr(L->range);
+							if (!culled && fade_distance <= -1)
+								culled = 1.0f - b.P.distance_to_xz_sqr(light_position) * 0.005f <= 0;
+							if (!culled && cull_frustum)
+								culled = !L->X.S.frustum.testSphere_dirty(b.P, b.R * cull_grow);
+						}
+						else
+							culled = !m_sun_cull->testSphere_dirty(b.P, b.R * cull_grow);
+						if (culled)
+							continue;
+					}
+
 					SlotItemVecIt _iI = items->begin();
 					SlotItemVecIt _iE = items->end();
 					for (; _iI != _iE; _iI++)

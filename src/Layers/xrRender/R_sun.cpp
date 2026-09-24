@@ -326,7 +326,16 @@ void CRender::render_sun_cascade(u32 cascade_ind)
                 if (psDeviceFlags2.test(rsGrassShadow) && cascade_ind <= ps_ssfx_grass_shadows.x)
                 {
                     Details->fade_distance = dm_fade * dm_fade * ps_ssfx_grass_shadows.y;
-                    Details->Render();
+                    if (ps_r__detail_shadow_cull)
+                    {
+                        CFrustum sun_cull;
+                        sun_cull.CreateFromMatrix(fuckingsun->X.D.combine, FRUSTUM_P_LRTB | FRUSTUM_P_FAR);
+                        Details->m_sun_cull = &sun_cull;
+                        Details->Render();
+                        Details->m_sun_cull = nullptr;
+                    }
+                    else
+                        Details->Render();
                 }
 
                 fuckingsun->X.D.transluent = FALSE;

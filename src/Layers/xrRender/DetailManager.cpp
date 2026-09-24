@@ -235,6 +235,7 @@ void CDetailManager::Load()
 
 	// Initialize 'vis' and 'cache'
 	for (u32 i = 0; i < 3; ++i) m_visibles[i].resize(objects.size());
+	for (u32 i = 0; i < 3; ++i) m_vis_bounds[i].resize(objects.size());
 	cache_Initialize();
 
 	// Make dither matrix
@@ -310,6 +311,14 @@ void CDetailManager::UpdateVisibleM()
 	float fade_range = fade_limit - fade_start;
 	float r_ssaCHEAP = 16 * r_ssaDISCARD;
     float fade_start_ssa = r_ssaDISCARD * ps_r__ssaDISCARD_fade_k;
+
+	const bool fill_bounds = ps_r__detail_shadow_cull != 0;
+	if (fill_bounds)
+	{
+		for (u32 k = 0; k < 3; k++)
+			for (u32 O = 0; O < m_vis_bounds[k].size(); O++)
+				m_vis_bounds[k][O].clear_not_free();
+	}
 
 	// Initialize 'vis' and 'cache'
 	// Collect objects for rendering
@@ -458,6 +467,9 @@ void CDetailManager::UpdateVisibleM()
 						}
 					}
 				}
+				Fsphere bound;
+				if (fill_bounds)
+					bound.set(S.vis.sphere.P, S.cull_R);
 				for (int sp_id = 0; sp_id < dm_obj_in_slot; sp_id++)
 				{
 					SlotPart& sp = S.G[sp_id];
@@ -465,19 +477,27 @@ void CDetailManager::UpdateVisibleM()
 					if (!sp.r_items[0].empty())
 					{
 						m_visibles[0][sp.id].push_back(&sp.r_items[0]);
+						if (fill_bounds)
+							m_vis_bounds[0][sp.id].push_back(bound);
 					}
 					if (!sp.r_items[1].empty())
 					{
 						m_visibles[1][sp.id].push_back(&sp.r_items[1]);
+						if (fill_bounds)
+							m_vis_bounds[1][sp.id].push_back(bound);
 					}
 					if (!sp.r_items[2].empty())
 					{
 						m_visibles[2][sp.id].push_back(&sp.r_items[2]);
+						if (fill_bounds)
+							m_vis_bounds[2][sp.id].push_back(bound);
 					}
 				}
 			}
 		}
 	}
+	if (fill_bounds)
+		m_vis_bounds_frame = RDEVICE.dwFrame;
 	RDEVICE.Statistic->RenderDUMP_DT_VIS.End();
 }
 

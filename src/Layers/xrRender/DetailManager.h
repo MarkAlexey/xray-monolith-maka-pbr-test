@@ -124,6 +124,7 @@ public:
 		vis_data vis; // 
 		SlotPart G[dm_obj_in_slot]; // 
 		bool hidden;
+		float cull_R;
 
 		Slot()
 		{
@@ -131,6 +132,7 @@ public:
 			empty = 1;
 			type = stReady;
 			sx = sz = 0;
+			cull_R = 0;
 			vis.clear();
 		}
 	};
@@ -181,6 +183,10 @@ public:
 public:
 	DetailVec objects;
 	vis_list m_visibles [3]; // 0=still, 1=Wave1, 2=Wave2
+
+	xr_vector<xr_vector<Fsphere>> m_vis_bounds [3];
+	u32 m_vis_bounds_frame = u32(-1);
+	CFrustum* m_sun_cull = nullptr;
 
 #ifndef _EDITOR
 	xrXRC xrc;
