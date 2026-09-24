@@ -158,6 +158,9 @@ void CDetailManager::hw_Unload()
 	HW.stats_manager.decrement_stats_ib(hw_IB);
 	_RELEASE(hw_IB);
 	_RELEASE(hw_VB);
+#ifdef USE_DX11
+	inst_Unload();
+#endif
 }
 
 #if !defined(USE_DX10) && !defined(USE_DX11)

@@ -245,6 +245,10 @@ void CDetailManager::Load()
 	// Hardware specific optimizations
 	if (UseVS()) hw_Load();
 	else soft_Load();
+#ifdef USE_DX11
+	if (UseVS() && ps_r__detail_inst)
+		inst_Load();
+#endif
 
 	// swing desc
 	// normal

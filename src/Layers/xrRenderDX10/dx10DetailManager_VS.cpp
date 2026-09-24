@@ -5,6 +5,8 @@
 #include "../../xrEngine/environment.h"
 
 #include "../xrRenderDX10/dx10BufferUtils.h"
+#include "../xrRender/ResourceManager.h"
+#include "../xrRender/dxRenderDeviceRender.h"
 #include <xmmintrin.h>
 
 // Vars to store wind prev frame data ( Motion vectors )
@@ -125,6 +127,354 @@ void CDetailManager::cb_direct_submit(u32 count)
 	B.MarkFlushed();
 }
 
+// 0xff when absent, 0xfe when outside the free slots
+static u8 inst_slot(R_constant_table& T, LPCSTR name)
+{
+	R_constant* C = T.get(name);
+	if (!C)
+		return 0xff;
+	const u32 slot = u32(C->samp.index) - CTexture::rstVertex;
+	if (C->destination != RC_dest_sampler || C->type != RC_dx10texture || slot < CBackend::mtMaxVertexShaderTextures || slot >= 128)
+		return 0xfe;
+	return u8(slot);
+}
+
+void CDetailManager::inst_Load()
+{
+	m_inst_twins.clear();
+	m_inst_twins.resize(objects.size() * 2);
+	m_inst_ex = false;
+	for (u32 O = 0; O < objects.size(); O++)
+	{
+		for (u32 lod = 0; lod < 2; lod++)
+		{
+			ShaderElement* E = objects[O]->shader->E[lod]._get();
+			if (!E || E->passes.empty())
+				continue;
+			ShaderElement T;
+			T.flags = E->flags;
+			LPCSTR status = "ok";
+			u8 rows = 0xff, ex = 0xff;
+			string_path name = "";
+			for (u32 p = 0; p < E->passes.size(); p++)
+			{
+				SPass& P = *E->passes[p];
+				xr_strcpy(name, P.vs->cName.c_str());
+				if (P.vs->skinning > 0)
+				{
+					LPSTR tail = strrchr(name, '_');
+					if (tail)
+						*tail = 0;
+				}
+				xr_strcat(name, "_inst");
+
+				string_path file;
+				strconcat(sizeof(file), file, ::Render->getShaderPath(), name, ".vs");
+				if (!FS.exist("$game_shaders$", file))
+				{
+					status = "missing";
+					break;
+				}
+
+				ref_vs V = DEV->_CreateVS(name);
+				R_constant_table table;
+				table.merge(&P.ps->constants);
+				table.merge(&V->constants);
+				if (P.gs)
+					table.merge(&P.gs->constants);
+				if (P.hs)
+					table.merge(&P.hs->constants);
+				if (P.ds)
+					table.merge(&P.ds->constants);
+
+				const u8 r = inst_slot(table, "dt_rows"), e = inst_slot(table, "dt_ex");
+				R_constant* D = table.get("dt_draw");
+				if (r >= 0xfe || e == 0xfe || !D || !(D->destination & RC_dest_vertex) || table.get("array") ||
+					(p && (r != rows || e != ex)))
+				{
+					status = "old";
+					break;
+				}
+				rows = r;
+				ex = e;
+
+				for (ref_constant& C : table.table)
+				{
+					R_constant* src = P.constants ? P.constants->get(C->name) : nullptr;
+					if (src)
+						C->handler = src->handler;
+				}
+
+				SPass proto;
+				proto.state = P.state;
+				proto.ps = P.ps;
+				proto.vs = V;
+				proto.gs = P.gs;
+				proto.hs = P.hs;
+				proto.ds = P.ds;
+				proto.cs = P.cs;
+				proto.constants = DEV->_CreateConstantTable(table);
+				proto.T = P.T;
+				proto.C = P.C;
+				T.passes.push_back(DEV->_CreatePass(proto));
+			}
+			if (xr_strcmp(status, "ok"))
+				Msg("[DT-INST] %s %s", name, status);
+			if (T.passes.size() != E->passes.size())
+				continue;
+			InstTwin& twin = m_inst_twins[O * 2 + lod];
+			twin.E = DEV->_CreateElement(T);
+			twin.rows = rows;
+			twin.ex = ex;
+			m_inst_ex = m_inst_ex || ex != 0xff;
+		}
+	}
+}
+
+void CDetailManager::inst_Unload()
+{
+	m_inst_twins.clear();
+	m_inst_spans.clear();
+	for (u32 v = 0; v < 3; v++)
+		m_inst_first[v].clear();
+	_RELEASE(m_inst_srv);
+	_RELEASE(m_inst_buf);
+	_RELEASE(m_inst_ex_srv);
+	_RELEASE(m_inst_ex_buf);
+	m_inst_cap = m_inst_fail = 0;
+	m_inst_frame = u32(-1);
+}
+
+bool CDetailManager::inst_Grow(u32 need)
+{
+	if (need <= m_inst_cap)
+		return true;
+	if (m_inst_fail && need >= m_inst_fail)
+		return false;
+
+	_RELEASE(m_inst_srv);
+	_RELEASE(m_inst_buf);
+	_RELEASE(m_inst_ex_srv);
+	_RELEASE(m_inst_ex_buf);
+	m_inst_cap = 0;
+	const u32 cap = _min(need + need / 4, 1u << 24);
+
+	D3D11_BUFFER_DESC desc = {};
+	desc.Usage = D3D11_USAGE_DYNAMIC;
+	desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+	desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	D3D11_SHADER_RESOURCE_VIEW_DESC view = {};
+	view.Format = DXGI_FORMAT_R32G32B32A32_UINT;
+	view.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+
+	desc.ByteWidth = cap * sizeof(Fvector4) * 4;
+	view.Buffer.NumElements = cap * 4;
+	bool ok = SUCCEEDED(HW.pDevice->CreateBuffer(&desc, nullptr, &m_inst_buf)) &&
+		SUCCEEDED(HW.pDevice->CreateShaderResourceView(m_inst_buf, &view, &m_inst_srv));
+	if (ok && m_inst_ex)
+	{
+		desc.ByteWidth = cap * sizeof(Fvector4);
+		view.Buffer.NumElements = cap;
+		ok = SUCCEEDED(HW.pDevice->CreateBuffer(&desc, nullptr, &m_inst_ex_buf)) &&
+			SUCCEEDED(HW.pDevice->CreateShaderResourceView(m_inst_ex_buf, &view, &m_inst_ex_srv));
+	}
+	if (!ok)
+	{
+		Msg("[DT-INST] buffer create failed need=%u cap=%u, legacy draw", need, cap);
+		_RELEASE(m_inst_srv);
+		_RELEASE(m_inst_buf);
+		_RELEASE(m_inst_ex_srv);
+		_RELEASE(m_inst_ex_buf);
+		m_inst_fail = need;
+		return false;
+	}
+	m_inst_cap = cap;
+	return true;
+}
+
+void CDetailManager::inst_Build()
+{
+	const u32 frame = Device.dwFrame;
+
+	m_inst_spans.clear_not_free();
+	u32 total = 0;
+	const bool records = ps_r__detail_rows != 0 && m_vis_rows_frame == frame && Device.fTimeDelta >= 0;
+	for (u32 v = 0; v < 3; v++)
+	{
+		const u32 lod = v ? 0 : 1;
+		vis_list& list = m_visibles[v];
+		m_inst_first[v].resize(objects.size() + 1);
+		for (u32 O = 0; O < objects.size(); O++)
+		{
+			m_inst_first[v][O] = u32(m_inst_spans.size());
+			if (!m_inst_twins[O * 2 + lod].E)
+				continue;
+			xr_vector<SlotItemVec*>& vis = list[O];
+			const bool rows_obj = records && m_vis_rows[v].size() == list.size() && m_vis_rows[v][O].size() == vis.size();
+			for (u32 k = 0; k < vis.size(); k++)
+			{
+				SlotItemVec* items = vis[k];
+				InstSpan span = { items, total, 0, rows_obj ? m_vis_rows[v][O][k] : u32(-1), { 0, 0, 0 }, 0 };
+				if (!items->empty())
+				{
+					span.P = items->front()->position;
+					span.distance = items->front()->distance;
+				}
+				m_inst_spans.push_back(span);
+				total += u32(items->size());
+			}
+		}
+		m_inst_first[v][objects.size()] = u32(m_inst_spans.size());
+	}
+	if (!total || total > (1u << 24) || !inst_Grow(total))
+		return;
+
+	D3D11_MAPPED_SUBRESOURCE sub, sub_ex = {};
+	if (FAILED(HW.pContext->Map(m_inst_buf, 0, D3D11_MAP_WRITE_DISCARD, 0, &sub)))
+		return;
+	if (m_inst_ex && FAILED(HW.pContext->Map(m_inst_ex_buf, 0, D3D11_MAP_WRITE_DISCARD, 0, &sub_ex)))
+	{
+		HW.pContext->Unmap(m_inst_buf, 0);
+		return;
+	}
+	Fvector4* rows = (Fvector4*)sub.pData;
+	Fvector4* ex = m_inst_ex ? (Fvector4*)sub_ex.pData : nullptr;
+
+	const bool sector = RImplementation.GMBase.is_sector_visible(RImplementation.pOutdoorSector);
+	const float fade = fade_distance;
+	const Fvector lpos = light_position;
+	const u32 epoch = m_rows_epoch;
+	xr_parallel_for(0u, u32(m_inst_spans.size()), [&](u32 s)
+	{
+		InstSpan& span = m_inst_spans[s];
+		if (!sector)
+			return;
+		const SlotItemVec& items = *span.items;
+		const u32 n = u32(items.size());
+		Fvector4* dst = rows + span.first * 4;
+		Fvector4* dst_ex = ex ? ex + span.first : nullptr;
+
+		if (span.rows_id != u32(-1))
+		{
+			const u32 j = span.rows_id % (dm_obj_in_slot * 3);
+			const SlotRows& R = m_rows[span.rows_id / (dm_obj_in_slot * 3)];
+			if ((R.ready >> j & 1) && R.epoch == epoch && R.first[j + 1] - R.first[j] == n && (!ex || R.ex.size() * 4 == R.rows.size()))
+			{
+				CopyMemory(dst, &R.rows[R.first[j] * 4], n * sizeof(Fvector4) * 4);
+				if (ex)
+					CopyMemory(dst_ex, &R.ex[R.first[j]], n * sizeof(Fvector4));
+				span.count = n;
+				return;
+			}
+		}
+
+		float scale = 1.f;
+		if (fade <= -1)
+			scale *= 1.0f - span.P.distance_to_xz_sqr(lpos) * 0.005f;
+		else if (span.distance > fade)
+			scale *= 1.0f - abs(span.distance - fade) * 0.005f;
+
+		bool step = true;
+		u32 i = 0;
+		for (; i < n; i++)
+		{
+			SlotItem& Instance = *items[i];
+			if (step)
+				Instance.alpha += GoToValue(Instance.alpha, Instance.alpha_target);
+			if (Instance.alpha <= 0)
+				break;
+			if (scale <= 0)
+				step = false;
+			const Fmatrix& M = Instance.mRotY_calculated;
+			dst[0].set(M._11, M._21, M._31, M._41);
+			dst[1].set(M._12, M._22, M._32, M._42);
+			dst[2].set(M._13, M._23, M._33, M._43);
+			dst[3].set(Instance.c_sun, Instance.c_sun, Instance.c_sun, Instance.c_hemi);
+			dst += 4;
+			if (dst_ex)
+				dst_ex[i].set(Instance.normal.x, Instance.normal.y, Instance.normal.z, Instance.alpha);
+		}
+		span.count = i;
+	});
+
+	HW.pContext->Unmap(m_inst_buf, 0);
+	if (ex)
+		HW.pContext->Unmap(m_inst_ex_buf, 0);
+	m_inst_total = total;
+	m_inst_frame = frame;
+}
+
+void CDetailManager::inst_Draw(CDetail& Object, u32 O, u32 var_id, const InstTwin& twin, light* L, bool cull, float cull_grow, bool cull_frustum, u32 vOffset, u32 iOffset)
+{
+	static shared_str strDraw("dt_draw");
+	if (m_inst_bound[0] != s8(twin.rows))
+	{
+		HW.pContext->VSSetShaderResources(twin.rows, 1, &m_inst_srv);
+		m_inst_bound[0] = s8(twin.rows);
+	}
+	if (twin.ex != 0xff && m_inst_bound[1] != s8(twin.ex))
+	{
+		HW.pContext->VSSetShaderResources(twin.ex, 1, &m_inst_ex_srv);
+		m_inst_bound[1] = s8(twin.ex);
+	}
+
+	const bool smap = RImplementation.phase == CRender::PHASE_SMAP;
+	const u32 s0 = m_inst_first[var_id][O], s1 = m_inst_first[var_id][O + 1];
+	const bool cull_obj = cull && m_vis_bounds[var_id][O].size() == s1 - s0;
+
+	u32 run_first = 0, run_n = 0;
+	float run_scale = 1.f;
+	auto flush = [&]()
+	{
+		RCache.set_c(strDraw, float(run_first), run_scale, 0.f, 0.f);
+		RCache.RenderInstanced(D3DPT_TRIANGLELIST, vOffset, Object.number_vertices, iOffset, Object.number_indices / 3, run_n);
+		Device.Statistic->RenderDUMP_DT_Count += run_n;
+		RCache.stat.r.s_details.add(run_n * Object.number_vertices);
+		run_n = 0;
+	};
+
+	for (u32 s = s0; s < s1; s++)
+	{
+		const InstSpan& span = m_inst_spans[s];
+		if (cull_obj)
+		{
+			Fsphere b = m_vis_bounds[var_id][O][s - s0];
+			bool culled;
+			if (L)
+			{
+				culled = L->position.distance_to_sqr(b.P) >= _sqr(L->range);
+				if (!culled && fade_distance <= -1)
+					culled = 1.0f - b.P.distance_to_xz_sqr(light_position) * 0.005f <= 0;
+				if (!culled && cull_frustum)
+					culled = !L->X.S.frustum.testSphere_dirty(b.P, b.R * cull_grow);
+			}
+			else
+				culled = !m_sun_cull->testSphere_dirty(b.P, b.R * cull_grow);
+			if (culled)
+				continue;
+		}
+
+		float scale = 1.f;
+		if (fade_distance <= -1)
+			scale *= 1.0f - span.P.distance_to_xz_sqr(light_position) * 0.005f;
+		else if (span.distance > fade_distance)
+			scale *= 1.0f - abs(span.distance - fade_distance) * 0.005f;
+		const bool drawn = span.count && scale > 0 && !(smap && L && L->position.distance_to_sqr(span.P) >= _sqr(L->range));
+		if (!drawn)
+			continue;
+
+		if (run_n && (span.first != run_first + run_n || scale != run_scale))
+			flush();
+		if (!run_n)
+		{
+			run_first = span.first;
+			run_scale = scale;
+		}
+		run_n += span.count;
+	}
+	if (run_n)
+		flush();
+}
 #endif
 
 void CDetailManager::hw_Load_Shaders()
@@ -161,6 +511,11 @@ void CDetailManager::hw_Render(light* L)
 	//float		tm_rot2		= (PI_MUL_2*Device.fTimeGlobal/swing_current.rot2);
 	float tm_rot1 = m_time_rot_1;
 	float tm_rot2 = m_time_rot_2;
+
+#ifdef USE_DX11
+	if (ps_r__detail_inst && RImplementation.phase == CRender::PHASE_NORMAL && m_inst_frame != Device.dwFrame && !m_inst_twins.empty())
+		inst_Build();
+#endif
 
 	Fvector4 dir1, dir2;
 	dir1.set(_sin(tm_rot1), 0, _cos(tm_rot1), 0).normalize().mul(swing_current.amp1);
@@ -201,6 +556,20 @@ void CDetailManager::hw_Render(light* L)
 	//hw_Render_dump			(&*hwc_s_array,	0, 1, c_hdr );
 	hw_Render_dump(consts, wave.div(PI_MUL_2), dir2, prev_wave.div(PI_MUL_2), prev_dir2, 0, 1, L);
 
+#ifdef USE_DX11
+	if (m_inst_frame == Device.dwFrame)
+	{
+		for (u32 k = 0; k < 2; k++)
+		{
+			if (m_inst_bound[k] < 0)
+				continue;
+			ID3D11ShaderResourceView* none = nullptr;
+			HW.pContext->VSSetShaderResources(m_inst_bound[k], 1, &none);
+			m_inst_bound[k] = -1;
+		}
+	}
+#endif
+
 	if (prev_frame != Device.dwFrame) 
 	{
 		prev_frame = Device.dwFrame;
@@ -221,6 +590,11 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 {
 	if (RImplementation.phase == CRender::PHASE_SMAP && var_id == 0)
 		return;
+
+	bool inst_on = false;
+#ifdef USE_DX11
+	inst_on = m_inst_frame == Device.dwFrame;
+#endif
 
 	static shared_str strConsts("consts");
 	static shared_str strWave("wave");
@@ -303,11 +677,17 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 		xr_vector<SlotItemVec*>& vis = list[O];
 		if (!vis.empty())
 		{
-			for (u32 iPass = 0; iPass < Object.shader->E[lod_id]->passes.size(); ++iPass)
+			ShaderElement* element = Object.shader->E[lod_id]._get();
+#ifdef USE_DX11
+			const InstTwin* twin = inst_on && m_inst_twins[O * 2 + lod_id].E ? &m_inst_twins[O * 2 + lod_id] : nullptr;
+			if (twin)
+				element = twin->E._get();
+#endif
+			for (u32 iPass = 0; iPass < element->passes.size(); ++iPass)
 			{
 				// Setup matrices + colors (and flush it as necessary)
 				//RCache.set_Element				(Object.shader->E[lod_id]);
-				RCache.set_Element(Object.shader->E[lod_id], iPass);
+				RCache.set_Element(element, iPass);
 				RImplementation.apply_lmaterial();
 
 				//	This could be cached in the corresponding consatant buffer
@@ -362,6 +742,15 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 						}
 					}
 				}
+
+#ifdef USE_DX11
+				if (twin)
+				{
+					if (sector_visible)
+						inst_Draw(Object, O, var_id, *twin, L, cull, cull_grow, cull_frustum, vOffset, iOffset);
+					continue;
+				}
+#endif
 
 				Fvector4* c_ExData = 0;
 				{

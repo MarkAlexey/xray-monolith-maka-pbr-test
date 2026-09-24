@@ -216,6 +216,31 @@ public:
 	dx10ConstantBuffer* cb_direct_begin(shared_str& array, shared_str& ex, Fvector4* ex_old);
 	u8* cb_direct_map();
 	void cb_direct_submit(u32 count);
+
+	struct InstTwin { ref_selement E; u8 rows = 0xff, ex = 0xff; };
+	xr_vector<InstTwin> m_inst_twins;
+	bool m_inst_ex = false;
+
+	// List j of var v starts at m_inst_first[v][j]
+	struct InstSpan { SlotItemVec* items; u32 first, count, rows_id; Fvector P; float distance; };
+	xr_vector<InstSpan> m_inst_spans;
+	xr_vector<u32> m_inst_first[3];
+	u32 m_inst_frame = u32(-1);
+	u32 m_inst_total = 0;
+
+	ID3D11Buffer* m_inst_buf = nullptr;
+	ID3D11ShaderResourceView* m_inst_srv = nullptr;
+	ID3D11Buffer* m_inst_ex_buf = nullptr;
+	ID3D11ShaderResourceView* m_inst_ex_srv = nullptr;
+	u32 m_inst_cap = 0;
+	u32 m_inst_fail = 0;
+	s8 m_inst_bound[2] = { -1, -1 };
+
+	void inst_Load();
+	void inst_Unload();
+	bool inst_Grow(u32 need);
+	void inst_Build();
+	void inst_Draw(CDetail& Object, u32 O, u32 var_id, const InstTwin& twin, light* L, bool cull, float cull_grow, bool cull_frustum, u32 vOffset, u32 iOffset);
 #endif
 
 #ifndef _EDITOR
