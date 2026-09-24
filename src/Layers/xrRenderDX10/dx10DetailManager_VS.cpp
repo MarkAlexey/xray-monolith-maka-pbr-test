@@ -52,6 +52,81 @@ float GoToValue(float& current, float go_to)
 	return current < go_to ? r_value : -r_value;
 }
 
+#ifdef USE_DX11
+dx10ConstantBuffer* CDetailManager::cb_direct_begin(shared_str& array, shared_str& ex, Fvector4* ex_old)
+{
+	m_cb_direct_target = nullptr;
+	R_constant* C = RCache.get_c(array);
+	if (!C || !(C->destination & RC_dest_vertex))
+		return nullptr;
+	const u32 slot = (C->destination & RC_dest_vertex_cb_index_mask) >> RC_dest_vertex_cb_index_shift;
+	dx10ConstantBuffer* B = RCache.m_aVertexConstants[slot]._get();
+	const u32 rows_bytes = hw_BatchSize * sizeof(Fvector4) * 4;
+	if (!B || u32(C->vs.index) + rows_bytes > B->GetSize())
+		return nullptr;
+
+	u32 span[2][2] = { { u32(C->vs.index), rows_bytes } };
+	u32 spans = 1;
+	m_cb_direct_array_off = C->vs.index;
+	m_cb_direct_ex_off = u32(-1);
+	R_constant* E = ex_old ? RCache.get_c(ex) : nullptr;
+	if (E && (E->destination & RC_dest_vertex) &&
+		((E->destination & RC_dest_vertex_cb_index_mask) >> RC_dest_vertex_cb_index_shift) == slot)
+	{
+		const u32 ex_bytes = hw_BatchSize * sizeof(Fvector4);
+		if (u32(E->vs.index) + ex_bytes > B->GetSize())
+			return nullptr;
+		m_cb_direct_ex_off = E->vs.index;
+		span[1][0] = E->vs.index;
+		span[1][1] = ex_bytes;
+		spans = 2;
+		if (span[1][0] < span[0][0])
+			std::swap(span[0], span[1]);
+		if (span[0][0] + span[0][1] > span[1][0])
+			return nullptr;
+	}
+
+	u32 at = 0;
+	m_cb_direct_segs = 0;
+	for (u32 s = 0; s < spans; s++)
+	{
+		if (span[s][0] > at)
+		{
+			m_cb_direct_seg[m_cb_direct_segs][0] = at;
+			m_cb_direct_seg[m_cb_direct_segs++][1] = span[s][0] - at;
+		}
+		at = span[s][0] + span[s][1];
+	}
+	if (B->GetSize() > at)
+	{
+		m_cb_direct_seg[m_cb_direct_segs][0] = at;
+		m_cb_direct_seg[m_cb_direct_segs++][1] = B->GetSize() - at;
+	}
+
+	m_cb_direct_target = B;
+	return B;
+}
+
+u8* CDetailManager::cb_direct_map()
+{
+	D3D11_MAPPED_SUBRESOURCE sub;
+	CHK_DX(HW.pContext->Map(m_cb_direct_target->GetBuffer(), 0, D3D11_MAP_WRITE_DISCARD, 0, &sub));
+	m_cb_direct_image = (u8*)sub.pData;
+	return m_cb_direct_image;
+}
+
+void CDetailManager::cb_direct_submit(u32 count)
+{
+	dx10ConstantBuffer& B = *m_cb_direct_target;
+	const u8* shadow = (const u8*)B.GetData();
+	for (u32 s = 0; s < m_cb_direct_segs; s++)
+		CopyMemory(m_cb_direct_image + m_cb_direct_seg[s][0], shadow + m_cb_direct_seg[s][0], m_cb_direct_seg[s][1]);
+	HW.pContext->Unmap(B.GetBuffer(), 0);
+	B.MarkFlushed();
+}
+
+#endif
+
 void CDetailManager::hw_Load_Shaders()
 {
 	// Create shader to access constant storage
@@ -189,6 +264,12 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 	c_ambient.set(desc.ambient.x, desc.ambient.y, desc.ambient.z);
 	c_hemi.set(desc.hemi_color.x, desc.hemi_color.y, desc.hemi_color.z);
 
+	const bool rows_on = ps_r__detail_rows != 0;
+	if (rows_on && !(Device.fTimeDelta >= 0))
+		m_rows_epoch++;
+
+	const bool use_rows = rows_on && m_vis_rows_frame == Device.dwFrame && m_vis_rows[var_id].size() == list.size() && Device.fTimeDelta >= 0;
+
 	bool sector_visible = RImplementation.GMBase.is_sector_visible(RImplementation.pOutdoorSector);
 	if (sector_visible && RImplementation.phase == CRender::PHASE_SMAP && L)
 		sector_visible = L->GMLight.is_sector_visible(RImplementation.pOutdoorSector);
@@ -210,6 +291,10 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 		cull_grow = 1.f + 4.f * _sqrt(wind.x * wind.x + wind.z * wind.z);
 		cull_frustum = L && (L->flags.type == IRender_Light::SPOT || L->flags.type == IRender_Light::OMNIPART);
 	}
+
+#ifdef USE_DX11
+	const bool cb_direct_on = rows_on;
+#endif
 
 	// Iterate
 	for (u32 O = 0; O < objects.size(); O++)
@@ -286,29 +371,71 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 				}
 				VERIFY(c_ExData);
 
+				if (rows_on && c_ExData && !m_rows_ex)
+				{
+					m_rows_ex = true;
+					m_rows_epoch++;
+				}
+
 				//ref_constant constArray = RCache.get_c(strArray);
 				//VERIFY(constArray);
 
 				//u32			c_base				= x_array->vs.index;
 				//Fvector4*	c_storage			= RCache.get_ConstantCache_Vertex().get_array_f().access(c_base);
 				Fvector4* c_storage = 0;
-				//	Map constants to memory directly
+				u32 dwBatch = 0;
+
+#ifdef USE_DX11
+				dx10ConstantBuffer* const direct = cb_direct_on ? cb_direct_begin(strArray, strExData, c_ExData) : nullptr;
+				bool mapped = false;
+
+				auto map_direct = [&]()
+				{
+					u8* image = cb_direct_map();
+					c_storage = (Fvector4*)(image + m_cb_direct_array_off);
+					if (m_cb_direct_ex_off != u32(-1))
+						c_ExData = (Fvector4*)(image + m_cb_direct_ex_off);
+					mapped = true;
+				};
+#endif
+
+				auto map_array = [&]()
 				{
 					void* pVData;
 					RCache.get_ConstantDirect(strArray,
 					                          hw_BatchSize * sizeof(Fvector4) * 4,
 					                          &pVData, 0, 0);
 					c_storage = (Fvector4*)pVData;
-				}
-				VERIFY(c_storage);
+				};
 
-				u32 dwBatch = 0;
+				auto submit = [&]()
+				{
+					Device.Statistic->RenderDUMP_DT_Count += dwBatch;
+					u32 dwCNT_verts = dwBatch * Object.number_vertices;
+					u32 dwCNT_prims = (dwBatch * Object.number_indices) / 3;
+					//RCache.get_ConstantCache_Vertex().b_dirty				=	TRUE;
+					//RCache.get_ConstantCache_Vertex().get_array_f().dirty	(c_base,c_base+dwBatch*4);
+#ifdef USE_DX11
+					if (mapped)
+					{
+						cb_direct_submit(dwBatch);
+						mapped = false;
+					}
+#endif
+					RCache.Render(D3DPT_TRIANGLELIST, vOffset, 0, dwCNT_verts, iOffset, dwCNT_prims);
+					RCache.stat.r.s_details.add(dwCNT_verts);
+				};
+
+				//	Map constants to memory directly
+				map_array();
+				VERIFY(c_storage);
 
 				xr_vector<SlotItemVec*>::iterator _vI = vis.begin();
 				xr_vector<SlotItemVec*>::iterator _vE = vis.end();
 				if (!sector_visible)
 					_vI = _vE;
 				const bool cull_obj = cull && m_vis_bounds[var_id][O].size() == vis.size();
+				const bool rows_obj = use_rows && m_vis_rows[var_id][O].size() == vis.size();
 				for (; _vI != _vE; _vI++)
 				{
 					SlotItemVec* items = *_vI;
@@ -329,6 +456,62 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 							culled = !m_sun_cull->testSphere_dirty(b.P, b.R * cull_grow);
 						if (culled)
 							continue;
+					}
+
+					if (rows_obj)
+					{
+						const u32 id = m_vis_rows[var_id][O][_vI - vis.begin()];
+						const u32 j = id % (dm_obj_in_slot * 3);
+						SlotRows& R = m_rows[id / (dm_obj_in_slot * 3)];
+						if ((R.ready >> j & 1) && R.epoch == m_rows_epoch)
+						{
+							if (RImplementation.phase == CRender::PHASE_SMAP && L && L->position.distance_to_sqr(R.P) >= _sqr(L->range))
+								continue;
+
+							float scale = 1.f;
+							if (fade_distance <= -1)
+								scale *= 1.0f - R.P.distance_to_xz_sqr(light_position) * 0.005f;
+							else if (R.distance > fade_distance)
+								scale *= 1.0f - abs(R.distance - fade_distance) * 0.005f;
+							if (scale <= 0)
+								continue;
+
+							for (u32 i = R.first[j], end = R.first[j + 1]; i < end;)
+							{
+#ifdef USE_DX11
+								if (direct && !mapped)
+									map_direct();
+#endif
+								const u32 take = _min(end - i, hw_BatchSize - dwBatch);
+								const Fvector4* src = &R.rows[i * 4];
+								Fvector4* dst = c_storage + dwBatch * 4;
+
+								// w keeps the unscaled source value
+								const __m128 s4 = _mm_set1_ps(scale);
+								const __m128 w_mask = _mm_castsi128_ps(_mm_set_epi32(-1, 0, 0, 0));
+								for (u32 t = 0; t < take; t++, src += 4, dst += 4)
+								{
+									for (u32 r = 0; r < 3; r++)
+									{
+										const __m128 v = _mm_loadu_ps(&src[r].x);
+										_mm_storeu_ps(&dst[r].x, _mm_or_ps(_mm_andnot_ps(w_mask, _mm_mul_ps(v, s4)), _mm_and_ps(w_mask, v)));
+									}
+									_mm_storeu_ps(&dst[3].x, _mm_loadu_ps(&src[3].x));
+								}
+								if (c_ExData)
+									CopyMemory(c_ExData + dwBatch, &R.ex[i], take * sizeof(Fvector4));
+								dwBatch += take;
+								i += take;
+								if (dwBatch == hw_BatchSize)
+								{
+									submit();
+									dwBatch = 0;
+									map_array();
+									VERIFY(c_storage);
+								}
+							}
+							continue;
+						}
 					}
 
 					SlotItemVecIt _iI = items->begin();
@@ -368,6 +551,10 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 						if (scale <= 0 || Instance.alpha <= 0)
 							break;
 
+#ifdef USE_DX11
+						if (direct && !mapped)
+							map_direct();
+#endif
 						// Build matrix ( 3x4 matrix, last row - color )
 						Fmatrix& M = Instance.mRotY_calculated;
 						c_storage[base + 0].set(M._11 * scale, M._21 * scale, M._31 * scale, M._41);
@@ -391,40 +578,20 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 						if (dwBatch == hw_BatchSize)
 						{
 							// flush
-							Device.Statistic->RenderDUMP_DT_Count += dwBatch;
-							u32 dwCNT_verts = dwBatch * Object.number_vertices;
-							u32 dwCNT_prims = (dwBatch * Object.number_indices) / 3;
-							//RCache.get_ConstantCache_Vertex().b_dirty				=	TRUE;
-							//RCache.get_ConstantCache_Vertex().get_array_f().dirty	(c_base,c_base+dwBatch*4);
-							RCache.Render(D3DPT_TRIANGLELIST, vOffset, 0, dwCNT_verts, iOffset, dwCNT_prims);
-							RCache.stat.r.s_details.add(dwCNT_verts);
+							submit();
 
 							// restart
 							dwBatch = 0;
 
 							//	Remap constants to memory directly (just in case anything goes wrong)
-							{
-								void* pVData;
-								RCache.get_ConstantDirect(strArray,
-								                          hw_BatchSize * sizeof(Fvector4) * 4,
-								                          &pVData, 0, 0);
-								c_storage = (Fvector4*)pVData;
-							}
+							map_array();
 							VERIFY(c_storage);
 						}
 					}
 				}
 				// flush if nessecary
 				if (dwBatch)
-				{
-					Device.Statistic->RenderDUMP_DT_Count += dwBatch;
-					u32 dwCNT_verts = dwBatch * Object.number_vertices;
-					u32 dwCNT_prims = (dwBatch * Object.number_indices) / 3;
-					//RCache.get_ConstantCache_Vertex().b_dirty				=	TRUE;
-					//RCache.get_ConstantCache_Vertex().get_array_f().dirty	(c_base,c_base+dwBatch*4);
-					RCache.Render(D3DPT_TRIANGLELIST, vOffset, 0, dwCNT_verts, iOffset, dwCNT_prims);
-					RCache.stat.r.s_details.add(dwCNT_verts);
-				}
+					submit();
 			}
 			// Clean up
 			// KD: we must not clear vis on r2 since we want details shadows

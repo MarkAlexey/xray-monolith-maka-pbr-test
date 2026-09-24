@@ -236,6 +236,7 @@ void CDetailManager::Load()
 	// Initialize 'vis' and 'cache'
 	for (u32 i = 0; i < 3; ++i) m_visibles[i].resize(objects.size());
 	for (u32 i = 0; i < 3; ++i) m_vis_bounds[i].resize(objects.size());
+	for (u32 i = 0; i < 3; ++i) m_vis_rows[i].resize(objects.size());
 	cache_Initialize();
 
 	// Make dither matrix
@@ -285,6 +286,9 @@ void CDetailManager::Unload()
 	m_visibles[0].clear();
 	m_visibles[1].clear();
 	m_visibles[2].clear();
+	m_vis_rows[0].clear();
+	m_vis_rows[1].clear();
+	m_vis_rows[2].clear();
 	FS.r_close(dtFS);
 	dtFS = 0;
 	xr_free(dtSlots); // heap-owned wide slot array (was a VFS alias pre-v4)
@@ -318,6 +322,23 @@ void CDetailManager::UpdateVisibleM()
 		for (u32 k = 0; k < 3; k++)
 			for (u32 O = 0; O < m_vis_bounds[k].size(); O++)
 				m_vis_bounds[k][O].clear_not_free();
+	}
+
+	const bool fill_rows = ps_r__detail_rows != 0;
+	if (m_rows_mode != u32(ps_r__detail_rows))
+	{
+		m_rows_mode = ps_r__detail_rows;
+		m_rows_epoch++;
+	}
+	const u32 rows_epoch = m_rows_epoch;
+	const bool rows_ex = m_rows_ex;
+	if (fill_rows)
+	{
+		if (m_rows.empty())
+			m_rows.resize(dm_cache_size);
+		for (u32 k = 0; k < 3; k++)
+			for (u32 O = 0; O < m_vis_rows[k].size(); O++)
+				m_vis_rows[k][O].clear_not_free();
 	}
 
 	// Initialize 'vis' and 'cache'
@@ -466,10 +487,53 @@ void CDetailManager::UpdateVisibleM()
 							//2							visible[vis_id][sp.id].push_back(&Item);
 						}
 					}
+
+					if (fill_rows)
+					{
+						SlotRows& R = m_rows[PS - cache_pool];
+						u32 n = 0;
+						for (u32 j = 0; j < dm_obj_in_slot * 3; j++)
+						{
+							R.first[j] = n;
+							if (S.G[j / 3].id != DetailSlot::ID_Empty)
+								n += S.G[j / 3].r_items[j % 3].size();
+						}
+						R.first[dm_obj_in_slot * 3] = n;
+						R.rows.resize(n * 4);
+						R.ex.resize(rows_ex ? n : 0);
+						R.ready = 0;
+						for (u32 j = 0; j < dm_obj_in_slot * 3; j++)
+						{
+							const u32 first = R.first[j], count = R.first[j + 1] - first;
+							if (!count)
+								continue;
+							const SlotItemVec& items = S.G[j / 3].r_items[j % 3];
+							bool settled = true;
+							for (u32 i = 0; i < count; i++)
+							{
+								const SlotItem& Item = *items[i];
+								const Fmatrix& M = Item.mRotY_calculated;
+								Fvector4* row = &R.rows[(first + i) * 4];
+								row[0].set(M._11, M._21, M._31, M._41);
+								row[1].set(M._12, M._22, M._32, M._42);
+								row[2].set(M._13, M._23, M._33, M._43);
+								row[3].set(Item.c_sun, Item.c_sun, Item.c_sun, Item.c_hemi);
+								if (rows_ex)
+									R.ex[first + i].set(Item.normal.x, Item.normal.y, Item.normal.z, 1.f);
+								settled = settled && Item.alpha == 1.f;
+							}
+							if (settled)
+								R.ready |= u16(1 << j);
+						}
+						R.P = S.vis.sphere.P;
+						R.distance = dist_sq;
+						R.epoch = rows_epoch;
+					}
 				}
 				Fsphere bound;
 				if (fill_bounds)
 					bound.set(S.vis.sphere.P, S.cull_R);
+				const u32 rows_id = fill_rows ? u32(PS - cache_pool) * (dm_obj_in_slot * 3) : 0;
 				for (int sp_id = 0; sp_id < dm_obj_in_slot; sp_id++)
 				{
 					SlotPart& sp = S.G[sp_id];
@@ -479,18 +543,24 @@ void CDetailManager::UpdateVisibleM()
 						m_visibles[0][sp.id].push_back(&sp.r_items[0]);
 						if (fill_bounds)
 							m_vis_bounds[0][sp.id].push_back(bound);
+						if (fill_rows)
+							m_vis_rows[0][sp.id].push_back(rows_id + sp_id * 3 + 0);
 					}
 					if (!sp.r_items[1].empty())
 					{
 						m_visibles[1][sp.id].push_back(&sp.r_items[1]);
 						if (fill_bounds)
 							m_vis_bounds[1][sp.id].push_back(bound);
+						if (fill_rows)
+							m_vis_rows[1][sp.id].push_back(rows_id + sp_id * 3 + 1);
 					}
 					if (!sp.r_items[2].empty())
 					{
 						m_visibles[2][sp.id].push_back(&sp.r_items[2]);
 						if (fill_bounds)
 							m_vis_bounds[2][sp.id].push_back(bound);
+						if (fill_rows)
+							m_vis_rows[2][sp.id].push_back(rows_id + sp_id * 3 + 2);
 					}
 				}
 			}
@@ -498,6 +568,8 @@ void CDetailManager::UpdateVisibleM()
 	}
 	if (fill_bounds)
 		m_vis_bounds_frame = RDEVICE.dwFrame;
+	if (fill_rows)
+		m_vis_rows_frame = RDEVICE.dwFrame;
 	RDEVICE.Statistic->RenderDUMP_DT_VIS.End();
 }
 

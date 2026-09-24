@@ -188,6 +188,36 @@ public:
 	u32 m_vis_bounds_frame = u32(-1);
 	CFrustum* m_sun_cull = nullptr;
 
+	// List j of a slot is part * 3 + vis id
+	struct SlotRows
+	{
+		xr_vector<Fvector4> rows;
+		xr_vector<Fvector4> ex;
+		u32 first[dm_obj_in_slot * 3 + 1];
+		Fvector P;
+		float distance;
+		u32 epoch = 0;
+		u16 ready = 0;
+	};
+	xr_vector<SlotRows> m_rows;
+	xr_vector<xr_vector<u32>> m_vis_rows [3];
+	u32 m_vis_rows_frame = u32(-1);
+	u32 m_rows_epoch = 0;
+	u32 m_rows_mode = 0;
+	bool m_rows_ex = false;
+
+#ifdef USE_DX11
+	dx10ConstantBuffer* m_cb_direct_target = nullptr;
+	u8* m_cb_direct_image = nullptr;
+	u32 m_cb_direct_array_off = 0;
+	u32 m_cb_direct_ex_off = u32(-1);
+	u32 m_cb_direct_seg[3][2];
+	u32 m_cb_direct_segs = 0;
+	dx10ConstantBuffer* cb_direct_begin(shared_str& array, shared_str& ex, Fvector4* ex_old);
+	u8* cb_direct_map();
+	void cb_direct_submit(u32 count);
+#endif
+
 #ifndef _EDITOR
 	xrXRC xrc;
 #endif

@@ -67,6 +67,8 @@ void CDetailManager::cache_Task(int gx, int gz, Slot* D)
 			poolSI.destroy(D->G[i].items[clr]);
 		D->G[i].items.clear();
 	}
+	if (!m_rows.empty())
+		m_rows[D - cache_pool].ready = 0;
 
 	if (old_type != stPending)
 	{
