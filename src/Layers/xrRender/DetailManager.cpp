@@ -526,6 +526,9 @@ void __stdcall CDetailManager::MT_CALC()
 	if (!psDeviceFlags.is(rsDetails)) return;
 #endif
 
+	// Finishes the occlusion raster before any slot tests it
+	RImplementation.HOM.MT_RENDER();
+
 	xrCriticalSectionGuard guard(m_mt_calc_guard);
 	const u32 current_frame = RDEVICE.dwFrame;
     const u32 frame_calc = m_frame_calc;
