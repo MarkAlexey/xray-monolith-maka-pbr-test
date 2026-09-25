@@ -11,7 +11,9 @@ uniform float4 		consts; // {1/quant,1/quant,diffusescale,ambient}
 #endif
 //}
 
-#ifdef DT_INST
+#if defined(DT_MERGE)
+v2p_flat 	main (uint vid : SV_VertexID, uint iid : SV_InstanceID)
+#elif defined(DT_INST)
 v2p_flat 	main (v_detail v, uint iid : SV_InstanceID)
 #else
 v2p_flat 	main (v_detail v)
@@ -19,7 +21,12 @@ v2p_flat 	main (v_detail v)
 {
 	v2p_flat 		O;
 #ifdef DT_INST
+#ifdef DT_MERGE
+	uint	n;
+	v_detail	v	= dt_vertex(vid, iid, n);
+#else
 	uint	n	= dt_inst(iid);
+#endif
 	float4  m0 	= dt_row(n, 0);
 	float4  m1 	= dt_row(n, 1);
 	float4  m2 	= dt_row(n, 2);

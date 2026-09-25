@@ -248,6 +248,8 @@ void CDetailManager::Load()
 #ifdef USE_DX11
 	if (UseVS() && ps_r__detail_inst)
 		inst_Load();
+	if (UseVS() && ps_r__detail_merge)
+		merge_Load();
 #endif
 
 	// swing desc

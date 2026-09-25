@@ -223,6 +223,15 @@ public:
 	xr_vector<InstTwin> m_inst_twins;
 	bool m_inst_ex = false;
 
+	struct MergeTwin { ref_selement E; u8 verts = 0xff; };
+	xr_map<ShaderElement*, MergeTwin> m_merge;
+	xr_vector<u32> m_merge_first;
+	xr_vector<u32> m_merge_base;
+	ID3D11Buffer* m_merge_vb = nullptr;
+	ID3D11ShaderResourceView* m_merge_srv = nullptr;
+	ID3D11Buffer* m_merge_ib = nullptr;
+	void merge_Load();
+
 	// List j of var v starts at m_inst_first[v][j]
 	struct InstSpan { SlotItemVec* items; u32 first, count, rows_id; Fvector P; float distance; };
 	xr_vector<InstSpan> m_inst_spans;
@@ -236,7 +245,7 @@ public:
 	ID3D11ShaderResourceView* m_inst_ex_srv = nullptr;
 	u32 m_inst_cap = 0;
 	u32 m_inst_fail = 0;
-	s8 m_inst_bound[2] = { -1, -1 };
+	s8 m_inst_bound[3] = { -1, -1, -1 };
 
 	struct ResList { u32 first, pack, build; };
 	struct ResSpan { u32 src, kind; };
@@ -266,7 +275,7 @@ public:
 	void inst_Unload();
 	bool inst_Grow(u32 need);
 	void inst_Build();
-	void inst_Draw(CDetail& Object, u32 O, u32 var_id, const InstTwin& twin, light* L, bool cull, float cull_grow, bool cull_frustum, u32 vOffset, u32 iOffset);
+	void inst_Draw(CDetail& Object, u32 O, u32 var_id, const InstTwin& twin, const MergeTwin* merge, light* L, bool cull, float cull_grow, bool cull_frustum, u32 vOffset, u32 iOffset);
 #endif
 
 #ifndef _EDITOR

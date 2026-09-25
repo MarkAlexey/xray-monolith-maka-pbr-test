@@ -246,6 +246,198 @@ void CDetailManager::inst_Unload()
 	res_Release();
 	m_res_cs._set((SCS*)nullptr);
 	m_res_off = false;
+	m_merge.clear();
+	m_merge_first.clear();
+	m_merge_base.clear();
+	_RELEASE(m_merge_srv);
+	_RELEASE(m_merge_vb);
+	_RELEASE(m_merge_ib);
+}
+
+// Detail vertex as dt_vertex pulls it
+struct vertMerge
+{
+	float x, y, z, w;
+	short u, v, t, mid;
+	u32 pad[2];
+};
+static_assert(sizeof(vertMerge) == 32, "two uint4 elements");
+static const u32 merge_K = 64;
+
+static ref_vs merge_VS(SVS* src, SDeclaration* decl, u8& verts)
+{
+	string_path name, file;
+	xr_strcpy(name, src->cName.c_str());
+	if (src->skinning > 0)
+	{
+		LPSTR tail = strrchr(name, '_');
+		if (tail)
+			*tail = 0;
+	}
+	xr_strcat(name, "_merge");
+
+	string128 status = "ok";
+	ref_vs V;
+	strconcat(sizeof(file), file, ::Render->getShaderPath(), name, ".vs");
+	if (!FS.exist("$game_shaders$", file))
+		xr_strcpy(status, "failed missing");
+	else
+	{
+		V = DEV->_CreateVS(name);
+
+		// Lookups go through merged copies since get searches by pointer
+		R_constant_table st, vt;
+		st.merge(&src->constants);
+		vt.merge(&V->constants);
+		const u8 rows = inst_slot(st, "dt_rows"), ex = inst_slot(st, "dt_ex");
+		const u8 mrows = inst_slot(vt, "dt_rows"), mex = inst_slot(vt, "dt_ex");
+		R_constant* D = vt.get("dt_draw");
+		verts = inst_slot(vt, "dt_verts");
+		if (rows >= 0xfe || mrows != rows)
+			xr_sprintf(status, "failed slots dt_rows source %u merge %u", rows, mrows);
+		else if (mex != ex)
+			xr_sprintf(status, "failed slots dt_ex source %u merge %u", ex, mex);
+		else if (verts >= 0xfe)
+			xr_sprintf(status, "failed slots dt_verts merge %u", verts);
+		else if (!D || !(D->destination & RC_dest_vertex))
+			xr_sprintf(status, "failed slots dt_draw destination %u", D ? u32(D->destination) : 0u);
+		else
+		{
+			// The detail declaration layout must accept a VS without vertex inputs
+			ID3D11InputLayout* layout = nullptr;
+			ID3DBlob* sig = V->signature->signature;
+			if (FAILED(HW.pDevice->CreateInputLayout(&decl->dx10_dcl_code[0], decl->dx10_dcl_code.size() - 1, sig->GetBufferPointer(), sig->GetBufferSize(), &layout)))
+				xr_strcpy(status, "failed layout");
+			_RELEASE(layout);
+		}
+	}
+	if (xr_strcmp(status, "ok"))
+		Msg("[DT-MERGE] %s %s", name, status);
+	return xr_strcmp(status, "ok") ? ref_vs() : V;
+}
+
+void CDetailManager::merge_Load()
+{
+	m_merge.clear();
+	m_merge_first.assign(objects.size(), u32(-1));
+	m_merge_base.assign(objects.size(), 0);
+
+	// One vertex copy per object, merge_K index copies offset by the vertex count
+	xr_vector<vertMerge> verts;
+	xr_vector<u16> indices;
+	for (u32 O = 0; O < objects.size(); O++)
+	{
+		const CDetail& D = *objects[O];
+		if (D.number_vertices * merge_K > 65536)
+			continue;
+		m_merge_base[O] = u32(verts.size());
+		m_merge_first[O] = u32(indices.size());
+		for (u32 v = 0; v < D.number_vertices; v++)
+		{
+			const Fvector& vP = D.vertices[v].P;
+			vertMerge M = {};
+			M.x = vP.x;
+			M.y = vP.y;
+			M.z = vP.z;
+			M.w = 1.f;
+			M.u = QC(D.vertices[v].u);
+			M.v = QC(D.vertices[v].v);
+			M.t = QC(vP.y / (D.bv_bb.max.y - D.bv_bb.min.y));
+			verts.push_back(M);
+		}
+		for (u32 copy = 0; copy < merge_K; copy++)
+			for (u32 i = 0; i < D.number_indices; i++)
+				indices.push_back(u16(D.indices[i] + copy * D.number_vertices));
+	}
+
+	bool ok = !verts.empty();
+	if (ok)
+	{
+		D3D11_BUFFER_DESC desc = {};
+		desc.Usage = D3D11_USAGE_IMMUTABLE;
+		desc.ByteWidth = u32(verts.size() * sizeof(vertMerge));
+		desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+		D3D11_SUBRESOURCE_DATA data = {};
+		data.pSysMem = verts.data();
+		D3D11_SHADER_RESOURCE_VIEW_DESC view = {};
+		view.Format = DXGI_FORMAT_R32G32B32A32_UINT;
+		view.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+		view.Buffer.NumElements = u32(verts.size() * 2);
+		ok = SUCCEEDED(HW.pDevice->CreateBuffer(&desc, &data, &m_merge_vb)) &&
+			SUCCEEDED(HW.pDevice->CreateShaderResourceView(m_merge_vb, &view, &m_merge_srv));
+		desc.ByteWidth = u32(indices.size() * sizeof(u16));
+		desc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+		data.pSysMem = indices.data();
+		ok = ok && SUCCEEDED(HW.pDevice->CreateBuffer(&desc, &data, &m_merge_ib));
+	}
+	if (!ok)
+	{
+		Msg("[DT-MERGE] buffers failed, merge off");
+		_RELEASE(m_merge_srv);
+		_RELEASE(m_merge_vb);
+		_RELEASE(m_merge_ib);
+		return;
+	}
+
+	xr_map<shared_str, std::pair<ref_vs, u8>> shaders;
+	SDeclaration* decl = hw_Geom->dcl._get();
+	auto add = [&](ShaderElement* E)
+	{
+		if (!E || m_merge.count(E))
+			return;
+		ShaderElement T;
+		T.flags = E->flags;
+		u8 slot = 0xff;
+		for (u32 p = 0; p < E->passes.size(); p++)
+		{
+			SPass& P = *E->passes[p];
+			auto it = shaders.find(P.vs->cName);
+			if (it == shaders.end())
+			{
+				u8 s = 0xff;
+				ref_vs V = merge_VS(P.vs._get(), decl, s);
+				it = shaders.emplace(P.vs->cName, std::make_pair(V, s)).first;
+			}
+			if (!it->second.first || (p && it->second.second != slot))
+				return;
+			slot = it->second.second;
+
+			R_constant_table table;
+			table.merge(&P.ps->constants);
+			table.merge(&it->second.first->constants);
+			if (P.gs)
+				table.merge(&P.gs->constants);
+			if (P.hs)
+				table.merge(&P.hs->constants);
+			if (P.ds)
+				table.merge(&P.ds->constants);
+
+			for (ref_constant& C : table.table)
+			{
+				R_constant* src = P.constants ? P.constants->get(C->name) : nullptr;
+				if (src)
+					C->handler = src->handler;
+			}
+
+			SPass proto;
+			proto.state = P.state;
+			proto.ps = P.ps;
+			proto.vs = it->second.first;
+			proto.gs = P.gs;
+			proto.hs = P.hs;
+			proto.ds = P.ds;
+			proto.cs = P.cs;
+			proto.constants = DEV->_CreateConstantTable(table);
+			proto.T = P.T;
+			proto.C = P.C;
+			T.passes.push_back(DEV->_CreatePass(proto));
+		}
+		MergeTwin& M = m_merge[E];
+		M.E = DEV->_CreateElement(T);
+		M.verts = slot;
+	};
+	for (InstTwin& T : m_inst_twins)
+		add(T.E._get());
 }
 
 bool CDetailManager::inst_Grow(u32 need)
@@ -727,7 +919,7 @@ instanced:
 	m_inst_frame = frame;
 }
 
-void CDetailManager::inst_Draw(CDetail& Object, u32 O, u32 var_id, const InstTwin& twin, light* L, bool cull, float cull_grow, bool cull_frustum, u32 vOffset, u32 iOffset)
+void CDetailManager::inst_Draw(CDetail& Object, u32 O, u32 var_id, const InstTwin& twin, const MergeTwin* merge, light* L, bool cull, float cull_grow, bool cull_frustum, u32 vOffset, u32 iOffset)
 {
 	static shared_str strDraw("dt_draw");
 	if (m_inst_bound[0] != s8(twin.rows))
@@ -740,6 +932,13 @@ void CDetailManager::inst_Draw(CDetail& Object, u32 O, u32 var_id, const InstTwi
 		HW.pContext->VSSetShaderResources(twin.ex, 1, &m_inst_ex_srv);
 		m_inst_bound[1] = s8(twin.ex);
 	}
+	if (merge && m_inst_bound[2] != s8(merge->verts))
+	{
+		HW.pContext->VSSetShaderResources(merge->verts, 1, &m_merge_srv);
+		m_inst_bound[2] = s8(merge->verts);
+	}
+	if (merge)
+		RCache.set_Indices(m_merge_ib);
 
 	const bool smap = RImplementation.phase == CRender::PHASE_SMAP;
 	const u32 s0 = m_inst_first[var_id][O], s1 = m_inst_first[var_id][O + 1];
@@ -749,6 +948,25 @@ void CDetailManager::inst_Draw(CDetail& Object, u32 O, u32 var_id, const InstTwi
 	float run_scale = 1.f;
 	auto flush = [&]()
 	{
+		if (merge)
+		{
+			const u32 full = run_n / merge_K, rem = run_n % merge_K;
+			const float base = float(m_merge_base[O]), count = float(Object.number_vertices);
+			if (full)
+			{
+				RCache.set_c(strDraw, float(run_first), run_scale, base, count);
+				RCache.RenderInstanced(D3DPT_TRIANGLELIST, 0, merge_K * Object.number_vertices, m_merge_first[O], merge_K * Object.number_indices / 3, full);
+			}
+			if (rem)
+			{
+				RCache.set_c(strDraw, float(run_first + full * merge_K), run_scale, base, count);
+				RCache.RenderInstanced(D3DPT_TRIANGLELIST, 0, rem * Object.number_vertices, m_merge_first[O], rem * Object.number_indices / 3, 1);
+			}
+			Device.Statistic->RenderDUMP_DT_Count += run_n;
+			RCache.stat.r.s_details.add(run_n * Object.number_vertices);
+			run_n = 0;
+			return;
+		}
 		RCache.set_c(strDraw, float(run_first), run_scale, 0.f, 0.f);
 		RCache.RenderInstanced(D3DPT_TRIANGLELIST, vOffset, Object.number_vertices, iOffset, Object.number_indices / 3, run_n);
 		Device.Statistic->RenderDUMP_DT_Count += run_n;
@@ -797,6 +1015,8 @@ void CDetailManager::inst_Draw(CDetail& Object, u32 O, u32 var_id, const InstTwi
 	}
 	if (run_n)
 		flush();
+	if (merge)
+		RCache.set_Indices(hw_IB);
 }
 #endif
 
@@ -885,7 +1105,7 @@ void CDetailManager::hw_Render(light* L)
 #ifdef USE_DX11
 	if (m_inst_frame == Device.dwFrame)
 	{
-		for (u32 k = 0; k < 2; k++)
+		for (u32 k = 0; k < 3; k++)
 		{
 			if (m_inst_bound[k] < 0)
 				continue;
@@ -1008,6 +1228,17 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 			const InstTwin* twin = inst_on && m_inst_twins[O * 2 + lod_id].E ? &m_inst_twins[O * 2 + lod_id] : nullptr;
 			if (twin)
 				element = twin->E._get();
+
+			const MergeTwin* merge = nullptr;
+			if (twin && ps_r__detail_merge && !m_merge.empty() && m_merge_first[O] != u32(-1))
+			{
+				auto it = m_merge.find(element);
+				if (it != m_merge.end())
+				{
+					merge = &it->second;
+					element = it->second.E._get();
+				}
+			}
 #endif
 			for (u32 iPass = 0; iPass < element->passes.size(); ++iPass)
 			{
@@ -1073,7 +1304,7 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 				if (twin)
 				{
 					if (sector_visible)
-						inst_Draw(Object, O, var_id, *twin, L, cull, cull_grow, cull_frustum, vOffset, iOffset);
+						inst_Draw(Object, O, var_id, *twin, merge, L, cull, cull_grow, cull_frustum, vOffset, iOffset);
 					continue;
 				}
 #endif
