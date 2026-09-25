@@ -345,6 +345,11 @@ void CDetailManager::UpdateVisibleM()
 				m_vis_rows[k][O].clear_not_free();
 	}
 
+	const bool rows_pack = fill_rows && ps_r__detail_inst_res != 0;
+	if (rows_pack && !++m_rows_stamp)
+		m_rows_stamp = 1;
+	const u32 rows_stamp = m_rows_stamp;
+
 	// Initialize 'vis' and 'cache'
 	// Collect objects for rendering
 	RDEVICE.Statistic->RenderDUMP_DT_VIS.Begin();
@@ -495,6 +500,9 @@ void CDetailManager::UpdateVisibleM()
 					if (fill_rows)
 					{
 						SlotRows& R = m_rows[PS - cache_pool];
+						u32 old_first[dm_obj_in_slot * 3 + 1];
+						if (rows_pack)
+							CopyMemory(old_first, R.first, sizeof(old_first));
 						u32 n = 0;
 						for (u32 j = 0; j < dm_obj_in_slot * 3; j++)
 						{
@@ -506,6 +514,7 @@ void CDetailManager::UpdateVisibleM()
 						R.rows.resize(n * 4);
 						R.ex.resize(rows_ex ? n : 0);
 						R.ready = 0;
+						bool same = rows_pack && R.pack && R.epoch == rows_epoch && !memcmp(old_first, R.first, sizeof(old_first));
 						for (u32 j = 0; j < dm_obj_in_slot * 3; j++)
 						{
 							const u32 first = R.first[j], count = R.first[j + 1] - first;
@@ -518,10 +527,15 @@ void CDetailManager::UpdateVisibleM()
 								const SlotItem& Item = *items[i];
 								const Fmatrix& M = Item.mRotY_calculated;
 								Fvector4* row = &R.rows[(first + i) * 4];
+								Fvector4 old[4];
+								if (same)
+									CopyMemory(old, row, sizeof(old));
 								row[0].set(M._11, M._21, M._31, M._41);
 								row[1].set(M._12, M._22, M._32, M._42);
 								row[2].set(M._13, M._23, M._33, M._43);
 								row[3].set(Item.c_sun, Item.c_sun, Item.c_sun, Item.c_hemi);
+								if (same && memcmp(old, row, sizeof(old)))
+									same = false;
 								if (rows_ex)
 									R.ex[first + i].set(Item.normal.x, Item.normal.y, Item.normal.z, 1.f);
 								settled = settled && Item.alpha == 1.f;
@@ -532,6 +546,10 @@ void CDetailManager::UpdateVisibleM()
 						R.P = S.vis.sphere.P;
 						R.distance = dist_sq;
 						R.epoch = rows_epoch;
+						if (rows_pack && !same)
+							R.pack = rows_stamp;
+						else if (!rows_pack)
+							R.pack = 0;
 					}
 				}
 				Fsphere bound;

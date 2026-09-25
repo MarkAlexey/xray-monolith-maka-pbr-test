@@ -78,6 +78,7 @@ extern ECORE_API float ps_r__Detail_height;
 extern ECORE_API int ps_r__detail_rows;
 extern ECORE_API int ps_r__detail_shadow_cull;
 extern ECORE_API int ps_r__detail_inst;
+extern ECORE_API int ps_r__detail_inst_res;
 
 extern ECORE_API float ps_r__Tree_w_rot;
 extern ECORE_API float ps_r__Tree_w_speed;

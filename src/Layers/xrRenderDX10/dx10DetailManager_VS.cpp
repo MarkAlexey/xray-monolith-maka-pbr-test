@@ -243,6 +243,9 @@ void CDetailManager::inst_Unload()
 	_RELEASE(m_inst_ex_buf);
 	m_inst_cap = m_inst_fail = 0;
 	m_inst_frame = u32(-1);
+	res_Release();
+	m_res_cs._set((SCS*)nullptr);
+	m_res_off = false;
 }
 
 bool CDetailManager::inst_Grow(u32 need)
@@ -292,6 +295,137 @@ bool CDetailManager::inst_Grow(u32 need)
 	return true;
 }
 
+bool CDetailManager::res_On() const
+{
+	return ps_r__detail_inst_res && ps_r__detail_inst && ps_r__detail_rows && !m_inst_ex;
+}
+
+bool CDetailManager::res_Create(u32 need)
+{
+	if (need <= m_res_cap)
+		return true;
+
+	LPCSTR reason = nullptr;
+	if (!m_res_cs)
+	{
+		string_path file;
+		strconcat(sizeof(file), file, ::Render->getShaderPath(), "dt_res_copy", ".cs");
+		UINT support = 0;
+		if (!FS.exist("$game_shaders$", file))
+			reason = "shader";
+		else if (FAILED(HW.pDevice->CheckFormatSupport(DXGI_FORMAT_R32G32B32A32_UINT, &support)) ||
+			!(support & D3D11_FORMAT_SUPPORT_TYPED_UNORDERED_ACCESS_VIEW))
+			reason = "format";
+		else
+		{
+			m_res_cs = DEV->_CreateCS("dt_res_copy");
+			if (!m_res_cs)
+				reason = "cs";
+		}
+	}
+
+	for (u32 k = 0; k < 2; k++)
+	{
+		_RELEASE(m_res_uav[k]);
+		_RELEASE(m_res_srv[k]);
+		_RELEASE(m_res_buf[k]);
+	}
+	m_res_cap = 0;
+	const u32 cap = _min(need + need / 4, 1u << 24);
+
+	D3D11_BUFFER_DESC desc = {};
+	desc.Usage = D3D11_USAGE_DEFAULT;
+	desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
+	desc.ByteWidth = cap * sizeof(Fvector4) * 4;
+	D3D11_SHADER_RESOURCE_VIEW_DESC view = {};
+	view.Format = DXGI_FORMAT_R32G32B32A32_UINT;
+	view.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+	view.Buffer.NumElements = cap * 4;
+	D3D11_UNORDERED_ACCESS_VIEW_DESC uav = {};
+	uav.Format = DXGI_FORMAT_R32G32B32A32_UINT;
+	uav.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+	uav.Buffer.NumElements = cap * 4;
+	for (u32 k = 0; k < 2 && !reason; k++)
+	{
+		if (FAILED(HW.pDevice->CreateBuffer(&desc, nullptr, &m_res_buf[k])) ||
+			FAILED(HW.pDevice->CreateShaderResourceView(m_res_buf[k], &view, &m_res_srv[k])) ||
+			FAILED(HW.pDevice->CreateUnorderedAccessView(m_res_buf[k], &uav, &m_res_uav[k])))
+			reason = "create";
+	}
+	if (reason)
+	{
+		Msg("[DT-RES] off reason=%s", reason);
+		res_Release();
+		m_res_off = true;
+		return false;
+	}
+
+	m_res_cap = cap;
+	m_res_cur = 0;
+	if (!++m_res_build)
+		m_res_build = 1;
+	return true;
+}
+
+void CDetailManager::res_Release()
+{
+	for (u32 k = 0; k < 2; k++)
+	{
+		_RELEASE(m_res_uav[k]);
+		_RELEASE(m_res_srv[k]);
+		_RELEASE(m_res_buf[k]);
+	}
+	_RELEASE(m_res_up_srv);
+	_RELEASE(m_res_up);
+	m_res_up_cap = 0;
+	ZeroMemory(m_res_need, sizeof(m_res_need));
+	m_res_list.clear();
+	m_res_span.clear();
+	m_res_cap = 0;
+	m_res_frame = u32(-1);
+}
+
+bool CDetailManager::res_Upload(u32 need)
+{
+	m_res_need[m_res_need_at++ & 255] = need;
+	u32 cap = 0;
+	if (need > m_res_up_cap)
+		cap = _min(need + need / 4, 1u << 24);
+	else if (m_res_up_cap > (1u << 20))
+	{
+		u32 peak = 0;
+		for (u32 k = 0; k < 256; k++)
+			peak = _max(peak, m_res_need[k]);
+		if (m_res_up_cap > peak * 4)
+			cap = _min(peak + peak / 4, 1u << 24);
+	}
+	if (!cap)
+		return true;
+
+	_RELEASE(m_res_up_srv);
+	_RELEASE(m_res_up);
+	m_res_up_cap = 0;
+	D3D11_BUFFER_DESC desc = {};
+	desc.Usage = D3D11_USAGE_DYNAMIC;
+	desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+	desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	desc.ByteWidth = cap * sizeof(Fvector4) * 4;
+	D3D11_SHADER_RESOURCE_VIEW_DESC view = {};
+	view.Format = DXGI_FORMAT_R32G32B32A32_UINT;
+	view.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+	view.Buffer.NumElements = cap * 4;
+	if (FAILED(HW.pDevice->CreateBuffer(&desc, nullptr, &m_res_up)) ||
+		FAILED(HW.pDevice->CreateShaderResourceView(m_res_up, &view, &m_res_up_srv)))
+	{
+		Msg("[DT-RES] off reason=upload");
+		res_Release();
+		m_res_off = true;
+		return false;
+	}
+	m_res_up_cap = cap;
+	return true;
+}
+
 void CDetailManager::inst_Build()
 {
 	const u32 frame = Device.dwFrame;
@@ -326,6 +460,195 @@ void CDetailManager::inst_Build()
 		}
 		m_inst_first[v][objects.size()] = u32(m_inst_spans.size());
 	}
+
+	const u32 spans = u32(m_inst_spans.size());
+	if (res_On() && !m_res_off && total && total + (spans + 4) / 4 <= (1u << 24) && res_Create(total))
+	{
+		const u32 lists = u32(m_rows.size()) * (dm_obj_in_slot * 3);
+		if (m_res_list.size() != lists)
+			m_res_list.assign(lists, ResList{ 0, 0, 0 });
+		m_res_span.resize(spans);
+
+		enum { res_none, res_reuse, res_rows, res_walk };
+		const bool sector = RImplementation.GMBase.is_sector_visible(RImplementation.pOutdoorSector);
+		const float fade = fade_distance;
+		const Fvector lpos = light_position;
+		const u32 epoch = m_rows_epoch;
+		const u32 build = m_res_build;
+		const u32 next_build = build + 1 ? build + 1 : 1;
+
+		xr_parallel_for(0u, spans, [&](u32 s)
+		{
+			InstSpan& span = m_inst_spans[s];
+			ResSpan& rs = m_res_span[s];
+			rs.src = 0;
+			rs.kind = res_none;
+			if (!sector)
+				return;
+			const SlotItemVec& items = *span.items;
+			const u32 n = u32(items.size());
+			if (span.rows_id != u32(-1))
+			{
+				const u32 j = span.rows_id % (dm_obj_in_slot * 3);
+				const SlotRows& R = m_rows[span.rows_id / (dm_obj_in_slot * 3)];
+				ResList& L = m_res_list[span.rows_id];
+				if ((R.ready >> j & 1) && R.epoch == epoch && R.first[j + 1] - R.first[j] == n)
+				{
+					const bool reuse = R.pack && L.build == build && L.pack == R.pack;
+					rs.kind = reuse ? res_reuse : res_rows;
+					rs.src = reuse ? L.first : 0;
+					span.count = n;
+					return;
+				}
+				L.build = 0;
+			}
+			span.count = n;
+			rs.kind = res_walk;
+		});
+
+		u32 slots = 0, changed = 0, walked = 0;
+		for (u32 s = 0; s < spans; s++)
+		{
+			const InstSpan& span = m_inst_spans[s];
+			const ResSpan& rs = m_res_span[s];
+			if (!span.count)
+				continue;
+			slots++;
+			changed += rs.kind != res_reuse ? span.count : 0;
+			walked += rs.kind == res_walk;
+		}
+		if (!res_Upload((slots + 4) / 4 + changed))
+			goto instanced;
+
+		if (walked)
+		{
+			xr_parallel_for(0u, spans, [&](u32 s)
+			{
+				InstSpan& span = m_inst_spans[s];
+				if (m_res_span[s].kind != res_walk)
+					return;
+				const SlotItemVec& items = *span.items;
+				const u32 n = span.count;
+				float scale = 1.f;
+				if (fade <= -1)
+					scale *= 1.0f - span.P.distance_to_xz_sqr(lpos) * 0.005f;
+				else if (span.distance > fade)
+					scale *= 1.0f - abs(span.distance - fade) * 0.005f;
+
+				bool step = true;
+				u32 i = 0;
+				for (; i < n; i++)
+				{
+					SlotItem& Instance = *items[i];
+					if (step)
+						Instance.alpha += GoToValue(Instance.alpha, Instance.alpha_target);
+					if (Instance.alpha <= 0)
+						break;
+					if (scale <= 0)
+						step = false;
+				}
+				span.count = i;
+			});
+		}
+
+		u32 jobs = 0;
+		bool dirty = false;
+		for (u32 s = 0; s < spans; s++)
+		{
+			const InstSpan& span = m_inst_spans[s];
+			const ResSpan& rs = m_res_span[s];
+			if (!span.count)
+				continue;
+			jobs++;
+			dirty = dirty || rs.kind != res_reuse || rs.src != span.first;
+		}
+
+		if (dirty)
+		{
+			D3D11_MAPPED_SUBRESOURCE sub;
+			if (FAILED(HW.pContext->Map(m_res_up, 0, D3D11_MAP_WRITE_DISCARD, 0, &sub)))
+				return;
+			const u32 base = (jobs + 4) / 4;
+			const u32 gx = _min(jobs, 65535u);
+			u32* job = (u32*)sub.pData;
+			job[0] = jobs;
+			job[1] = gx;
+			job[2] = base;
+			job[3] = 0;
+			job += 4;
+			u32 up = base;
+			for (u32 s = 0; s < spans; s++)
+			{
+				const InstSpan& span = m_inst_spans[s];
+				ResSpan& rs = m_res_span[s];
+				if (!span.count)
+					continue;
+				const bool copy = rs.kind == res_reuse;
+				if (!copy)
+				{
+					rs.src = up;
+					up += span.count;
+				}
+				job[0] = rs.src;
+				job[1] = span.first;
+				job[2] = span.count;
+				job[3] = copy ? 0 : 1;
+				job += 4;
+			}
+
+			Fvector4* upload = (Fvector4*)sub.pData;
+			xr_parallel_for(0u, spans, [&](u32 s)
+			{
+				const InstSpan& span = m_inst_spans[s];
+				const ResSpan& rs = m_res_span[s];
+				if (!span.count)
+					return;
+				if (rs.kind == res_walk)
+				{
+					Fvector4* dst = upload + rs.src * 4;
+					for (u32 i = 0; i < span.count; i++)
+					{
+						const SlotItem& Instance = *(*span.items)[i];
+						const Fmatrix& M = Instance.mRotY_calculated;
+						dst[0].set(M._11, M._21, M._31, M._41);
+						dst[1].set(M._12, M._22, M._32, M._42);
+						dst[2].set(M._13, M._23, M._33, M._43);
+						dst[3].set(Instance.c_sun, Instance.c_sun, Instance.c_sun, Instance.c_hemi);
+						dst += 4;
+					}
+					return;
+				}
+				const u32 j = span.rows_id % (dm_obj_in_slot * 3);
+				const SlotRows& R = m_rows[span.rows_id / (dm_obj_in_slot * 3)];
+				if (rs.kind == res_rows)
+					CopyMemory(upload + rs.src * 4, &R.rows[R.first[j] * 4], span.count * sizeof(Fvector4) * 4);
+				m_res_list[span.rows_id] = { span.first, R.pack, next_build };
+			});
+			HW.pContext->Unmap(m_res_up, 0);
+
+			const u32 next = m_res_cur ^ 1;
+			RCache.set_CS(m_res_cs);
+			SRVSManager.SetCSResource(0, m_res_srv[m_res_cur]);
+			SRVSManager.SetCSResource(1, m_res_up_srv);
+			HW.pContext->CSSetUnorderedAccessViews(0, 1, &m_res_uav[next], nullptr);
+			RCache.Compute(gx, (jobs + gx - 1) / gx, 1);
+			ID3D11UnorderedAccessView* none = nullptr;
+			HW.pContext->CSSetUnorderedAccessViews(0, 1, &none, nullptr);
+			SRVSManager.SetCSResource(0, nullptr);
+			SRVSManager.SetCSResource(1, nullptr);
+			SRVSManager.Apply();
+			m_res_cur = next;
+			m_res_build = next_build;
+		}
+
+		m_inst_total = total;
+		m_inst_frame = frame;
+		m_res_frame = frame;
+		return;
+	}
+
+	// A failed resident upload lands here before any alpha step
+instanced:
 	if (!total || total > (1u << 24) || !inst_Grow(total))
 		return;
 
@@ -409,7 +732,7 @@ void CDetailManager::inst_Draw(CDetail& Object, u32 O, u32 var_id, const InstTwi
 	static shared_str strDraw("dt_draw");
 	if (m_inst_bound[0] != s8(twin.rows))
 	{
-		HW.pContext->VSSetShaderResources(twin.rows, 1, &m_inst_srv);
+		HW.pContext->VSSetShaderResources(twin.rows, 1, m_res_frame == m_inst_frame ? &m_res_srv[m_res_cur] : &m_inst_srv);
 		m_inst_bound[0] = s8(twin.rows);
 	}
 	if (twin.ex != 0xff && m_inst_bound[1] != s8(twin.ex))
@@ -513,6 +836,9 @@ void CDetailManager::hw_Render(light* L)
 	float tm_rot2 = m_time_rot_2;
 
 #ifdef USE_DX11
+	if (m_res_cap && m_res_frame != Device.dwFrame && !res_On())
+		res_Release();
+
 	if (ps_r__detail_inst && RImplementation.phase == CRender::PHASE_NORMAL && m_inst_frame != Device.dwFrame && !m_inst_twins.empty())
 		inst_Build();
 #endif

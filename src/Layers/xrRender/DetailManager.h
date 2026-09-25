@@ -197,12 +197,14 @@ public:
 		Fvector P;
 		float distance;
 		u32 epoch = 0;
+		u32 pack = 0;
 		u16 ready = 0;
 	};
 	xr_vector<SlotRows> m_rows;
 	xr_vector<xr_vector<u32>> m_vis_rows [3];
 	u32 m_vis_rows_frame = u32(-1);
 	u32 m_rows_epoch = 0;
+	u32 m_rows_stamp = 0;
 	u32 m_rows_mode = 0;
 	bool m_rows_ex = false;
 
@@ -235,6 +237,30 @@ public:
 	u32 m_inst_cap = 0;
 	u32 m_inst_fail = 0;
 	s8 m_inst_bound[2] = { -1, -1 };
+
+	struct ResList { u32 first, pack, build; };
+	struct ResSpan { u32 src, kind; };
+	ID3D11Buffer* m_res_buf[2] = {};
+	ID3D11ShaderResourceView* m_res_srv[2] = {};
+	ID3D11UnorderedAccessView* m_res_uav[2] = {};
+	ref_cs m_res_cs;
+	xr_vector<ResList> m_res_list;
+	xr_vector<ResSpan> m_res_span;
+	u32 m_res_cap = 0;
+	u32 m_res_cur = 0;
+	u32 m_res_build = 1;
+	u32 m_res_frame = u32(-1);
+	bool m_res_off = false;
+	bool res_On() const;
+	bool res_Create(u32 need);
+	void res_Release();
+
+	ID3D11Buffer* m_res_up = nullptr;
+	ID3D11ShaderResourceView* m_res_up_srv = nullptr;
+	u32 m_res_up_cap = 0;
+	u32 m_res_need[256] = {};
+	u32 m_res_need_at = 0;
+	bool res_Upload(u32 need);
 
 	void inst_Load();
 	void inst_Unload();
