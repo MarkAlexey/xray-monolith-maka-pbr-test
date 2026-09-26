@@ -24,6 +24,9 @@ v2p_flat 	main (v_detail v)
 #ifdef DT_MERGE
 	uint	n;
 	v_detail	v	= dt_vertex(vid, iid, n);
+#ifdef	DT_OCC
+	n	= dt_idx[n];
+#endif
 #else
 	uint	n	= dt_inst(iid);
 #endif

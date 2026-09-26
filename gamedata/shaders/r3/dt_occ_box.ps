@@ -1,0 +1,13 @@
+RWBuffer<uint>	occ_vis	: register(u7);	// span stamps
+
+struct	v2p_occ_box
+{
+	float4	hpos	: SV_Position;
+	nointerpolation uint2	span	: TEXCOORD0;
+};
+
+[earlydepthstencil]
+void	main	(v2p_occ_box I)
+{
+	occ_vis[I.span.x]	= I.span.y;
+}

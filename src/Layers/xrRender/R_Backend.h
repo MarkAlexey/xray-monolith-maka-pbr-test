@@ -454,6 +454,8 @@ public:
 
 #ifdef USE_DX11
 	ICF void RenderInstanced(D3DPRIMITIVETYPE T, u32 baseV, u32 countV, u32 startI, u32 PC, u32 instances);
+	ICF void RenderInstancedIndirect(D3DPRIMITIVETYPE T, ID3D11Buffer* args, u32 offset);
+	ICF void RenderInstancedUAV(D3DPRIMITIVETYPE T, u32 baseV, u32 countV, u32 startI, u32 PC, u32 instances, u32 slot, ID3D11UnorderedAccessView* uav);
 	ICF void Compute(UINT ThreadGroupCountX, UINT ThreadGroupCountY, UINT ThreadGroupCountZ);
 #endif
 

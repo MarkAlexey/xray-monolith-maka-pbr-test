@@ -31,4 +31,8 @@ v_detail	dt_vertex	(uint vid, uint iid, out uint n)
 }
 #endif
 
+#ifdef	DT_OCC
+Buffer<uint>	dt_idx	: register(t10);	// rows index of every kept instance, padded per draw
+#endif
+
 #endif

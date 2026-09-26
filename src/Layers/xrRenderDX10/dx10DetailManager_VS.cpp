@@ -8,6 +8,9 @@
 #include "../xrRender/ResourceManager.h"
 #include "../xrRender/dxRenderDeviceRender.h"
 #include <xmmintrin.h>
+#ifdef USE_DX11
+#include "../xrRenderPC_R4/blender_light_occq.h"
+#endif
 
 // Vars to store wind prev frame data ( Motion vectors )
 static u32 prev_frame = -1;
@@ -246,6 +249,19 @@ void CDetailManager::inst_Unload()
 	res_Release();
 	m_res_cs._set((SCS*)nullptr);
 	m_res_off = false;
+	occ_Release();
+	m_occ_off = false;
+	m_occ_logged = false;
+	m_occ_fail_logged = false;
+	m_occ_pack._set((SCS*)nullptr);
+	m_occ_expand._set((SCS*)nullptr);
+	m_occ_box = ref_selement();
+	m_occ_box_sh.destroy();
+	_RELEASE(m_occ_box_ds);
+	_RELEASE(m_occ_box_bs);
+	_RELEASE(m_occ_box_ib);
+	m_occ_rec.clear();
+	m_occ_frac.clear();
 	m_merge.clear();
 	m_merge_first.clear();
 	m_merge_base.clear();
@@ -264,7 +280,8 @@ struct vertMerge
 static_assert(sizeof(vertMerge) == 32, "two uint4 elements");
 static const u32 merge_K = 64;
 
-static ref_vs merge_VS(SVS* src, SDeclaration* decl, u8& verts)
+// The loaded VS must bind every slot the source VS binds, plus the index list with idx
+static ref_vs merge_VS(SVS* src, SDeclaration* decl, u8& verts, LPCSTR suffix = "_merge", u8* idx = nullptr)
 {
 	string_path name, file;
 	xr_strcpy(name, src->cName.c_str());
@@ -274,7 +291,7 @@ static ref_vs merge_VS(SVS* src, SDeclaration* decl, u8& verts)
 		if (tail)
 			*tail = 0;
 	}
-	xr_strcat(name, "_merge");
+	xr_strcat(name, suffix);
 
 	string128 status = "ok";
 	ref_vs V;
@@ -301,6 +318,10 @@ static ref_vs merge_VS(SVS* src, SDeclaration* decl, u8& verts)
 			xr_sprintf(status, "failed slots dt_verts merge %u", verts);
 		else if (!D || !(D->destination & RC_dest_vertex))
 			xr_sprintf(status, "failed slots dt_draw destination %u", D ? u32(D->destination) : 0u);
+		else if (idx && verts != inst_slot(st, "dt_verts"))
+			xr_sprintf(status, "failed slots dt_verts source %u occ %u", inst_slot(st, "dt_verts"), verts);
+		else if (idx && (*idx = inst_slot(vt, "dt_idx")) >= 0xfe)
+			xr_sprintf(status, "failed slots dt_idx %u", *idx);
 		else
 		{
 			// The detail declaration layout must accept a VS without vertex inputs
@@ -312,7 +333,7 @@ static ref_vs merge_VS(SVS* src, SDeclaration* decl, u8& verts)
 		}
 	}
 	if (xr_strcmp(status, "ok"))
-		Msg("[DT-MERGE] %s %s", name, status);
+		Msg("%s %s %s", idx ? "[DT-OCC]" : "[DT-MERGE]", name, status);
 	return xr_strcmp(status, "ok") ? ref_vs() : V;
 }
 
@@ -321,6 +342,7 @@ void CDetailManager::merge_Load()
 	m_merge.clear();
 	m_merge_first.assign(objects.size(), u32(-1));
 	m_merge_base.assign(objects.size(), 0);
+	m_occ_frac.assign(objects.size(), 0.f);
 
 	// One vertex copy per object, merge_K index copies offset by the vertex count
 	xr_vector<vertMerge> verts;
@@ -344,6 +366,7 @@ void CDetailManager::merge_Load()
 			M.v = QC(D.vertices[v].v);
 			M.t = QC(vP.y / (D.bv_bb.max.y - D.bv_bb.min.y));
 			verts.push_back(M);
+			m_occ_frac[O] = _max(m_occ_frac[O], _abs(float(M.t)) / float(quant));
 		}
 		for (u32 copy = 0; copy < merge_K; copy++)
 			for (u32 i = 0; i < D.number_indices; i++)
@@ -616,6 +639,503 @@ bool CDetailManager::res_Upload(u32 need)
 	}
 	m_res_up_cap = cap;
 	return true;
+}
+
+bool CDetailManager::occ_On(LPCSTR& reason) const
+{
+	reason = nullptr;
+	if (!ps_r__detail_inst || m_inst_twins.empty())
+		reason = "inst";
+	else if (!ps_r__detail_merge || m_merge.empty())
+		reason = "merge";
+	else if (!ps_r__detail_rows)
+		reason = "rows";
+	else if (RImplementation.o.dx10_msaa)
+		reason = "msaa";
+	else if (m_inst_frame != Device.dwFrame)
+		reason = "frame";
+	return !reason;
+}
+
+bool CDetailManager::occ_Create(u32 need, u32 spans)
+{
+	if (need <= m_occ_cap && spans <= m_occ_span_cap)
+		return true;
+
+	const u32 ranges = u32(objects.size()) * 3;
+	const u32 pad = merge_K * ranges;
+	occ_Release();
+	LPCSTR reason = nullptr;
+	UINT support = 0;
+	if (!m_occ_pack && !occ_Load())
+		reason = "shader";
+	else if (u64(need) + pad > (1u << 24) || spans > (1u << 24))
+		reason = "capacity";
+	else if (FAILED(HW.pDevice->CheckFormatSupport(DXGI_FORMAT_R32_UINT, &support)) ||
+		!(support & D3D11_FORMAT_SUPPORT_TYPED_UNORDERED_ACCESS_VIEW))
+		reason = "format";
+
+	u32 cap = 0, span_cap = 0;
+	if (!reason)
+	{
+		cap = _min(need + need / 4, (1u << 24) - pad);
+		span_cap = _min(spans + spans / 4, 1u << 24);
+
+		D3D11_BUFFER_DESC desc = {};
+		desc.Usage = D3D11_USAGE_DYNAMIC;
+		desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+		desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+		D3D11_SHADER_RESOURCE_VIEW_DESC view = {};
+		view.Format = DXGI_FORMAT_R32G32B32A32_UINT;
+		view.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+		D3D11_UNORDERED_ACCESS_VIEW_DESC uav = {};
+		uav.Format = DXGI_FORMAT_R32_UINT;
+		uav.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+		desc.ByteWidth = span_cap * 48;
+		view.Buffer.NumElements = span_cap * 3;
+		bool ok = SUCCEEDED(HW.pDevice->CreateBuffer(&desc, nullptr, &m_occ_span_buf)) &&
+			SUCCEEDED(HW.pDevice->CreateShaderResourceView(m_occ_span_buf, &view, &m_occ_span_srv));
+		desc.ByteWidth = ranges * 32;
+		view.Buffer.NumElements = ranges * 2;
+		ok = ok && SUCCEEDED(HW.pDevice->CreateBuffer(&desc, nullptr, &m_occ_obj_buf)) &&
+			SUCCEEDED(HW.pDevice->CreateShaderResourceView(m_occ_obj_buf, &view, &m_occ_obj_srv));
+
+		desc.Usage = D3D11_USAGE_DEFAULT;
+		desc.CPUAccessFlags = 0;
+		desc.ByteWidth = 32;
+		view.Buffer.NumElements = 2;
+		ok = ok && SUCCEEDED(HW.pDevice->CreateBuffer(&desc, nullptr, &m_occ_head_buf)) &&
+			SUCCEEDED(HW.pDevice->CreateShaderResourceView(m_occ_head_buf, &view, &m_occ_head_srv));
+
+		// Span stamps then span out offsets
+		desc.BindFlags = D3D11_BIND_UNORDERED_ACCESS;
+		desc.ByteWidth = span_cap * 8;
+		uav.Buffer.NumElements = span_cap * 2;
+		ok = ok && SUCCEEDED(HW.pDevice->CreateBuffer(&desc, nullptr, &m_occ_vis_buf)) &&
+			SUCCEEDED(HW.pDevice->CreateUnorderedAccessView(m_occ_vis_buf, &uav, &m_occ_vis_uav));
+		desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
+		view.Format = DXGI_FORMAT_R32_UINT;
+		desc.ByteWidth = (cap + pad) * 4;
+		view.Buffer.NumElements = uav.Buffer.NumElements = cap + pad;
+		ok = ok && SUCCEEDED(HW.pDevice->CreateBuffer(&desc, nullptr, &m_occ_idx_buf)) &&
+			SUCCEEDED(HW.pDevice->CreateShaderResourceView(m_occ_idx_buf, &view, &m_occ_idx_srv)) &&
+			SUCCEEDED(HW.pDevice->CreateUnorderedAccessView(m_occ_idx_buf, &uav, &m_occ_idx_uav));
+		desc.BindFlags = D3D11_BIND_UNORDERED_ACCESS;
+		desc.MiscFlags = D3D11_RESOURCE_MISC_DRAWINDIRECT_ARGS;
+		desc.ByteWidth = ranges * 20;
+		uav.Buffer.NumElements = ranges * 5;
+		ok = ok && SUCCEEDED(HW.pDevice->CreateBuffer(&desc, nullptr, &m_occ_args_buf)) &&
+			SUCCEEDED(HW.pDevice->CreateUnorderedAccessView(m_occ_args_buf, &uav, &m_occ_args_uav));
+		if (!ok)
+			reason = "create";
+	}
+	if (reason)
+	{
+		if (!m_occ_fail_logged)
+			Msg("[DT-OCC] off reason=%s", reason);
+		m_occ_fail_logged = true;
+		occ_Release();
+		m_occ_off = true;
+		return false;
+	}
+
+	// Stamps start at zero, a value no frame writes
+	const UINT zero[4] = {};
+	HW.pContext->ClearUnorderedAccessViewUint(m_occ_vis_uav, zero);
+	m_occ_cap = cap;
+	m_occ_span_cap = span_cap;
+	return true;
+}
+
+bool CDetailManager::occ_Load()
+{
+	if (!occ_LoadBox())
+		return false;
+
+	string_path file;
+	LPCSTR kernels[2] = { "dt_occ_pack", "dt_occ_expand" };
+	ref_cs* dest[2] = { &m_occ_pack, &m_occ_expand };
+	for (u32 k = 0; k < 2; k++)
+	{
+		strconcat(sizeof(file), file, ::Render->getShaderPath(), kernels[k], ".cs");
+		if (!FS.exist("$game_shaders$", file))
+			return false;
+		*dest[k] = DEV->_CreateCS(kernels[k]);
+		if (!*dest[k])
+			return false;
+	}
+
+	xr_map<shared_str, std::pair<ref_vs, u8>> shaders;
+	SDeclaration* decl = hw_Geom->dcl._get();
+	u32 twins = 0;
+	for (auto& it : m_merge)
+	{
+		MergeTwin& M = it.second;
+		ShaderElement* E = M.E._get();
+		M.occ = ref_selement();
+		M.idx = 0xff;
+		if (!E)
+			continue;
+		ShaderElement T;
+		T.flags = E->flags;
+		u8 slot = 0xff;
+		for (u32 p = 0; p < E->passes.size(); p++)
+		{
+			SPass& P = *E->passes[p];
+			auto sh = shaders.find(P.vs->cName);
+			if (sh == shaders.end())
+			{
+				u8 verts = 0xff, idx = 0xff;
+				ref_vs V = merge_VS(P.vs._get(), decl, verts, "_occ", &idx);
+				sh = shaders.emplace(P.vs->cName, std::make_pair(V, idx)).first;
+			}
+			if (!sh->second.first || (p && sh->second.second != slot))
+				break;
+			slot = sh->second.second;
+
+			R_constant_table table;
+			table.merge(&P.ps->constants);
+			table.merge(&sh->second.first->constants);
+			if (P.gs)
+				table.merge(&P.gs->constants);
+			if (P.hs)
+				table.merge(&P.hs->constants);
+			if (P.ds)
+				table.merge(&P.ds->constants);
+
+			for (ref_constant& C : table.table)
+			{
+				R_constant* src = P.constants ? P.constants->get(C->name) : nullptr;
+				if (src)
+					C->handler = src->handler;
+			}
+
+			SPass proto;
+			proto.state = P.state;
+			proto.ps = P.ps;
+			proto.vs = sh->second.first;
+			proto.gs = P.gs;
+			proto.hs = P.hs;
+			proto.ds = P.ds;
+			proto.cs = P.cs;
+			proto.constants = DEV->_CreateConstantTable(table);
+			proto.T = P.T;
+			proto.C = P.C;
+			T.passes.push_back(DEV->_CreatePass(proto));
+		}
+		if (T.passes.empty() || T.passes.size() != E->passes.size())
+			continue;
+		M.occ = DEV->_CreateElement(T);
+		M.idx = slot;
+		twins++;
+	}
+	if (twins != m_merge.size())
+		Msg("[DT-OCC] elements %u of %u", twins, u32(m_merge.size()));
+	return twins != 0;
+}
+
+bool CDetailManager::occ_LoadBox()
+{
+	string_path file;
+	LPCSTR ext[2] = { ".vs", ".ps" };
+	for (u32 k = 0; k < 2; k++)
+	{
+		strconcat(sizeof(file), file, ::Render->getShaderPath(), "dt_occ_box", ext[k]);
+		if (!FS.exist("$game_shaders$", file))
+			return false;
+	}
+	if (!m_occ_box_sh)
+	{
+		CBlender_light_occq occq;
+		m_occ_box_sh.create(&occq, "r2\\occq");
+	}
+	SPass& P = *m_occ_box_sh->E[0]->passes[0];
+	ref_vs V = DEV->_CreateVS("dt_occ_box");
+	ref_ps S = DEV->_CreatePS("dt_occ_box");
+	if (!V || !S)
+		return false;
+
+	// The box shaders bind the span table at t12 and the stamps at u7
+	R_constant_table table;
+	table.merge(&S->constants);
+	table.merge(&V->constants);
+	for (ref_constant& C : table.table)
+	{
+		R_constant* src = P.constants ? P.constants->get(C->name) : nullptr;
+		if (src)
+			C->handler = src->handler;
+	}
+	R_constant* B = table.get("dt_occ_box");
+	R_constant* W = table.get("m_WVP");
+	R_constant* U = table.get("occ_vis");
+	if (inst_slot(table, "occ_spans") != 12 || !B || !(B->destination & RC_dest_vertex) || !W || !W->handler ||
+		!U || U->type != RC_dx11UAV || U->samp.index != 7 + CTexture::rstPixel)
+		return false;
+
+	SDeclaration* decl = hw_Geom->dcl._get();
+	ID3D11InputLayout* layout = nullptr;
+	ID3DBlob* sig = V->signature->signature;
+	if (FAILED(HW.pDevice->CreateInputLayout(&decl->dx10_dcl_code[0], decl->dx10_dcl_code.size() - 1, sig->GetBufferPointer(), sig->GetBufferSize(), &layout)))
+		return false;
+	_RELEASE(layout);
+
+	static const u16 faces[36] = { 0, 2, 6, 0, 6, 4, 1, 3, 7, 1, 7, 5, 0, 1, 5, 0, 5, 4, 2, 3, 7, 2, 7, 6, 0, 1, 3, 0, 3, 2, 4, 5, 7, 4, 7, 6 };
+	if (!m_occ_box_ib && FAILED(dx10BufferUtils::CreateIndexBuffer(&m_occ_box_ib, faces, sizeof(faces))))
+		return false;
+
+	if (!m_occ_box_ds)
+	{
+		D3D11_DEPTH_STENCIL_DESC ds = {};
+		ds.DepthEnable = TRUE;
+		ds.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
+		ds.DepthFunc = D3D11_COMPARISON_LESS_EQUAL;
+		ds.StencilEnable = FALSE;
+		ds.StencilReadMask = ds.StencilWriteMask = 0xff;
+		ds.FrontFace.StencilFailOp = ds.FrontFace.StencilDepthFailOp = ds.FrontFace.StencilPassOp = D3D11_STENCIL_OP_KEEP;
+		ds.FrontFace.StencilFunc = D3D11_COMPARISON_ALWAYS;
+		ds.BackFace = ds.FrontFace;
+
+		D3D11_BLEND_DESC bs = {};
+		for (u32 i = 0; i < 8; i++)
+		{
+			D3D11_RENDER_TARGET_BLEND_DESC& rt = bs.RenderTarget[i];
+			rt.SrcBlend = rt.SrcBlendAlpha = D3D11_BLEND_ONE;
+			rt.DestBlend = rt.DestBlendAlpha = D3D11_BLEND_ZERO;
+			rt.BlendOp = rt.BlendOpAlpha = D3D11_BLEND_OP_ADD;
+			rt.RenderTargetWriteMask = 0;
+		}
+		if (FAILED(HW.pDevice->CreateDepthStencilState(&ds, &m_occ_box_ds)) || FAILED(HW.pDevice->CreateBlendState(&bs, &m_occ_box_bs)))
+		{
+			_RELEASE(m_occ_box_ds);
+			_RELEASE(m_occ_box_bs);
+			return false;
+		}
+	}
+
+	SPass proto;
+	proto.state = P.state;
+	proto.ps = S;
+	proto.vs = V;
+	proto.gs = P.gs;
+	proto.hs = P.hs;
+	proto.ds = P.ds;
+	proto.cs = P.cs;
+	proto.constants = DEV->_CreateConstantTable(table);
+	proto.T = P.T;
+	proto.C = P.C;
+	ShaderElement T;
+	T.flags = m_occ_box_sh->E[0]->flags;
+	T.passes.push_back(DEV->_CreatePass(proto));
+	m_occ_box = DEV->_CreateElement(T);
+	return true;
+}
+
+static bool occ_span_box(Fbox& box, const CDetailManager::SlotPart& part, float a, float wave, const Fmatrix& vp, float half_px)
+{
+	box.min.lerp(part.occ_O.min, part.occ_B.min, a);
+	box.max.lerp(part.occ_O.max, part.occ_B.max, a);
+	const float d = wave * a * part.occ_H;
+	box.min.x -= d;
+	box.max.x += d;
+	box.min.z -= d;
+	box.max.z += d;
+
+	Fvector4 p, clip;
+	float far_w = 0.f;
+	for (u32 k = 0; k < 8; k++)
+	{
+		p.set(k & 1 ? box.max.x : box.min.x, k & 2 ? box.max.y : box.min.y, k & 4 ? box.max.z : box.min.z, 1.f);
+		vp.transform(clip, p);
+		far_w = _max(far_w, clip.w);
+	}
+	box.grow(far_w * half_px);
+	if (box.contains(Device.vCameraPosition))
+		return false;
+	for (u32 k = 0; k < 8; k++)
+	{
+		p.set(k & 1 ? box.max.x : box.min.x, k & 2 ? box.max.y : box.min.y, k & 4 ? box.max.z : box.min.z, 1.f);
+		vp.transform(clip, p);
+		if (clip.z <= 0.f)
+			return false;
+	}
+	return true;
+}
+
+void CDetailManager::occ_Build()
+{
+	const u32 N = u32(objects.size());
+	D3D11_MAPPED_SUBRESOURCE sub_span, sub_rec;
+	if (FAILED(HW.pContext->Map(m_occ_span_buf, 0, D3D11_MAP_WRITE_DISCARD, 0, &sub_span)))
+		return;
+	if (FAILED(HW.pContext->Map(m_occ_obj_buf, 0, D3D11_MAP_WRITE_DISCARD, 0, &sub_rec)))
+	{
+		HW.pContext->Unmap(m_occ_span_buf, 0);
+		return;
+	}
+	u32* table = (u32*)sub_span.pData;
+	u32* recs = (u32*)sub_rec.pData;
+	m_occ_rec.assign(N * 3, OccRec{ 0, 0, false });
+
+	// half_px is half a pixel per unit of clip w
+	const Fmatrix& vp = Device.mFullTransform;
+	const float half_px = 1.f / (Device.mProject._22 * float(RImplementation.Target->get_height()));
+	const float fade_start = 1.f, fade_range = dm_fade * dm_fade - fade_start;
+	const bool no_scale = !!psDeviceFlags2.test(rsNoScale);
+	const float amp[3] = { 0.f, _abs(swing_current.amp1), _abs(swing_current.amp2) };
+	m_occ_stamp = Device.dwFrame % 16777215u + 1;
+
+	u32 at = 0, tested = 0;
+	for (u32 v = 0; v < 3; v++)
+	{
+		const u32 lod = v ? 0 : 1;
+		m_occ_var[v][0] = at;
+		m_occ_test[v][0] = tested;
+		for (u32 O = 0; O < N; O++)
+		{
+			const u32 s0 = m_inst_first[v][O], s1 = m_inst_first[v][O + 1];
+			const InstTwin& twin = m_inst_twins[O * 2 + lod];
+			if (s0 == s1 || !twin.E || m_merge_first[O] == u32(-1))
+				continue;
+			auto it = m_merge.find(twin.E._get());
+			if (it == m_merge.end() || !it->second.occ)
+				continue;
+
+			bool faded = false;
+			for (u32 s = s0; s < s1 && !faded; s++)
+			{
+				const InstSpan& span = m_inst_spans[s];
+				float scale = 1.f;
+				if (fade_distance <= -1)
+					scale *= 1.0f - span.P.distance_to_xz_sqr(light_position) * 0.005f;
+				else if (span.distance > fade_distance)
+					scale *= 1.0f - abs(span.distance - fade_distance) * 0.005f;
+				faded = span.count && scale != 1.f;
+			}
+			if (faded)
+				continue;
+
+			// Flags 1 kept, 2 record start, 4 record end, as dt_occ_pack reads them
+			const u32 r = v * N + O;
+			OccRec& rec = m_occ_rec[r];
+			rec.out = m_inst_spans[s0].first + r * merge_K;
+			const float wave = amp[v] * m_occ_frac[O];
+			for (u32 s = s0; s < s1; s++, at++)
+			{
+				const InstSpan& span = m_inst_spans[s];
+				u32* e = table + at * 12;
+				e[0] = span.first;
+				e[1] = span.count;
+				e[2] = (s == s0 ? 2 : 0) | (s + 1 == s1 ? 4 : 0);
+				e[3] = r;
+				ZeroMemory(e + 4, 8 * sizeof(u32));
+				rec.inst += span.count;
+
+				const SlotPart* part = span.rows_id != u32(-1) ? &cache_pool[span.rows_id / (dm_obj_in_slot * 3)].G[span.rows_id % (dm_obj_in_slot * 3) / 3] : nullptr;
+				const float fade = span.distance < fade_start ? 0.f : (span.distance - fade_start) / fade_range;
+				Fbox box;
+				const bool test = span.count && span.distance >= _sqr(25.f) && part && part->occ_B.min.x <= part->occ_B.max.x &&
+					occ_span_box(box, *part, no_scale ? 1.f : 1.f - fade, wave, vp, half_px);
+				if (test)
+				{
+					// Box min then max, the w of entry k names the k-th tested span
+					CopyMemory(e + 4, &box.min, sizeof(Fvector));
+					CopyMemory(e + 8, &box.max, sizeof(Fvector));
+					table[tested * 12 + 7] = at;
+					tested++;
+				}
+				else
+					e[2] |= 1;
+			}
+			u32* d = recs + r * 8;
+			d[0] = rec.out;
+			d[1] = merge_K * objects[O]->number_indices;
+			d[2] = m_merge_first[O];
+			d[3] = 0;
+			d[4] = at - (s1 - s0);
+			d[5] = at;
+			d[6] = d[7] = 0;
+			rec.on = true;
+		}
+		m_occ_var[v][1] = at;
+		m_occ_test[v][1] = tested;
+	}
+	HW.pContext->Unmap(m_occ_obj_buf, 0);
+	HW.pContext->Unmap(m_occ_span_buf, 0);
+	m_occ_frame = Device.dwFrame;
+}
+
+// The kernels leave every slot they bound empty
+void CDetailManager::occ_Dispatch(u32 a, u32 b)
+{
+	if (a == b)
+		return;
+
+	// The index list leaves its vertex slot before the kernels write it
+	ID3D11ShaderResourceView* none_srv = nullptr;
+	if (m_inst_bound[3] >= 0)
+	{
+		HW.pContext->VSSetShaderResources(m_inst_bound[3], 1, &none_srv);
+		m_inst_bound[3] = -1;
+	}
+
+	const u32 n = b - a, gx = _min(n, 65535u);
+	const u32 head[8] = { a, b, gx, m_occ_span_cap, m_occ_stamp, 0, 0, 0 };
+	HW.pContext->UpdateSubresource(m_occ_head_buf, 0, nullptr, head, 0, 0);
+	ID3D11UnorderedAccessView* uav[3] = { m_occ_vis_uav, m_occ_idx_uav, m_occ_args_uav };
+	ID3D11UnorderedAccessView* none_uav[3] = {};
+	SRVSManager.SetCSResource(0, m_occ_span_srv);
+	SRVSManager.SetCSResource(1, m_occ_obj_srv);
+	SRVSManager.SetCSResource(2, m_occ_head_srv);
+	HW.pContext->CSSetUnorderedAccessViews(0, 3, uav, nullptr);
+	RCache.set_CS(m_occ_pack);
+	RCache.Compute(1, 1, 1);
+	RCache.set_CS(m_occ_expand);
+	RCache.Compute(gx, (n + gx - 1) / gx, 1);
+	HW.pContext->CSSetUnorderedAccessViews(0, 3, none_uav, nullptr);
+	SRVSManager.SetCSResource(0, nullptr);
+	SRVSManager.SetCSResource(1, nullptr);
+	SRVSManager.SetCSResource(2, nullptr);
+	SRVSManager.Apply();
+}
+
+void CDetailManager::occ_Test(u32 var_id)
+{
+	static shared_str strBox("dt_occ_box");
+	const u32 a = m_occ_test[var_id][0], n = m_occ_test[var_id][1] - a;
+	if (!n)
+		return;
+
+	RCache.set_Element(m_occ_box._get());
+	RCache.set_CullMode(CULL_NONE);
+	StateManager.SetDepthStencilState(m_occ_box_ds);
+	StateManager.SetBlendState(m_occ_box_bs);
+	RCache.set_c(strBox, float(a), float(m_occ_stamp), 0.f, 0.f);
+	RCache.set_Indices(m_occ_box_ib);
+	HW.pContext->VSSetShaderResources(12, 1, &m_occ_span_srv);
+	RCache.RenderInstancedUAV(D3DPT_TRIANGLELIST, 0, 8, 0, 12, n, 7, m_occ_vis_uav);
+	ID3D11ShaderResourceView* none = nullptr;
+	HW.pContext->VSSetShaderResources(12, 1, &none);
+	RCache.set_Indices(hw_IB);
+	RCache.set_CullMode(CULL_NONE);
+}
+
+void CDetailManager::occ_Release()
+{
+	_RELEASE(m_occ_span_srv);
+	_RELEASE(m_occ_span_buf);
+	_RELEASE(m_occ_obj_srv);
+	_RELEASE(m_occ_obj_buf);
+	_RELEASE(m_occ_vis_uav);
+	_RELEASE(m_occ_vis_buf);
+	_RELEASE(m_occ_args_uav);
+	_RELEASE(m_occ_args_buf);
+	_RELEASE(m_occ_idx_uav);
+	_RELEASE(m_occ_idx_srv);
+	_RELEASE(m_occ_idx_buf);
+	_RELEASE(m_occ_head_srv);
+	_RELEASE(m_occ_head_buf);
+	m_occ_cap = m_occ_span_cap = 0;
+	m_occ_frame = u32(-1);
 }
 
 void CDetailManager::inst_Build()
@@ -919,7 +1439,7 @@ instanced:
 	m_inst_frame = frame;
 }
 
-void CDetailManager::inst_Draw(CDetail& Object, u32 O, u32 var_id, const InstTwin& twin, const MergeTwin* merge, light* L, bool cull, float cull_grow, bool cull_frustum, u32 vOffset, u32 iOffset)
+void CDetailManager::inst_Draw(CDetail& Object, u32 O, u32 var_id, const InstTwin& twin, const MergeTwin* merge, const OccRec* occ, light* L, bool cull, float cull_grow, bool cull_frustum, u32 vOffset, u32 iOffset)
 {
 	static shared_str strDraw("dt_draw");
 	if (m_inst_bound[0] != s8(twin.rows))
@@ -941,6 +1461,21 @@ void CDetailManager::inst_Draw(CDetail& Object, u32 O, u32 var_id, const InstTwi
 		RCache.set_Indices(m_merge_ib);
 
 	const bool smap = RImplementation.phase == CRender::PHASE_SMAP;
+
+	if (occ)
+	{
+		if (m_inst_bound[3] != s8(merge->idx))
+		{
+			HW.pContext->VSSetShaderResources(merge->idx, 1, &m_occ_idx_srv);
+			m_inst_bound[3] = s8(merge->idx);
+		}
+		RCache.set_c(strDraw, float(occ->out), 1.f, float(m_merge_base[O]), float(Object.number_vertices));
+		RCache.RenderInstancedIndirect(D3DPT_TRIANGLELIST, m_occ_args_buf, (var_id * u32(objects.size()) + O) * 20);
+		Device.Statistic->RenderDUMP_DT_Count += occ->inst;
+		RCache.stat.r.s_details.add(occ->inst * Object.number_vertices);
+		RCache.set_Indices(hw_IB);
+		return;
+	}
 	const u32 s0 = m_inst_first[var_id][O], s1 = m_inst_first[var_id][O + 1];
 	const bool cull_obj = cull && m_vis_bounds[var_id][O].size() == s1 - s0;
 
@@ -1059,8 +1594,28 @@ void CDetailManager::hw_Render(light* L)
 	if (m_res_cap && m_res_frame != Device.dwFrame && !res_On())
 		res_Release();
 
+	if (m_occ_cap && !ps_r__detail_occ)
+		occ_Release();
+
 	if (ps_r__detail_inst && RImplementation.phase == CRender::PHASE_NORMAL && m_inst_frame != Device.dwFrame && !m_inst_twins.empty())
 		inst_Build();
+
+	if (ps_r__detail_occ && !m_occ_off && RImplementation.phase == CRender::PHASE_NORMAL)
+	{
+		LPCSTR reason = nullptr;
+		if (occ_On(reason))
+		{
+			if (m_occ_frame != Device.dwFrame && occ_Create(m_inst_total, u32(m_inst_spans.size())))
+				occ_Build();
+		}
+		else if (xr_strcmp(reason, "frame"))
+		{
+			if (!m_occ_logged)
+				Msg("[DT-OCC] off reason=%s", reason);
+			m_occ_logged = true;
+			occ_Release();
+		}
+	}
 #endif
 
 	Fvector4 dir1, dir2;
@@ -1105,7 +1660,7 @@ void CDetailManager::hw_Render(light* L)
 #ifdef USE_DX11
 	if (m_inst_frame == Device.dwFrame)
 	{
-		for (u32 k = 0; k < 3; k++)
+		for (u32 k = 0; k < 4; k++)
 		{
 			if (m_inst_bound[k] < 0)
 				continue;
@@ -1214,6 +1769,13 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 
 #ifdef USE_DX11
 	const bool cb_direct_on = rows_on;
+
+	const bool occ_on = inst_on && m_occ_frame == Device.dwFrame && RImplementation.phase == CRender::PHASE_NORMAL;
+	if (occ_on && sector_visible)
+	{
+		occ_Test(var_id);
+		occ_Dispatch(m_occ_var[var_id][0], m_occ_var[var_id][1]);
+	}
 #endif
 
 	// Iterate
@@ -1239,6 +1801,10 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 					element = it->second.E._get();
 				}
 			}
+
+			const OccRec* occ = occ_on && merge && m_occ_rec[var_id * objects.size() + O].on ? &m_occ_rec[var_id * objects.size() + O] : nullptr;
+			if (occ)
+				element = merge->occ._get();
 #endif
 			for (u32 iPass = 0; iPass < element->passes.size(); ++iPass)
 			{
@@ -1304,7 +1870,7 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 				if (twin)
 				{
 					if (sector_visible)
-						inst_Draw(Object, O, var_id, *twin, merge, L, cull, cull_grow, cull_frustum, vOffset, iOffset);
+						inst_Draw(Object, O, var_id, *twin, merge, occ, L, cull, cull_grow, cull_frustum, vOffset, iOffset);
 					continue;
 				}
 #endif

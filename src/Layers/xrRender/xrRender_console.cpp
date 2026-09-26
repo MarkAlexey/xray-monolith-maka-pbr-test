@@ -135,6 +135,7 @@ int ps_r__detail_shadow_cull = 1;
 int ps_r__detail_inst = 1;
 int ps_r__detail_inst_res = 1;
 int ps_r__detail_merge = 1;
+int ps_r__detail_occ = 1;
 
 float ps_r__Tree_w_rot = 10.0f;
 float ps_r__Tree_w_speed = 1.00f;
@@ -1329,6 +1330,7 @@ void xrRender_initconsole()
 	CMD4(CCC_Integer, "r__detail_inst", &ps_r__detail_inst, 0, 1);
 	CMD4(CCC_Integer, "r__detail_inst_res", &ps_r__detail_inst_res, 0, 1);
 	CMD4(CCC_Integer, "r__detail_merge", &ps_r__detail_merge, 0, 1);
+	CMD4(CCC_Integer, "r__detail_occ", &ps_r__detail_occ, 0, 1);
 
 #ifdef DEBUG
 	CMD4(CCC_Float,		"r__detail_l_ambient",	&ps_r__Detail_l_ambient,	.5f,	.95f	);

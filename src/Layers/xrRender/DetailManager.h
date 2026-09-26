@@ -98,6 +98,10 @@ public:
 		u32 id; // ID модельки
 		SlotItemVec items; // список кустиков
 		SlotItemVec r_items[3]; // список кустиков for render
+
+		// Item box union, item origin box, largest item height off its origin
+		Fbox occ_B, occ_O;
+		float occ_H;
 	};
 
 	enum SlotType
@@ -223,7 +227,7 @@ public:
 	xr_vector<InstTwin> m_inst_twins;
 	bool m_inst_ex = false;
 
-	struct MergeTwin { ref_selement E; u8 verts = 0xff; };
+	struct MergeTwin { ref_selement E; u8 verts = 0xff; ref_selement occ; u8 idx = 0xff; };
 	xr_map<ShaderElement*, MergeTwin> m_merge;
 	xr_vector<u32> m_merge_first;
 	xr_vector<u32> m_merge_base;
@@ -231,6 +235,8 @@ public:
 	ID3D11ShaderResourceView* m_merge_srv = nullptr;
 	ID3D11Buffer* m_merge_ib = nullptr;
 	void merge_Load();
+
+	xr_vector<float> m_occ_frac;
 
 	// List j of var v starts at m_inst_first[v][j]
 	struct InstSpan { SlotItemVec* items; u32 first, count, rows_id; Fvector P; float distance; };
@@ -245,7 +251,7 @@ public:
 	ID3D11ShaderResourceView* m_inst_ex_srv = nullptr;
 	u32 m_inst_cap = 0;
 	u32 m_inst_fail = 0;
-	s8 m_inst_bound[3] = { -1, -1, -1 };
+	s8 m_inst_bound[4] = { -1, -1, -1, -1 };
 
 	struct ResList { u32 first, pack, build; };
 	struct ResSpan { u32 src, kind; };
@@ -271,11 +277,53 @@ public:
 	u32 m_res_need_at = 0;
 	bool res_Upload(u32 need);
 
+	ID3D11Buffer* m_occ_span_buf = nullptr;
+	ID3D11ShaderResourceView* m_occ_span_srv = nullptr;
+	ID3D11Buffer* m_occ_obj_buf = nullptr;
+	ID3D11ShaderResourceView* m_occ_obj_srv = nullptr;
+	ID3D11Buffer* m_occ_vis_buf = nullptr;
+	ID3D11UnorderedAccessView* m_occ_vis_uav = nullptr;
+	ID3D11Buffer* m_occ_args_buf = nullptr;
+	ID3D11UnorderedAccessView* m_occ_args_uav = nullptr;
+	ID3D11Buffer* m_occ_idx_buf = nullptr;
+	ID3D11ShaderResourceView* m_occ_idx_srv = nullptr;
+	ID3D11UnorderedAccessView* m_occ_idx_uav = nullptr;
+	ID3D11Buffer* m_occ_head_buf = nullptr;
+	ID3D11ShaderResourceView* m_occ_head_srv = nullptr;
+	u32 m_occ_cap = 0;
+	u32 m_occ_span_cap = 0;
+	bool m_occ_off = false;
+	bool m_occ_logged = false;
+	bool m_occ_fail_logged = false;
+	bool occ_On(LPCSTR& reason) const;
+	bool occ_Create(u32 need, u32 spans);
+	void occ_Release();
+
+	struct OccRec { u32 out, inst; bool on; };
+	ref_cs m_occ_pack;
+	ref_cs m_occ_expand;
+	xr_vector<OccRec> m_occ_rec;
+	u32 m_occ_var[3][2] = {};
+	u32 m_occ_frame = u32(-1);
+	bool occ_Load();
+	void occ_Build();
+	void occ_Dispatch(u32 first, u32 end);
+
+	ref_shader m_occ_box_sh;
+	ref_selement m_occ_box;
+	ID3D11DepthStencilState* m_occ_box_ds = nullptr;
+	ID3D11BlendState* m_occ_box_bs = nullptr;
+	ID3D11Buffer* m_occ_box_ib = nullptr;
+	u32 m_occ_test[3][2] = {};
+	u32 m_occ_stamp = 0;
+	bool occ_LoadBox();
+	void occ_Test(u32 var_id);
+
 	void inst_Load();
 	void inst_Unload();
 	bool inst_Grow(u32 need);
 	void inst_Build();
-	void inst_Draw(CDetail& Object, u32 O, u32 var_id, const InstTwin& twin, const MergeTwin* merge, light* L, bool cull, float cull_grow, bool cull_frustum, u32 vOffset, u32 iOffset);
+	void inst_Draw(CDetail& Object, u32 O, u32 var_id, const InstTwin& twin, const MergeTwin* merge, const OccRec* occ, light* L, bool cull, float cull_grow, bool cull_frustum, u32 vOffset, u32 iOffset);
 #endif
 
 #ifndef _EDITOR

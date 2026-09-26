@@ -135,6 +135,12 @@ void CDetailManager::cache_Decompress(Slot* S)
 	Bounds.invalidate();
 	Fbox Origins;
 	Origins.invalidate();
+	for (u32 i = 0; i < dm_obj_in_slot; i++)
+	{
+		D.G[i].occ_B.invalidate();
+		D.G[i].occ_O.invalidate();
+		D.G[i].occ_H = 0;
+	}
 
 	// Decompressing itself
 	for (u32 z = 0; z <= d_size; z++)
@@ -302,6 +308,10 @@ RDEVICE.Statistic->TEST0.End		();
 			ItemBB.xform(Dobj->bv_bb, mXform);
 			Bounds.merge(ItemBB);
 			Origins.modify(Item_P);
+			SlotPart& part = D.G[index];
+			part.occ_B.merge(ItemBB);
+			part.occ_O.modify(Item_P);
+			part.occ_H = _max(part.occ_H, _max(_abs(ItemBB.max.y - Item_P.y), _abs(ItemBB.min.y - Item_P.y)));
 
 #ifndef _EDITOR
 #ifdef		DEBUG
