@@ -16,6 +16,8 @@ groupshared uint2	occ_sum[1024];
 bool	occ_keep	(uint4 sp, uint s, uint2 mode)
 {
 	bool	seen	= occ_vis[s] == mode.x;
+	if (mode.y == 2)
+		return	(sp.z & OCC_KEEP) == 0 && seen;
 	return	(sp.z & OCC_KEEP) != 0 || seen;
 }
 

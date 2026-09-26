@@ -974,7 +974,7 @@ void CDetailManager::occ_Build()
 	}
 	u32* table = (u32*)sub_span.pData;
 	u32* recs = (u32*)sub_rec.pData;
-	m_occ_rec.assign(N * 3, OccRec{ 0, 0, false });
+	m_occ_rec.assign(N * 3, OccRec{ 0, 0, 0, false });
 
 	// half_px is half a pixel per unit of clip w
 	const Fmatrix& vp = Device.mFullTransform;
@@ -983,6 +983,8 @@ void CDetailManager::occ_Build()
 	const bool no_scale = !!psDeviceFlags2.test(rsNoScale);
 	const float amp[3] = { 0.f, _abs(swing_current.amp1), _abs(swing_current.amp2) };
 	m_occ_stamp = Device.dwFrame % 16777215u + 1;
+
+	m_occ_first_on = ps_r__detail_occ_first != 0;
 
 	u32 at = 0, tested = 0;
 	for (u32 v = 0; v < 3; v++)
@@ -1044,7 +1046,10 @@ void CDetailManager::occ_Build()
 					tested++;
 				}
 				else
+				{
 					e[2] |= 1;
+					rec.forced += span.count;
+				}
 			}
 			u32* d = recs + r * 8;
 			d[0] = rec.out;
@@ -1065,7 +1070,7 @@ void CDetailManager::occ_Build()
 }
 
 // The kernels leave every slot they bound empty
-void CDetailManager::occ_Dispatch(u32 a, u32 b)
+void CDetailManager::occ_Dispatch(u32 a, u32 b, u32 mode, u32 stamp)
 {
 	if (a == b)
 		return;
@@ -1079,7 +1084,7 @@ void CDetailManager::occ_Dispatch(u32 a, u32 b)
 	}
 
 	const u32 n = b - a, gx = _min(n, 65535u);
-	const u32 head[8] = { a, b, gx, m_occ_span_cap, m_occ_stamp, 0, 0, 0 };
+	const u32 head[8] = { a, b, gx, m_occ_span_cap, stamp, mode, 0, 0 };
 	HW.pContext->UpdateSubresource(m_occ_head_buf, 0, nullptr, head, 0, 0);
 	ID3D11UnorderedAccessView* uav[3] = { m_occ_vis_uav, m_occ_idx_uav, m_occ_args_uav };
 	ID3D11UnorderedAccessView* none_uav[3] = {};
@@ -1471,6 +1476,12 @@ void CDetailManager::inst_Draw(CDetail& Object, u32 O, u32 var_id, const InstTwi
 		}
 		RCache.set_c(strDraw, float(occ->out), 1.f, float(m_merge_base[O]), float(Object.number_vertices));
 		RCache.RenderInstancedIndirect(D3DPT_TRIANGLELIST, m_occ_args_buf, (var_id * u32(objects.size()) + O) * 20);
+
+		if (m_occ_first_group)
+		{
+			RCache.set_Indices(hw_IB);
+			return;
+		}
 		Device.Statistic->RenderDUMP_DT_Count += occ->inst;
 		RCache.stat.r.s_details.add(occ->inst * Object.number_vertices);
 		RCache.set_Indices(hw_IB);
@@ -1630,6 +1641,33 @@ void CDetailManager::hw_Render(light* L)
 	Fvector4 wave, prev_wave;
 	Fvector4 consts;
 
+#ifdef USE_DX11
+	m_occ_first = m_occ_frame == Device.dwFrame && m_occ_first_on && m_occ_var[2][1] && RImplementation.phase == CRender::PHASE_NORMAL;
+	if (m_occ_first)
+	{
+		occ_Dispatch(0, m_occ_var[2][1], 0, u32(-1));
+
+		// Same constants as the main draw below, the still wave divided twice
+		Fvector4 wave_consts, still_consts, wave1, prev_wave1, wave2, prev_wave2, wave0, prev_wave0;
+		wave_consts.set(scale, scale, ps_r__Detail_l_aniso, ps_r__Detail_l_ambient);
+		still_consts.set(scale, scale, scale, 1.f);
+		wave1.set(1.f / 5.f, 1.f / 7.f, 1.f / 3.f, m_time_pos);
+		prev_wave1.set(1.f / 5.f, 1.f / 7.f, 1.f / 3.f, prev_time);
+		wave2.set(1.f / 3.f, 1.f / 7.f, 1.f / 5.f, m_time_pos);
+		prev_wave2.set(1.f / 3.f, 1.f / 7.f, 1.f / 5.f, prev_time);
+		wave2.div(PI_MUL_2);
+		prev_wave2.div(PI_MUL_2);
+		wave0.set(wave2);
+		prev_wave0.set(prev_wave2);
+
+		m_occ_first_group = true;
+		hw_Render_dump(wave_consts, wave1.div(PI_MUL_2), dir1, prev_wave1.div(PI_MUL_2), prev_dir1, 1, 0, L);
+		hw_Render_dump(wave_consts, wave2, dir2, prev_wave2, prev_dir2, 2, 0, L);
+		hw_Render_dump(still_consts, wave0.div(PI_MUL_2), dir2, prev_wave0.div(PI_MUL_2), prev_dir2, 0, 1, L);
+		m_occ_first_group = false;
+	}
+#endif
+
 	// Wave0
 	consts.set(scale, scale, ps_r__Detail_l_aniso, ps_r__Detail_l_ambient);
 	//wave.set				(1.f/5.f,		1.f/7.f,	1.f/3.f,	Device.fTimeGlobal*swing_current.speed);
@@ -1740,7 +1778,7 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 	c_hemi.set(desc.hemi_color.x, desc.hemi_color.y, desc.hemi_color.z);
 
 	const bool rows_on = ps_r__detail_rows != 0;
-	if (rows_on && !(Device.fTimeDelta >= 0))
+	if (rows_on && !(Device.fTimeDelta >= 0) && !m_occ_first_group)
 		m_rows_epoch++;
 
 	const bool use_rows = rows_on && m_vis_rows_frame == Device.dwFrame && m_vis_rows[var_id].size() == list.size() && Device.fTimeDelta >= 0;
@@ -1771,10 +1809,10 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 	const bool cb_direct_on = rows_on;
 
 	const bool occ_on = inst_on && m_occ_frame == Device.dwFrame && RImplementation.phase == CRender::PHASE_NORMAL;
-	if (occ_on && sector_visible)
+	if (occ_on && sector_visible && !m_occ_first_group)
 	{
 		occ_Test(var_id);
-		occ_Dispatch(m_occ_var[var_id][0], m_occ_var[var_id][1]);
+		occ_Dispatch(m_occ_var[var_id][0], m_occ_var[var_id][1], m_occ_first ? 2 : 0, m_occ_stamp);
 	}
 #endif
 
@@ -1783,7 +1821,7 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 	{
 		CDetail& Object = *objects[O];
 		xr_vector<SlotItemVec*>& vis = list[O];
-		if (!vis.empty())
+		if (!vis.empty() || m_occ_first_group)
 		{
 			ShaderElement* element = Object.shader->E[lod_id]._get();
 #ifdef USE_DX11
@@ -1805,6 +1843,13 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 			const OccRec* occ = occ_on && merge && m_occ_rec[var_id * objects.size() + O].on ? &m_occ_rec[var_id * objects.size() + O] : nullptr;
 			if (occ)
 				element = merge->occ._get();
+
+			// The first group draws occ records only, their lists may already be cleared
+			if (m_occ_first_group && !occ)
+				continue;
+
+			if (m_occ_first_group && !occ->forced)
+				continue;
 #endif
 			for (u32 iPass = 0; iPass < element->passes.size(); ++iPass)
 			{
@@ -2107,7 +2152,7 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 			}
 			// Clean up
 			// KD: we must not clear vis on r2 since we want details shadows
-			if (ps_ssfx_grass_shadows.x <= 0)
+			if (ps_ssfx_grass_shadows.x <= 0 && !m_occ_first_group)
 			{
 				if (!psDeviceFlags2.test(rsGrassShadow) || RImplementation.PHASE_NORMAL == RImplementation.phase) // phase normal without shadows
 					vis.clear_not_free();

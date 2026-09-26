@@ -192,6 +192,10 @@ public:
 	u32 m_vis_bounds_frame = u32(-1);
 	CFrustum* m_sun_cull = nullptr;
 
+	bool m_occ_first_group = false;
+
+	bool m_occ_first = false;
+
 	// List j of a slot is part * 3 + vis id
 	struct SlotRows
 	{
@@ -299,7 +303,7 @@ public:
 	bool occ_Create(u32 need, u32 spans);
 	void occ_Release();
 
-	struct OccRec { u32 out, inst; bool on; };
+	struct OccRec { u32 out, inst, forced; bool on; };
 	ref_cs m_occ_pack;
 	ref_cs m_occ_expand;
 	xr_vector<OccRec> m_occ_rec;
@@ -307,7 +311,7 @@ public:
 	u32 m_occ_frame = u32(-1);
 	bool occ_Load();
 	void occ_Build();
-	void occ_Dispatch(u32 first, u32 end);
+	void occ_Dispatch(u32 first, u32 end, u32 mode, u32 stamp);
 
 	ref_shader m_occ_box_sh;
 	ref_selement m_occ_box;
@@ -317,6 +321,8 @@ public:
 	u32 m_occ_test[3][2] = {};
 	u32 m_occ_stamp = 0;
 	bool occ_LoadBox();
+
+	bool m_occ_first_on = false;
 	void occ_Test(u32 var_id);
 
 	void inst_Load();
