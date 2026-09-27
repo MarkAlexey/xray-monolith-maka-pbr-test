@@ -45,6 +45,13 @@ v2p_flat 	main (v_detail v)
 	float4  c0 	= array[i+3];
 #endif
 
+#ifdef	DT_THIN
+	float	thin	= dt_thin_scale(float3(m0.w, m1.w, m2.w));
+	m0.xyz	*= thin;
+	m1.xyz	*= thin;
+	m2.xyz	*= thin;
+#endif
+
 	// Transform pos to world coords
 	float4 	pos;
  	pos.x 		= dot	(m0, v.pos);
@@ -70,6 +77,10 @@ v2p_flat 	main (v_detail v)
 	// Final out
 	float4	Pp 	= mul		(m_WVP,	pos				);
 	O.hpos 		= Pp;
+#ifdef	DT_THIN
+	if (thin <= 0)
+		O.hpos	= float4(0, 0, -1, 1);
+#endif
 	float3 orig		= mul		(m_WV,  normalize(norm)	);
 
 	O.N = lerp(orig, mul((float3x3)m_WV,  v.pos), 0.25);

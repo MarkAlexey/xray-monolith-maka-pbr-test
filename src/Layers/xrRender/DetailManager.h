@@ -231,8 +231,11 @@ public:
 	xr_vector<InstTwin> m_inst_twins;
 	bool m_inst_ex = false;
 
-	struct MergeTwin { ref_selement E; u8 verts = 0xff; ref_selement occ; u8 idx = 0xff; };
+	struct MergeTwin { ref_selement E, thin; u8 verts = 0xff; ref_selement occ, occ_thin; u8 idx = 0xff; };
 	xr_map<ShaderElement*, MergeTwin> m_merge;
+
+	bool m_thin_on = false;
+	Fvector4 m_thin_c[2] = {};
 	xr_vector<u32> m_merge_first;
 	xr_vector<u32> m_merge_base;
 	ID3D11Buffer* m_merge_vb = nullptr;

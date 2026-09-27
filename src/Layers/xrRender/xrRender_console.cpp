@@ -137,6 +137,10 @@ int ps_r__detail_inst_res = 1;
 int ps_r__detail_merge = 1;
 int ps_r__detail_occ = 1;
 int ps_r__detail_occ_first = 1;
+int ps_r__detail_thin = 0;
+float ps_r__detail_thin_start = 50.f;
+float ps_r__detail_thin_keep = 0.25f;
+float ps_r__detail_thin_band = 4.f;
 
 float ps_r__Tree_w_rot = 10.0f;
 float ps_r__Tree_w_speed = 1.00f;
@@ -1333,6 +1337,10 @@ void xrRender_initconsole()
 	CMD4(CCC_Integer, "r__detail_merge", &ps_r__detail_merge, 0, 1);
 	CMD4(CCC_Integer, "r__detail_occ", &ps_r__detail_occ, 0, 1);
 	CMD4(CCC_Integer, "r__detail_occ_first", &ps_r__detail_occ_first, 0, 1);
+	CMD4(CCC_Integer, "r__detail_thin", &ps_r__detail_thin, 0, 1);
+	CMD4(CCC_Float, "r__detail_thin_start", &ps_r__detail_thin_start, 1.f, 250.f);
+	CMD4(CCC_Float, "r__detail_thin_keep", &ps_r__detail_thin_keep, 0.f, 1.f);
+	CMD4(CCC_Float, "r__detail_thin_band", &ps_r__detail_thin_band, 1.f, 250.f);
 
 #ifdef DEBUG
 	CMD4(CCC_Float,		"r__detail_l_ambient",	&ps_r__Detail_l_ambient,	.5f,	.95f	);

@@ -82,6 +82,10 @@ extern ECORE_API int ps_r__detail_inst_res;
 extern ECORE_API int ps_r__detail_merge;
 extern ECORE_API int ps_r__detail_occ;
 extern ECORE_API int ps_r__detail_occ_first;
+extern ECORE_API int ps_r__detail_thin;
+extern ECORE_API float ps_r__detail_thin_start;
+extern ECORE_API float ps_r__detail_thin_keep;
+extern ECORE_API float ps_r__detail_thin_band;
 
 extern ECORE_API float ps_r__Tree_w_rot;
 extern ECORE_API float ps_r__Tree_w_speed;

@@ -337,6 +337,74 @@ static ref_vs merge_VS(SVS* src, SDeclaration* decl, u8& verts, LPCSTR suffix = 
 	return xr_strcmp(status, "ok") ? ref_vs() : V;
 }
 
+// The _thin VS must bind the source slots plus dt_thin
+static ref_vs thin_VS(SVS* src, SDeclaration* decl)
+{
+	string_path name, file;
+	strconcat(sizeof(name), name, src->cName.c_str(), "_thin");
+
+	string128 status = "ok";
+	ref_vs V;
+	strconcat(sizeof(file), file, ::Render->getShaderPath(), name, ".vs");
+	if (!FS.exist("$game_shaders$", file))
+		xr_strcpy(status, "failed missing");
+	else
+	{
+		V = DEV->_CreateVS(name);
+		R_constant_table st, vt;
+		st.merge(&src->constants);
+		vt.merge(&V->constants);
+		LPCSTR slots[] = { "dt_rows", "dt_ex", "dt_verts", "dt_idx" };
+		LPCSTR bad = nullptr;
+		for (LPCSTR s : slots)
+		{
+			if (!bad && inst_slot(vt, s) != inst_slot(st, s))
+				bad = s;
+		}
+		R_constant* D = vt.get("dt_draw");
+		R_constant* T = vt.get("dt_thin");
+		if (bad)
+			xr_sprintf(status, "failed slots %s source %u thin %u", bad, inst_slot(st, bad), inst_slot(vt, bad));
+		else if (!D || !(D->destination & RC_dest_vertex))
+			xr_sprintf(status, "failed slots dt_draw destination %u", D ? u32(D->destination) : 0u);
+		else if (!T || !(T->destination & RC_dest_vertex))
+			xr_sprintf(status, "failed slots dt_thin destination %u", T ? u32(T->destination) : 0u);
+		else
+		{
+			ID3D11InputLayout* layout = nullptr;
+			ID3DBlob* sig = V->signature->signature;
+			if (FAILED(HW.pDevice->CreateInputLayout(&decl->dx10_dcl_code[0], decl->dx10_dcl_code.size() - 1, sig->GetBufferPointer(), sig->GetBufferSize(), &layout)))
+				xr_strcpy(status, "failed layout");
+			_RELEASE(layout);
+		}
+	}
+	if (xr_strcmp(status, "ok"))
+		Msg("[DT-THIN] %s %s", name, status);
+	return xr_strcmp(status, "ok") ? ref_vs() : V;
+}
+
+static ref_pass thin_Pass(SPass& P, SPass proto, const ref_vs& V)
+{
+	R_constant_table table;
+	table.merge(&P.ps->constants);
+	table.merge(&V->constants);
+	if (P.gs)
+		table.merge(&P.gs->constants);
+	if (P.hs)
+		table.merge(&P.hs->constants);
+	if (P.ds)
+		table.merge(&P.ds->constants);
+	for (ref_constant& C : table.table)
+	{
+		R_constant* src = P.constants ? P.constants->get(C->name) : nullptr;
+		if (src)
+			C->handler = src->handler;
+	}
+	proto.vs = V;
+	proto.constants = DEV->_CreateConstantTable(table);
+	return DEV->_CreatePass(proto);
+}
+
 void CDetailManager::merge_Load()
 {
 	m_merge.clear();
@@ -403,13 +471,16 @@ void CDetailManager::merge_Load()
 	}
 
 	xr_map<shared_str, std::pair<ref_vs, u8>> shaders;
+	xr_map<shared_str, ref_vs> thin_shaders;
 	SDeclaration* decl = hw_Geom->dcl._get();
 	auto add = [&](ShaderElement* E)
 	{
 		if (!E || m_merge.count(E))
 			return;
-		ShaderElement T;
+		ShaderElement T, TT;
 		T.flags = E->flags;
+		TT.flags = E->flags;
+		bool thin = true;
 		u8 slot = 0xff;
 		for (u32 p = 0; p < E->passes.size(); p++)
 		{
@@ -454,13 +525,27 @@ void CDetailManager::merge_Load()
 			proto.T = P.T;
 			proto.C = P.C;
 			T.passes.push_back(DEV->_CreatePass(proto));
+
+			auto th = thin_shaders.find(proto.vs->cName);
+			if (th == thin_shaders.end())
+				th = thin_shaders.emplace(proto.vs->cName, thin_VS(proto.vs._get(), decl)).first;
+			thin = thin && th->second;
+			if (thin)
+				TT.passes.push_back(thin_Pass(P, proto, th->second));
 		}
 		MergeTwin& M = m_merge[E];
 		M.E = DEV->_CreateElement(T);
 		M.verts = slot;
+		if (thin)
+			M.thin = DEV->_CreateElement(TT);
 	};
 	for (InstTwin& T : m_inst_twins)
 		add(T.E._get());
+	u32 thin = 0;
+	for (auto& it : m_merge)
+		thin += it.second.thin ? 1 : 0;
+	if (thin != m_merge.size())
+		Msg("[DT-THIN] elements %u of %u, thin twins failed", thin, u32(m_merge.size()));
 }
 
 bool CDetailManager::inst_Grow(u32 need)
@@ -766,18 +851,22 @@ bool CDetailManager::occ_Load()
 	}
 
 	xr_map<shared_str, std::pair<ref_vs, u8>> shaders;
+	xr_map<shared_str, ref_vs> thin_shaders;
 	SDeclaration* decl = hw_Geom->dcl._get();
-	u32 twins = 0;
+	u32 twins = 0, thins = 0;
 	for (auto& it : m_merge)
 	{
 		MergeTwin& M = it.second;
 		ShaderElement* E = M.E._get();
 		M.occ = ref_selement();
+		M.occ_thin = ref_selement();
 		M.idx = 0xff;
 		if (!E)
 			continue;
-		ShaderElement T;
+		ShaderElement T, TT;
 		T.flags = E->flags;
+		TT.flags = E->flags;
+		bool thin = true;
 		u8 slot = 0xff;
 		for (u32 p = 0; p < E->passes.size(); p++)
 		{
@@ -822,15 +911,29 @@ bool CDetailManager::occ_Load()
 			proto.T = P.T;
 			proto.C = P.C;
 			T.passes.push_back(DEV->_CreatePass(proto));
+
+			auto th = thin_shaders.find(proto.vs->cName);
+			if (th == thin_shaders.end())
+				th = thin_shaders.emplace(proto.vs->cName, thin_VS(proto.vs._get(), decl)).first;
+			thin = thin && th->second;
+			if (thin)
+				TT.passes.push_back(thin_Pass(P, proto, th->second));
 		}
 		if (T.passes.empty() || T.passes.size() != E->passes.size())
 			continue;
 		M.occ = DEV->_CreateElement(T);
 		M.idx = slot;
 		twins++;
+		if (thin)
+		{
+			M.occ_thin = DEV->_CreateElement(TT);
+			thins++;
+		}
 	}
 	if (twins != m_merge.size())
 		Msg("[DT-OCC] elements %u of %u", twins, u32(m_merge.size()));
+	if (thins != twins)
+		Msg("[DT-THIN] occ elements %u of %u", thins, twins);
 	return twins != 0;
 }
 
@@ -1465,6 +1568,13 @@ void CDetailManager::inst_Draw(CDetail& Object, u32 O, u32 var_id, const InstTwi
 	if (merge)
 		RCache.set_Indices(m_merge_ib);
 
+	if (merge && m_thin_on && (occ ? merge->occ_thin._get() : merge->thin._get()))
+	{
+		static shared_str strThin("dt_thin");
+		RCache.set_ca(strThin, 0, m_thin_c[0]);
+		RCache.set_ca(strThin, 1, m_thin_c[1]);
+	}
+
 	const bool smap = RImplementation.phase == CRender::PHASE_SMAP;
 
 	if (occ)
@@ -1609,7 +1719,18 @@ void CDetailManager::hw_Render(light* L)
 		occ_Release();
 
 	if (ps_r__detail_inst && RImplementation.phase == CRender::PHASE_NORMAL && m_inst_frame != Device.dwFrame && !m_inst_twins.empty())
+	{
 		inst_Build();
+
+		const float start = ps_r__detail_thin_start, keep = ps_r__detail_thin_keep;
+		m_thin_on = ps_r__detail_thin && keep < 1 && !m_merge.empty();
+		if (m_thin_on)
+		{
+			const Fvector& cam = Device.vCameraPosition;
+			m_thin_c[0].set(cam.x, cam.y, cam.z, start);
+			m_thin_c[1].set(keep, ps_r__detail_thin_band, (dm_fade - start) / (1.f - keep), 0.f);
+		}
+	}
 
 	if (ps_r__detail_occ && !m_occ_off && RImplementation.phase == CRender::PHASE_NORMAL)
 	{
@@ -1836,13 +1957,13 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 				if (it != m_merge.end())
 				{
 					merge = &it->second;
-					element = it->second.E._get();
+					element = m_thin_on && it->second.thin ? it->second.thin._get() : it->second.E._get();
 				}
 			}
 
 			const OccRec* occ = occ_on && merge && m_occ_rec[var_id * objects.size() + O].on ? &m_occ_rec[var_id * objects.size() + O] : nullptr;
 			if (occ)
-				element = merge->occ._get();
+				element = m_thin_on && merge->occ_thin ? merge->occ_thin._get() : merge->occ._get();
 
 			// The first group draws occ records only, their lists may already be cleared
 			if (m_occ_first_group && !occ)

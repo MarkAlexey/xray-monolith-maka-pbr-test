@@ -35,4 +35,24 @@ v_detail	dt_vertex	(uint vid, uint iid, out uint n)
 Buffer<uint>	dt_idx	: register(t10);	// rows index of every kept instance, padded per draw
 #endif
 
+#ifdef	DT_THIN
+cbuffer	dt_thin_cb	{ float4 dt_thin[2]; };	// main camera and start, then kept fraction, shrink band and drop span
+
+uint	dt_thin_pcg	(uint v)
+{
+	uint	s	= v * 747796405u + 2891336453u;
+	uint	w	= ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+	return	(w >> 22u) ^ w;
+}
+
+float	dt_thin_scale	(float3 o)
+{
+	float	h	= float(dt_thin_pcg(asuint(o.x) ^ dt_thin_pcg(asuint(o.z))) >> 8) * (1.0 / 16777216.0);
+	if (h <= dt_thin[1].x)
+		return	1;
+	float	drop	= dt_thin[0].w + dt_thin[1].z * (1 - h);
+	return	saturate((drop - distance(o, dt_thin[0].xyz)) / dt_thin[1].y);
+}
+#endif
+
 #endif
