@@ -71,6 +71,7 @@ private:
 	void check_pathes();
 
 	files_set m_files;
+	mutable xrSRWLock m_files_lock;
 	BOOL bNoRecurse;
 
 	// Monolith: folders already listed while _initialize() runs (LocatorAPI.cpp, scan_dedupe);
