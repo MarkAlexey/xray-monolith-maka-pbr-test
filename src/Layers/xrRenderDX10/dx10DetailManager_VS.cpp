@@ -232,6 +232,13 @@ void CDetailManager::inst_Load()
 			m_inst_ex = m_inst_ex || ex != 0xff;
 		}
 	}
+
+	// Cached rows keep the ex data so ex twins can reuse them
+	if (m_inst_ex && !m_rows_ex)
+	{
+		m_rows_ex = true;
+		m_rows_epoch++;
+	}
 }
 
 void CDetailManager::inst_Unload()
@@ -597,7 +604,7 @@ bool CDetailManager::inst_Grow(u32 need)
 
 bool CDetailManager::res_On() const
 {
-	return ps_r__detail_inst_res && ps_r__detail_inst && ps_r__detail_rows && !m_inst_ex;
+	return ps_r__detail_inst_res && ps_r__detail_inst && ps_r__detail_rows;
 }
 
 bool CDetailManager::res_Create(u32 need)
@@ -608,8 +615,9 @@ bool CDetailManager::res_Create(u32 need)
 	LPCSTR reason = nullptr;
 	if (!m_res_cs)
 	{
+		LPCSTR cs = m_inst_ex ? "dt_res_copy_ex" : "dt_res_copy";
 		string_path file;
-		strconcat(sizeof(file), file, ::Render->getShaderPath(), "dt_res_copy", ".cs");
+		strconcat(sizeof(file), file, ::Render->getShaderPath(), cs, ".cs");
 		UINT support = 0;
 		if (!FS.exist("$game_shaders$", file))
 			reason = "shader";
@@ -618,7 +626,7 @@ bool CDetailManager::res_Create(u32 need)
 			reason = "format";
 		else
 		{
-			m_res_cs = DEV->_CreateCS("dt_res_copy");
+			m_res_cs = DEV->_CreateCS(cs);
 			if (!m_res_cs)
 				reason = "cs";
 		}
@@ -629,6 +637,9 @@ bool CDetailManager::res_Create(u32 need)
 		_RELEASE(m_res_uav[k]);
 		_RELEASE(m_res_srv[k]);
 		_RELEASE(m_res_buf[k]);
+		_RELEASE(m_res_ex_uav[k]);
+		_RELEASE(m_res_ex_srv[k]);
+		_RELEASE(m_res_ex_buf[k]);
 	}
 	m_res_cap = 0;
 	const u32 cap = _min(need + need / 4, 1u << 24);
@@ -652,6 +663,21 @@ bool CDetailManager::res_Create(u32 need)
 			FAILED(HW.pDevice->CreateUnorderedAccessView(m_res_buf[k], &uav, &m_res_uav[k])))
 			reason = "create";
 	}
+
+	// One normal and alpha entry per instance beside the rows
+	if (m_inst_ex && !reason)
+	{
+		desc.ByteWidth = cap * sizeof(Fvector4);
+		view.Buffer.NumElements = cap;
+		uav.Buffer.NumElements = cap;
+		for (u32 k = 0; k < 2 && !reason; k++)
+		{
+			if (FAILED(HW.pDevice->CreateBuffer(&desc, nullptr, &m_res_ex_buf[k])) ||
+				FAILED(HW.pDevice->CreateShaderResourceView(m_res_ex_buf[k], &view, &m_res_ex_srv[k])) ||
+				FAILED(HW.pDevice->CreateUnorderedAccessView(m_res_ex_buf[k], &uav, &m_res_ex_uav[k])))
+				reason = "ex";
+		}
+	}
 	if (reason)
 	{
 		Msg("[DT-RES] off reason=%s", reason);
@@ -664,6 +690,8 @@ bool CDetailManager::res_Create(u32 need)
 	m_res_cur = 0;
 	if (!++m_res_build)
 		m_res_build = 1;
+	if (m_inst_ex)
+		Msg("[DT-RES] ex on cap=%u", cap);
 	return true;
 }
 
@@ -674,6 +702,9 @@ void CDetailManager::res_Release()
 		_RELEASE(m_res_uav[k]);
 		_RELEASE(m_res_srv[k]);
 		_RELEASE(m_res_buf[k]);
+		_RELEASE(m_res_ex_uav[k]);
+		_RELEASE(m_res_ex_srv[k]);
+		_RELEASE(m_res_ex_buf[k]);
 	}
 	_RELEASE(m_res_up_srv);
 	_RELEASE(m_res_up);
@@ -1296,6 +1327,7 @@ void CDetailManager::inst_Build()
 		const u32 epoch = m_rows_epoch;
 		const u32 build = m_res_build;
 		const u32 next_build = build + 1 ? build + 1 : 1;
+		const bool res_ex = m_inst_ex;
 
 		xr_parallel_for(0u, spans, [&](u32 s)
 		{
@@ -1312,7 +1344,7 @@ void CDetailManager::inst_Build()
 				const u32 j = span.rows_id % (dm_obj_in_slot * 3);
 				const SlotRows& R = m_rows[span.rows_id / (dm_obj_in_slot * 3)];
 				ResList& L = m_res_list[span.rows_id];
-				if ((R.ready >> j & 1) && R.epoch == epoch && R.first[j + 1] - R.first[j] == n)
+				if ((R.ready >> j & 1) && R.epoch == epoch && R.first[j + 1] - R.first[j] == n && (!res_ex || R.ex.size() * 4 == R.rows.size()))
 				{
 					const bool reuse = R.pack && L.build == build && L.pack == R.pack;
 					rs.kind = reuse ? res_reuse : res_rows;
@@ -1337,7 +1369,7 @@ void CDetailManager::inst_Build()
 			changed += rs.kind != res_reuse ? span.count : 0;
 			walked += rs.kind == res_walk;
 		}
-		if (!res_Upload((slots + 4) / 4 + changed))
+		if (!res_Upload((slots + 4) / 4 + changed + (res_ex ? (changed + 3) / 4 : 0)))
 			goto instanced;
 
 		if (walked)
@@ -1416,7 +1448,11 @@ void CDetailManager::inst_Build()
 				job += 4;
 			}
 
+			// Ex entries follow the uploaded rows, one per uploaded instance
 			Fvector4* upload = (Fvector4*)sub.pData;
+			Fvector4* upload_ex = res_ex ? upload + up * 4 - base : nullptr;
+			if (res_ex)
+				((u32*)sub.pData)[3] = up * 4 - base;
 			xr_parallel_for(0u, spans, [&](u32 s)
 			{
 				const InstSpan& span = m_inst_spans[s];
@@ -1426,6 +1462,7 @@ void CDetailManager::inst_Build()
 				if (rs.kind == res_walk)
 				{
 					Fvector4* dst = upload + rs.src * 4;
+					Fvector4* dst_ex = upload_ex ? upload_ex + rs.src : nullptr;
 					for (u32 i = 0; i < span.count; i++)
 					{
 						const SlotItem& Instance = *(*span.items)[i];
@@ -1435,13 +1472,19 @@ void CDetailManager::inst_Build()
 						dst[2].set(M._13, M._23, M._33, M._43);
 						dst[3].set(Instance.c_sun, Instance.c_sun, Instance.c_sun, Instance.c_hemi);
 						dst += 4;
+						if (dst_ex)
+							dst_ex[i].set(Instance.normal.x, Instance.normal.y, Instance.normal.z, Instance.alpha);
 					}
 					return;
 				}
 				const u32 j = span.rows_id % (dm_obj_in_slot * 3);
 				const SlotRows& R = m_rows[span.rows_id / (dm_obj_in_slot * 3)];
 				if (rs.kind == res_rows)
+				{
 					CopyMemory(upload + rs.src * 4, &R.rows[R.first[j] * 4], span.count * sizeof(Fvector4) * 4);
+					if (upload_ex)
+						CopyMemory(upload_ex + rs.src, &R.ex[R.first[j]], span.count * sizeof(Fvector4));
+				}
 				m_res_list[span.rows_id] = { span.first, R.pack, next_build };
 			});
 			HW.pContext->Unmap(m_res_up, 0);
@@ -1450,12 +1493,17 @@ void CDetailManager::inst_Build()
 			RCache.set_CS(m_res_cs);
 			SRVSManager.SetCSResource(0, m_res_srv[m_res_cur]);
 			SRVSManager.SetCSResource(1, m_res_up_srv);
-			HW.pContext->CSSetUnorderedAccessViews(0, 1, &m_res_uav[next], nullptr);
+			if (res_ex)
+				SRVSManager.SetCSResource(2, m_res_ex_srv[m_res_cur]);
+			ID3D11UnorderedAccessView* uav[2] = { m_res_uav[next], m_res_ex_uav[next] };
+			HW.pContext->CSSetUnorderedAccessViews(0, res_ex ? 2 : 1, uav, nullptr);
 			RCache.Compute(gx, (jobs + gx - 1) / gx, 1);
-			ID3D11UnorderedAccessView* none = nullptr;
-			HW.pContext->CSSetUnorderedAccessViews(0, 1, &none, nullptr);
+			ID3D11UnorderedAccessView* none[2] = {};
+			HW.pContext->CSSetUnorderedAccessViews(0, res_ex ? 2 : 1, none, nullptr);
 			SRVSManager.SetCSResource(0, nullptr);
 			SRVSManager.SetCSResource(1, nullptr);
+			if (res_ex)
+				SRVSManager.SetCSResource(2, nullptr);
 			SRVSManager.Apply();
 			m_res_cur = next;
 			m_res_build = next_build;
@@ -1557,7 +1605,7 @@ void CDetailManager::inst_Draw(CDetail& Object, u32 O, u32 var_id, const InstTwi
 	}
 	if (twin.ex != 0xff && m_inst_bound[1] != s8(twin.ex))
 	{
-		HW.pContext->VSSetShaderResources(twin.ex, 1, &m_inst_ex_srv);
+		HW.pContext->VSSetShaderResources(twin.ex, 1, m_res_frame == m_inst_frame ? &m_res_ex_srv[m_res_cur] : &m_inst_ex_srv);
 		m_inst_bound[1] = s8(twin.ex);
 	}
 	if (merge && m_inst_bound[2] != s8(merge->verts))

@@ -265,6 +265,9 @@ public:
 	ID3D11Buffer* m_res_buf[2] = {};
 	ID3D11ShaderResourceView* m_res_srv[2] = {};
 	ID3D11UnorderedAccessView* m_res_uav[2] = {};
+	ID3D11Buffer* m_res_ex_buf[2] = {};
+	ID3D11ShaderResourceView* m_res_ex_srv[2] = {};
+	ID3D11UnorderedAccessView* m_res_ex_uav[2] = {};
 	ref_cs m_res_cs;
 	xr_vector<ResList> m_res_list;
 	xr_vector<ResSpan> m_res_span;
