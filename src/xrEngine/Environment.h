@@ -196,10 +196,6 @@ public:
 	float m_fTreeAmplitudeIntensity;
 #endif
 
-	float bloom_threshold;
-	float bloom_exposure;
-	float bloom_sky_intensity;
-
 	// int lens_flare_id;
 	// int tb_id;
 	shared_str lens_flare_id;
@@ -302,8 +298,6 @@ public:
 
 	float wetness_factor;
 
-	Fvector4 wind_anim;
-
 	// wind blast params
 	float wind_blast_strength;
 	Fvector wind_blast_direction;
@@ -358,7 +352,7 @@ public:
 	void lerp(float& current_weight);
     void set_lerp(float current_weight);
 
-	void RenderSky(bool only_MV = false);
+	void RenderSky();
 	void RenderClouds();
 	void RenderFlares();
 	void RenderLast();

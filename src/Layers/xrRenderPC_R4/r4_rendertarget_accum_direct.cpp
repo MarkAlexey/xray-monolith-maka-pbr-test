@@ -203,11 +203,10 @@ void CRenderTarget::accum_direct(u32 sub_phase)
 			Fmatrix m_xform;
 			Fvector direction = fuckingsun->direction;
 			float w_dir = g_pGamePersistent->Environment().CurrentEnv->wind_direction;
-			float w_speed = g_pGamePersistent->Environment().CurrentEnv->wind_velocity * 0.001f;
-			clamp(w_speed, 0.1f, 1.0f);
+			//float	w_speed				= g_pGamePersistent->Environment().CurrentEnv->wind_velocity	;
 			Fvector normal;
-			normal.setHP(-w_dir, 0);
-			w_shift -= 0.005f * w_speed * Device.fTimeDelta;
+			normal.setHP(w_dir, 0);
+			w_shift += 0.003f * Device.fTimeDelta;
 			Fvector position;
 			position.set(0, 0, 0);
 			m_xform.build_camera_dir(position, direction, normal);
@@ -516,11 +515,10 @@ void CRenderTarget::accum_direct_cascade(u32 sub_phase, Fmatrix& xform, Fmatrix&
 			Fmatrix m_xform;
 			Fvector direction = fuckingsun->direction;
 			float w_dir = g_pGamePersistent->Environment().CurrentEnv->wind_direction;
-			float w_speed = g_pGamePersistent->Environment().CurrentEnv->wind_velocity * 0.001f;
-			clamp(w_speed, 0.1f, 1.0f);
+			//float	w_speed				= g_pGamePersistent->Environment().CurrentEnv->wind_velocity	;
 			Fvector normal;
-			normal.setHP(-w_dir, 0);
-			w_shift -= 0.005f * w_speed * Device.fTimeDelta;
+			normal.setHP(w_dir, 0);
+			w_shift += 0.003f * Device.fTimeDelta;
 			Fvector position;
 			position.set(0, 0, 0);
 			m_xform.build_camera_dir(position, direction, normal);
@@ -1205,13 +1203,6 @@ void CRenderTarget::accum_direct_volumetric(u32 sub_phase, const u32 Offset, con
 
 	if ((sub_phase != SE_SUN_NEAR) && (sub_phase != SE_SUN_FAR)) return;
 
-// SSS : Deprecated
-/*	float w = float(Device.dwWidth);
-	float h = float(Device.dwHeight);
-
-	if (RImplementation.o.ssfx_volumetric) 
-		set_viewport_size(HW.pContext, w / ps_ssfx_volumetric.w, h / ps_ssfx_volumetric.w);*/
-
 	phase_vol_accumulator();
 
 	RCache.set_ColorWriteEnable();
@@ -1382,9 +1373,5 @@ void CRenderTarget::accum_direct_volumetric(u32 sub_phase, const u32 Offset, con
 		//	TODO: DX10: Check if DX10 has analog for NV DBT
 		// disable depth bounds
 		//		u_DBT_disable	();
-
-// SSS : Deprecated
-//		if (RImplementation.o.ssfx_volumetric)
-//			set_viewport_size(HW.pContext, w, h);
 	}
 }

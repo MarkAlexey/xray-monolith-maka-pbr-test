@@ -71,7 +71,6 @@ public:
 	virtual void set_color(float r, float g, float b) = 0;
 	virtual void set_hud_mode(bool b) = 0;
 	virtual bool get_hud_mode() = 0;
-	virtual void set_is_playerlight(bool b) = 0;
 	virtual ~IRender_Light();
 };
 
@@ -222,7 +221,7 @@ public:
 
 public:
 	// options
-	bool hud_loading;
+	bool hud_loading; // set while loading HUD models; read by script set_shader bookkeeping
 	s32 m_skinning;
 	s32 m_MSAASample;
 

@@ -114,10 +114,6 @@ ShaderElement::ShaderElement()
 	flags.bDistort = FALSE;
 	flags.bWmark = FALSE;
 	flags.bLandscape = FALSE;
-	
-	// SSS Custom rendering
-	flags.isLandscape = FALSE;
-	flags.isWater = FALSE;
 
 	flags.iScopeLense = 0; 	//  Redotix99: for 3D Shader Based Scopes
 	//	0 = eNoLense, 

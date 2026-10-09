@@ -113,7 +113,6 @@ void CRender::level_Load(IReader* fs)
 	lstLODs.clear();
 	lstLODgroups.clear();
 	mapLOD.clear();
-	mapWater.clear();
 
 	// signal loaded
 	b_loaded = TRUE;
