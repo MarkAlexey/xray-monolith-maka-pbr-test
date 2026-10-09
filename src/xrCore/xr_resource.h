@@ -23,8 +23,6 @@ public:
 
 public:
 	u32 dwFlags;
-	int skinning;
-	bool hud_disabled;
 
 	xr_resource_flagged() : dwFlags(0)
 	{

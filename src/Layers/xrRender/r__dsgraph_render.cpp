@@ -82,83 +82,6 @@ void __fastcall sorted_L1(mapSorted_Node* N)
 	V->Render(calcLOD(N->key, V->vis.sphere.R));
 }
 
-void __fastcall water_node_ssr(mapSorted_Node* N)
-{
-#ifdef USE_DX11
-	VERIFY(N);
-	dxRender_Visual* V = N->val.pVisual;
-	VERIFY(V);
-
-	RCache.set_Shader(RImplementation.Target->s_ssfx_water_ssr);
-
-	RCache.set_xform_world(N->val.Matrix);
-	RImplementation.apply_object(N->val.pObject);
-	RImplementation.apply_lmaterial();
-
-	RCache.set_c("cam_pos", RImplementation.Target->Position_previous.x, RImplementation.Target->Position_previous.y, RImplementation.Target->Position_previous.z, 0.0f);
-
-	// Previous matrix data
-	RCache.set_c("m_current", RImplementation.Target->Matrix_current);
-	RCache.set_c("m_previous", RImplementation.Target->Matrix_previous);
-
-	V->Render(calcLOD(N->key, V->vis.sphere.R));
-#endif
-}
-
-void __fastcall water_node(mapSorted_Node* N)
-{
-	VERIFY(N);
-	dxRender_Visual* V = N->val.pVisual;
-	VERIFY(V);
-
-#ifdef USE_DX11
-	if (RImplementation.o.ssfx_water)
-	{
-		RCache.set_Shader(RImplementation.Target->s_ssfx_water);
-	}
-#endif
-
-	RCache.set_xform_world(N->val.Matrix);
-	RImplementation.apply_object(N->val.pObject);
-	RImplementation.apply_lmaterial();
-
-	// Wind settings
-	float WindDir = g_pGamePersistent->Environment().CurrentEnv->wind_direction;
-	float WindVel = g_pGamePersistent->Environment().CurrentEnv->wind_velocity;
-	RCache.set_c("wind_setup", WindDir, WindVel, 0, 0);
-
-	V->Render(calcLOD(N->key, V->vis.sphere.R));
-}
-
-/*void __fastcall hud_node(mapSorted_Node* N)
-{
-	VERIFY(N);
-	dxRender_Visual* V = N->val.pVisual;
-	VERIFY(V && V->shader._get());
-	RCache.set_xform_world(N->val.Matrix);
-
-#ifdef USE_DX11
-
-	if (N->val.se->passes[0]->ps->hud_disabled)
-		return;
-
-	int skinning = N->val.se->passes[0]->vs->skinning;
-	RCache.set_Shader(RImplementation.Target->s_ssfx_hud[skinning]);
-
-	RImplementation.Target->Matrix_HUD_previous.set(N->val.PrevMatrix);
-	N->val.PrevMatrix.set(RCache.xforms.m_wvp);
-
-	RImplementation.Target->RVelocity = true;
-
-#endif
-
-	V->Render(calcLOD(N->key, V->vis.sphere.R));
-
-#ifdef USE_DX11
-	RImplementation.Target->RVelocity = false;
-#endif
-}*/
-
 IC bool cmp_vs_nrm(mapNormalVS::TNode* N1, mapNormalVS::TNode* N2)
 {
 	return (N1->val.ssa > N2->val.ssa);
@@ -575,7 +498,7 @@ void R_dsgraph_structure::r_dsgraph_render_graph(u32 _priority, bool _clear)
 
 //////////////////////////////////////////////////////////////////////////
 // HUD render
-void R_dsgraph_structure::r_dsgraph_render_hud(bool NoPS)
+void R_dsgraph_structure::r_dsgraph_render_hud()
 {
 	//PIX_EVENT(r_dsgraph_render_hud);
 
@@ -585,90 +508,46 @@ void R_dsgraph_structure::r_dsgraph_render_hud(bool NoPS)
 	Device.mFullTransform = Device.mFullTransformHud;
 	RCache.set_xform_project(Device.mProjectHud);
 
-	// Apply HUD Matrix
-	Fmatrix Pold_prev = Device.mProject_prev;
-	RCache.set_xform_project_prev(Device.mProjectHud);
-
 	// Rendering
 	rmNear();
-	if (!NoPS)
-	{
-		mapHUD.traverseLR(sorted_L1);
-		mapHUD.clear();
+	mapHUD.traverseLR(sorted_L1);
+	mapHUD.clear();
 
-		rmNormal();
-		
+	rmNormal();
+
 #if defined(USE_DX11) //  Redotix99: for 3D Shader Based Scopes 		
 
-		if (scope_3D_fake_enabled)
-		{
-			RCache.set_RT(RImplementation.Target->rt_ssfx_temp->pRT, 3); // Render scope_3D to any buffer
-			
-			mapScopeHUD.traverseLR(sorted_L1);
-
-			if (!RImplementation.o.ssfx_motionvectors)
-				RCache.set_RT(NULL, 3);
-			else
-				RCache.set_RT(RImplementation.Target->rt_ssfx_motion_vectors->pRT, 3);
-		}
-		mapScopeHUD.clear();
+	if (scope_3D_fake_enabled)
+	{
+		mapScopeHUD.traverseLR(sorted_L1);
+	}
+	mapScopeHUD.clear();
 #endif
 
-		if (mapCamAttached.size())
-		{
-			rmNear();
-
-			// Change projection
-			Fmatrix camproj;
-			camproj.build_projection(
-				deg2rad(83.f),
-				Device.fASPECT, R_VIEWPORT_NEAR,
-				g_pGamePersistent->Environment().CurrentEnv->far_plane);
-
-			Device.mFullTransform.mul(camproj, Device.mView);
-			RCache.set_xform_project(camproj);
-
-			// Rendering
-			mapCamAttached.traverseLR(sorted_L1);
-			mapCamAttached.clear();
-
-			rmNormal();
-		}
-	}
-	/*else
+	if (mapCamAttached.size())
 	{
-		HUDMask.traverseLR(hud_node);
-		HUDMask.clear();
+		rmNear();
 
-		if (HUDMaskCamAttached.size())
-		{
-			rmNear();
+		// Change projection
+		Fmatrix camproj;
+		camproj.build_projection(
+			deg2rad(83.f),
+			Device.fASPECT, R_VIEWPORT_NEAR,
+			g_pGamePersistent->Environment().CurrentEnv->far_plane);
 
-			// Change projection
-			Fmatrix camproj;
-			camproj.build_projection(
-				deg2rad(83.f),
-				Device.fASPECT, R_VIEWPORT_NEAR,
-				g_pGamePersistent->Environment().CurrentEnv->far_plane);
+		Device.mFullTransform.mul(camproj, Device.mView);
+		RCache.set_xform_project(camproj);
 
-			Device.mFullTransform.mul(camproj, Device.mView);
-			RCache.set_xform_project(camproj);
-
-			// Rendering
-			HUDMaskCamAttached.traverseLR(hud_node);
-			HUDMaskCamAttached.clear();
-		}
+		// Rendering
+		mapCamAttached.traverseLR(sorted_L1);
+		mapCamAttached.clear();
 
 		rmNormal();
-	}*/
-
+	}
 
 	// Restore projection
 	Device.mFullTransform = FTold;
 	RCache.set_xform_project(Device.mProject);
-
-	// Restore Prev Matrix
-	RCache.set_xform_project_prev(Pold_prev);
 }
 
 void R_dsgraph_structure::r_dsgraph_render_hud_ui()
@@ -781,13 +660,12 @@ void R_dsgraph_structure::r_dsgraph_render_ScopeSorted()  //  Redotix99: for 3D 
 
 //////////////////////////////////////////////////////////////////////////
 // strict-sorted render
-void R_dsgraph_structure::r_dsgraph_render_emissive(bool clear, bool renderHUD)
+void R_dsgraph_structure::r_dsgraph_render_emissive()
 {
 #if	RENDER!=R_R1
 	// Sorted (back to front)
 	mapEmissive.traverseLR(sorted_L1);
-	if (clear)
-		mapEmissive.clear();
+	mapEmissive.clear();
 
 	// Change projection
 	Fmatrix FTold = Device.mFullTransform;
@@ -799,12 +677,7 @@ void R_dsgraph_structure::r_dsgraph_render_emissive(bool clear, bool renderHUD)
 	rmNear();
 	// Sorted (back to front)
 	mapHUDEmissive.traverseLR(sorted_L1);
-	
-	if (clear)
-		mapHUDEmissive.clear();
-
-	if (renderHUD)
-		mapHUDSorted.traverseRL(sorted_L1);
+	mapHUDEmissive.clear();
 
 	rmNormal();
 
@@ -812,17 +685,6 @@ void R_dsgraph_structure::r_dsgraph_render_emissive(bool clear, bool renderHUD)
 	Device.mFullTransform = FTold;
 	RCache.set_xform_project(Device.mProject);
 #endif
-}
-
-void R_dsgraph_structure::r_dsgraph_render_water_ssr()
-{
-	mapWater.traverseLR(water_node_ssr);
-}
-
-void R_dsgraph_structure::r_dsgraph_render_water()
-{
-	mapWater.traverseLR(water_node);
-	mapWater.clear();
 }
 
 //////////////////////////////////////////////////////////////////////////

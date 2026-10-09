@@ -51,9 +51,6 @@ public:
 	R_dsgraph::mapScopeHUD_T mapScopeHUDSorted;
 #endif
 	R_dsgraph::mapLandscape_T mapLandscape;
-	//R_dsgraph::HUDMask_T HUDMask; // SSS 23: Deprecated
-	R_dsgraph::HUDMask_T HUDMaskCamAttached;
-	R_dsgraph::mapWater_T mapWater;
 
 #if RENDER!=R_R1
 	R_dsgraph::mapSorted_T										mapWmark;			// sorted
@@ -188,9 +185,6 @@ public:
 		mapHUDDistort.destroy();
 		mapCamAttachedSorted.destroy();
 		mapLandscape.destroy();
-		//HUDMask.destroy(); // SSS 23: Deprecated
-		HUDMaskCamAttached.destroy();
-		mapWater.destroy();
 
 #if RENDER!=R_R1
 		mapWmark.destroy();
@@ -211,7 +205,7 @@ public:
 	void r_dsgraph_insert_static(dxRender_Visual* pVisual);
 
 	void r_dsgraph_render_graph(u32 _priority, bool _clear = true);
-	void r_dsgraph_render_hud(bool NoPS = false);
+	void r_dsgraph_render_hud();
 	void r_dsgraph_render_hud_ui();
 	void r_dsgraph_render_cam_ui();
 	void r_dsgraph_render_lods(bool _setup_zb, bool _clear);
@@ -219,7 +213,7 @@ public:
 #if defined(USE_DX11)
 	void r_dsgraph_render_ScopeSorted(); // Redotix99: for 3D Shader Based Scopes
 #endif
-	void r_dsgraph_render_emissive(bool clear = true, bool renderHUD = false);
+	void r_dsgraph_render_emissive();
 	void r_dsgraph_render_wmarks();
 	void r_dsgraph_render_distort();
 	void r_dsgraph_render_subspace(IRender_Sector* _sector, CFrustum* _frustum, Fmatrix& mCombined, Fvector& _cop,
@@ -229,8 +223,6 @@ public:
 	void r_dsgraph_render_R1_box(IRender_Sector* _sector, Fbox& _bb, int _element);
 
 	void r_dsgraph_render_landscape(u32 pass, bool _clear);
-	void r_dsgraph_render_water_ssr();
-	void r_dsgraph_render_water();
 
 
 public:

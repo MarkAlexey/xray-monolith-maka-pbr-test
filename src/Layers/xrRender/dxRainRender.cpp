@@ -5,14 +5,14 @@
 
 //	Warning: duplicated in rain.cpp
 static const int max_desired_items = 2500;
-static const float source_radius = 15;//12.5f;
-static const float source_offset = 20.f; // 40
-static const float max_distance = source_offset * 1.5f; //1.25f;
+static const float source_radius = 12.5f;
+static const float source_offset = 40.f;
+static const float max_distance = source_offset * 1.25f;
 static const float sink_offset = -(max_distance - source_offset);
 static const float drop_length = 5.f;
 static const float drop_width = 0.30f;
 static const float drop_angle = 3.0f;
-static const float drop_max_angle = deg2rad(35.f); //10
+static const float drop_max_angle = deg2rad(10.f);
 static const float drop_max_wind_vel = 20.0f;
 static const float drop_speed_min = 40.f;
 static const float drop_speed_max = 80.f;
@@ -21,12 +21,8 @@ const int max_particles = 1000;
 const int particles_cache = 400;
 const float particles_time = .3f;
 
-int current_items;
-
 dxRainRender::dxRainRender()
 {
-	current_items = 0;
-
 	IReader* F = FS.r_open("$game_meshes$", "dm\\rain.dm");
 	VERIFY3(F, "Can't open file.", "dm\\rain.dm");
 
@@ -36,11 +32,6 @@ dxRainRender::dxRainRender()
 	SH_Rain.create("effects\\rain", "fx\\fx_rain");
 	hGeom_Rain.create(FVF::F_LIT, RCache.Vertex.Buffer(), RCache.QuadIB);
 	hGeom_Drops.create(D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1, RCache.Vertex.Buffer(), RCache.Index.Buffer());
-
-#if defined(USE_DX11)
-	if (RImplementation.o.ssfx_rain)
-		SH_Splash.create("effects\\rain_splash", "fx\\fx_rain");
-#endif
 
 	FS.r_close(F);
 }
@@ -62,48 +53,21 @@ void dxRainRender::Render(CEffect_Rain& owner)
 	float factor = g_pGamePersistent->Environment().CurrentEnv->rain_density;
 	if (factor < EPS_L) return;
 
-	float _drop_len = drop_length;
-	float _drop_width = drop_width;
-	float _drop_speed = 1.0f;
-	ref_shader& _splash_SH = DM_Drop->shader;
-	static shared_str s_shader_setup = "ssfx_rain_setup";
-
-	int rain_max_particles = max_desired_items;
-	float rain_radius = source_radius;
-
-	// SSS Rain shader is available
-#if defined(USE_DX11)
-	if (RImplementation.o.ssfx_rain)
-	{
-		_drop_len = ps_ssfx_rain_1.x;
-		_drop_width = ps_ssfx_rain_1.y;
-		_drop_speed = ps_ssfx_rain_1.z;
-		_splash_SH = SH_Splash;
-		rain_max_particles = ps_ssfx_rain_drops_setup.x;
-		rain_radius = ps_ssfx_rain_drops_setup.y;
-	}
-#endif
-
-	u32 desired_items = iFloor(0.01f * (1.f + factor * 99.0f) * float(rain_max_particles));
-
-	// Get to the desired items
-	if (current_items < desired_items)
-		current_items += desired_items - current_items;
-
+	u32 desired_items = iFloor(0.5f * (1.f + factor) * float(max_desired_items));
 	// visual
 	float factor_visual = factor / 2.f + .5f;
 	Fvector3 f_rain_color = g_pGamePersistent->Environment().CurrentEnv->rain_color;
 	u32 u_rain_color = color_rgba_f(f_rain_color.x, f_rain_color.y, f_rain_color.z, factor_visual);
 
 	// born _new_ if needed
-	float b_radius_wrap_sqr = _sqr((rain_radius * 1.5f));
-	if (owner.items.size() < current_items)
+	float b_radius_wrap_sqr = _sqr((source_radius + .5f));
+	if (owner.items.size() < desired_items)
 	{
 		// owner.items.reserve		(desired_items);
-		while (owner.items.size() < current_items)
+		while (owner.items.size() < desired_items)
 		{
 			CEffect_Rain::Item one;
-			owner.Born(one, rain_radius, _drop_speed);
+			owner.Born(one, source_radius);
 			owner.items.push_back(one);
 		}
 	}
@@ -120,21 +84,13 @@ void dxRainRender::Render(CEffect_Rain& owner)
 	FVF::LIT* verts = (FVF::LIT *)RCache.Vertex.Lock(desired_items * 4, hGeom_Rain->vb_stride, vOffset);
 	FVF::LIT* start = verts;
 	const Fvector& vEye = Device.vCameraPosition;
-	for (u32 I = 0; I < current_items; I++)
+	for (u32 I = 0; I < owner.items.size(); I++)
 	{
 		// physics and time control
 		CEffect_Rain::Item& one = owner.items[I];
 
-		if (one.dwTime_Hit < Device.dwTimeGlobal) 
-		{
-			owner.Hit(one.Phit);
-			if (current_items > desired_items) current_items--; // Hit something
-		}
-		if (one.dwTime_Life < Device.dwTimeGlobal)
-		{
-			owner.Born(one, rain_radius, _drop_speed);
-			if (current_items > desired_items) current_items--; // Out of life ( invalidated, never hit something, etc. )
-		}
+		if (one.dwTime_Hit < Device.dwTimeGlobal) owner.Hit(one.Phit);
+		if (one.dwTime_Life < Device.dwTimeGlobal) owner.Born(one, source_radius);
 
 		// последняя дельта ??
 		//.		float xdt		= float(one.dwTime_Hit-Device.dwTimeGlobal)/1000.f;
@@ -160,7 +116,7 @@ void dxRainRender::Render(CEffect_Rain& owner)
 				Fvector inv_dir, src_p;
 				inv_dir.invert(one.D);
 				wdir.div(wlen);
-				one.P.mad(one.P, wdir, -(wlen + rain_radius));
+				one.P.mad(one.P, wdir, -(wlen + source_radius));
 				if (src_plane.intersectRayPoint(one.P, inv_dir, src_p))
 				{
 					float dist_sqr = one.P.distance_to_sqr(src_p);
@@ -198,7 +154,7 @@ void dxRainRender::Render(CEffect_Rain& owner)
 		// Build line
 		Fvector& pos_head = one.P;
 		Fvector pos_trail;
-		pos_trail.mad(pos_head, one.D, -_drop_len * factor_visual);
+		pos_trail.mad(pos_head, one.D, -drop_length * factor_visual);
 
 		// Culling
 		Fvector sC, lineD;
@@ -220,7 +176,7 @@ void dxRainRender::Render(CEffect_Rain& owner)
 		camDir.sub(sC, vEye);
 		camDir.normalize();
 		lineTop.crossproduct(camDir, lineD);
-		float w = _drop_width;
+		float w = drop_width;
 		u32 s = one.uv_set;
 		P.mad(pos_trail, lineTop, -w);
 		verts->set(P, u_rain_color, UV[s][0].x, UV[s][0].y);
@@ -249,7 +205,6 @@ void dxRainRender::Render(CEffect_Rain& owner)
 		RCache.Render(D3DPT_TRIANGLELIST, vOffset, 0, vCount, 0, vCount / 2);
 		//HW.pDevice->SetRenderState	(D3DRS_CULLMODE,D3DCULL_CCW);
 		RCache.set_CullMode(CULL_CCW);
-		RCache.set_c(s_shader_setup, ps_ssfx_rain_2); // Alpha, Brigthness, Refraction, Reflection
 	}
 
 	// Particles
@@ -259,8 +214,7 @@ void dxRainRender::Render(CEffect_Rain& owner)
 	{
 		float dt = Device.fTimeDelta;
 		_IndexStream& _IS = RCache.Index;
-		RCache.set_Shader(_splash_SH);
-		RCache.set_c(s_shader_setup, ps_ssfx_rain_3); // Alpha, Refraction
+		RCache.set_Shader(DM_Drop->shader);
 
 		Fmatrix mXform, mScale;
 		int pcount = 0;

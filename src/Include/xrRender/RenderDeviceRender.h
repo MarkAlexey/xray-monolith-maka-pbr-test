@@ -58,7 +58,6 @@ public:
 	virtual void End() = 0;
 	virtual void ClearTarget() = 0;
 	virtual void SetCacheXform(Fmatrix& mView, Fmatrix& mProject) = 0;
-	virtual void SetCacheXform_prev(Fmatrix& mView, Fmatrix& mProject) = 0;
 	virtual void OnAssetsChanged() = 0;
 
 	virtual bool SwitchOutputMonitor(HMONITOR hTargetMon, HWND hWnd, u32 g_screenmode, u32& vidModeW, u32& vidModeH) { return false; }

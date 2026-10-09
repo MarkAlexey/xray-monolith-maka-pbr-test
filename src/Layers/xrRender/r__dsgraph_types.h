@@ -80,7 +80,6 @@ namespace R_dsgraph
 		IRenderable* pObject;
 		dxRender_Visual* pVisual;
 		Fmatrix Matrix; // matrix (copy)
-		Fmatrix PrevMatrix;
 	};
 
 	struct _MatrixItemS : public _MatrixItem
@@ -224,16 +223,9 @@ namespace R_dsgraph
 	typedef mapScopeHUD_T::TNode mapScopeHUD_T_Node;
 #endif
 
-	typedef FixedMAP<float, _MatrixItemS, render_allocator> HUDMask_T;
-	typedef HUDMask_T::TNode HUDMask_Node;
-
 	typedef FixedMAP<float, _LodItem, render_allocator> mapLOD_T;
 	typedef mapLOD_T::TNode mapLOD_Node;
 
 	typedef FixedMAP<float, _MatrixItemS, render_allocator> mapLandscape_T;
 	typedef mapLandscape_T::TNode mapLandscape_Node;
-
-	typedef FixedMAP<float, _MatrixItemS, render_allocator> mapWater_T;
-	typedef mapWater_T::TNode mapWater_Node;
-
 };
