@@ -218,12 +218,27 @@
 		<text>Скорость анимации непрозрачности перекрестия (g_crosshair_*_occlusion_fade_rate)</text>
 	</string>
 
-	<!-- Zoom -->
+	<!-- Shader Scopes -->
 	<string id="ui_mm_menu_3d_scopes">
-		<text>Зум</text>
+		<text>Shader Scopes</text>
 	</string>
 	<string id="ui_mm_3d_scopes_modded_exes">
-		<text>Зум</text>
+		<text>Shader Scopes</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_r__3Dfakescope">
+		<text>Включение 3D Shader Scopes (r__3Dfakescope)</text>
+	</string>
+	<string id="ui_mm_2d_scopes_modded_exes">
+		<text>2D Shader Scopes</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_sds_enable">
+		<text>Включение 2D Shader Scopes (sds_enable)</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_sds_speed_enable">
+		<text>Изменение чувствительности мыши при зуме (sds_speed_enable)</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_sds_zoom_enable">
+		<text>Коррекция зума (sds_zoom_enable)</text>
 	</string>
 	<string id="ui_mm_modded_exes_visual_3d_scopes_new_zoom_enable">
 		<text>Плавный зум (new_zoom_enable)</text>
@@ -236,6 +251,36 @@
 	</string>
 	<string id="ui_mm_modded_exes_visual_3d_scopes_zoom_step_count">
 		<text>Кол-во стадий зума (zoom_step_count)</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_scope_blur_inner">
+		<text>Размытие внутри прицела (scope_blur_inner)</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_scope_blur_outer">
+		<text>Размытие снаружи прицела (scope_blur_outer)</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_scope_brightness">
+		<text>Яркость снаружи прицела (scope_brightness)</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_scope_ca">
+		<text>Хроматическая абберация (scope_ca)</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_scope_fog_radius">
+		<text>Радиус тумана (scope_fog_radius)</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_scope_fog_interp">
+		<text>Скорость перемещения тумана (scope_fog_interp)</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_scope_fog_sharp">
+		<text>Резкость тумана (scope_fog_sharp)</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_scope_fog_swayAim">
+		<text>Движение тумана с мышью (scope_fog_swayAim)</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_scope_fog_swayMove">
+		<text>Движение тумана с ходьбой (scope_fog_swayMove)</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_scope_fog_travel">
+		<text>Максимальное расстояние движения тумана (scope_fog_travel)</text>
 	</string>
 
 	<!-- Particles -->

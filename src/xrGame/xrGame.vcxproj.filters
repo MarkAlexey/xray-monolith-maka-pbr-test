@@ -7374,6 +7374,9 @@
     <ClInclude Include="HolderEntityObject.h">
       <Filter>Core\Client\Objects\vehicles</Filter>
     </ClInclude>
+    <ClInclude Include="new_sds.h">
+      <Filter>Core\Common\Shared</Filter>
+    </ClInclude>
     <ClInclude Include="NewZoomFlag.h">
       <Filter>Core\Common\Shared</Filter>
     </ClInclude>

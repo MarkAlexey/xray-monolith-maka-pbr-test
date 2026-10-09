@@ -4,8 +4,8 @@
 
 ## Intro
 
-The shader bus is a named, owned replacement for the eight anonymous `shader_param_1..8` float4
-constants. Any script can register a lane by name, any script can read
+The shader bus is a named, owned replacement for the eight anonymous `shader_param_1..8` and
+`s3ds_param_1..4` float4 constants. Any script can register a lane by name, any script can read
 any lane, and only the script that registered a lane can write it. The engine needs no advance
 list of names, so a mod can claim a lane without anything being patched into the exe for it.
 
@@ -71,14 +71,14 @@ Do not test the token against `0`, which is truthy in Lua.
 | `shader_bus.describe(id)` | the description string, or `nil` for an id no registered lane owns |
 | `shader_bus.owner_of(id)` | the owner string, or `nil` for an id no registered lane owns |
 | `shader_bus.stats(id)` | `ok, changes, last_change_frame, bound_frame, writes` |
-| `shader_bus.list()` | rows for the registered lanes, then the eight legacy lanes |
+| `shader_bus.list()` | rows for the registered lanes, then the twelve legacy lanes |
 | `shader_bus.list(true)` | the same, plus a row for every lane a shader declared that nobody registered |
 | `shader_bus.version()` | `2` |
 
 Each `list` row carries `id`, `owner`, `description`, `state` (`registered`, `declared` or
 `legacy`), `source` (the script path that called `register`, empty for a declared or legacy row)
 and, on a legacy row only, `writer`. Registered rows come first (declared rows too, with the
-`true` argument), then the eight legacy rows, and a legacy row only appears if that console
+`true` argument), then the twelve legacy rows, and a legacy row only appears if that console
 command still exists on the running exe.
 
 `writes` in `stats` counts every `set` call the owner made through its token. `changes` counts the
@@ -95,7 +95,7 @@ Reads and listing are open to every script. Only the token returned by `register
 ### Console
 
 - `bus_list` prints every lane with its owner, description, current bound value, state and its
-  change and write counters, then the eight legacy lanes and their raw values.
+  change and write counters, then the twelve legacy lanes and their raw values.
 - `bus_get <id>` prints one lane.
 - `bus_force <id> x y z w` pins a lane to a value the engine publishes every frame until
   `bus_release`. All four components must be finite or the hold is refused. It does not touch or
@@ -127,7 +127,7 @@ trails `set` by one frame and why `get_pending` and `get` can legitimately disag
 Lanes are never removed once declared or registered, so a token stays valid for the rest of the
 process, and a lane you query early keeps existing even if nobody ever claims it.
 
-The eight legacy commands, `shader_param_1..8`, still work exactly as
+The twelve legacy commands, `shader_param_1..8` and `s3ds_param_1..4`, still work exactly as
 before. The first write to any of them in a session logs a nudge naming the writer, once per
 command and writer, so a lane four mods still write prints four lines rather than one. `list()`
 carries the last writer of a legacy lane as `writer`: a Lua write reads back as

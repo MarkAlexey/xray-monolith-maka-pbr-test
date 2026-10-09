@@ -218,12 +218,27 @@
 		<text>Crosshair opacity animation speed (g_crosshair_*_occlusion_fade_rate)</text>
 	</string>
 
-	<!-- Zoom -->
+	<!-- Shader Scopes -->
 	<string id="ui_mm_menu_3d_scopes">
-		<text>Zoom</text>
+		<text>Shader Scopes</text>
 	</string>
 	<string id="ui_mm_3d_scopes_modded_exes">
-		<text>Zoom</text>
+		<text>Shader Scopes</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_r__3Dfakescope">
+		<text>3D Shader Scopes Enable (r__3Dfakescope)</text>
+	</string>
+	<string id="ui_mm_2d_scopes_modded_exes">
+		<text>2D Shader Scopes</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_sds_enable">
+		<text>2D Shader Scopes Enable (sds_enable)</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_sds_speed_enable">
+		<text>Mouse Sensitivity Change On Zoom (sds_speed_enable)</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_sds_zoom_enable">
+		<text>Correct Zoom Factor (sds_zoom_enable)</text>
 	</string>
 	<string id="ui_mm_modded_exes_visual_3d_scopes_new_zoom_enable">
 		<text>Smooth Zoom Change (new_zoom_enable)</text>
@@ -236,6 +251,36 @@
 	</string>
 	<string id="ui_mm_modded_exes_visual_3d_scopes_zoom_step_count">
 		<text>Smooth Zoom Step Count (zoom_step_count)</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_scope_blur_inner">
+		<text>Blur Inside Scope (scope_blur_inner)</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_scope_blur_outer">
+		<text>Blur Outside Scope (scope_blur_outer)</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_scope_brightness">
+		<text>Outside Brightness (scope_brightness)</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_scope_ca">
+		<text>Chromatic Abberation (scope_ca)</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_scope_fog_radius">
+		<text>Fog Radius (scope_fog_radius)</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_scope_fog_interp">
+		<text>Fog Travel Speed (scope_fog_interp)</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_scope_fog_sharp">
+		<text>Fog Sharpness (scope_fog_sharp)</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_scope_fog_swayAim">
+		<text>Fog Sway with Mouse (scope_fog_swayAim)</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_scope_fog_swayMove">
+		<text>Fog Sway with Movement (scope_fog_swayMove)</text>
+	</string>
+	<string id="ui_mm_modded_exes_visual_3d_scopes_scope_fog_travel">
+		<text>Fog Max Travel Distance (scope_fog_travel)</text>
 	</string>
 
 	<!-- Particles -->

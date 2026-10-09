@@ -58,6 +58,7 @@ public:
 	IBlender* b_gasmask_drops;
 	IBlender* b_gasmask_dudv;
 	IBlender* b_nightvision;
+	IBlender* b_fakescope; //crookr
 	IBlender* b_lut;
 	IBlender* b_smaa;
 	// compute shader for hdao
@@ -94,6 +95,8 @@ public:
 	resptr_core<CRT, resptrcode_crt> rt_Generic_temp;
 
 	ref_rt rt_secondVP;	// 32bit		(r,g,b,a) --//#SM+#-- +SecondVP+
+
+	ref_rt rt_fakescope;	// crookr fakescope
 
 	ref_rt rt_dof;
 	ref_rt rt_ui_pda;
@@ -134,6 +137,8 @@ public:
 	//	TODO: DX10: CHeck if we need old-style SMAP
 	//	IDirect3DSurface9*			rt_smap_ZB;		//
 
+	ref_rt rt_tempzb; // Redotix99: for 3D Shader Based Scopes
+
 	//	Igor: for async screenshots
 	ID3DTexture2D* t_ss_async; //32bit		(r,g,b,a) is situated in the system memory
 
@@ -173,6 +178,7 @@ private:
 	ref_shader s_gasmask_drops;
 	ref_shader s_gasmask_dudv;
 	ref_shader s_nightvision;
+	ref_shader s_fakescope; //crookr
 	ref_shader s_smaa;
 
 	ref_shader s_lut;
@@ -298,6 +304,8 @@ public:
 	void phase_gasmask_drops();
 	void phase_gasmask_dudv();
 	void phase_nightvision();
+	void phase_fakescope(); //crookr
+	void phase_3DSSReticle(); // Redotix99: for 3D Shader Based Scopes
 	void phase_lut();
 	void phase_smaa();
 	void phase_scene_prepare();

@@ -140,7 +140,8 @@ static ::luabind::object bus_list(lua_State* L, bool include_declared)
 
 	static LPCSTR legacy_lanes[] = {
 		"shader_param_1", "shader_param_2", "shader_param_3", "shader_param_4",
-		"shader_param_5", "shader_param_6", "shader_param_7", "shader_param_8"
+		"shader_param_5", "shader_param_6", "shader_param_7", "shader_param_8",
+		"s3ds_param_1", "s3ds_param_2", "s3ds_param_3", "s3ds_param_4"
 	};
 
 	for (u32 i = 0; i < sizeof(legacy_lanes) / sizeof(legacy_lanes[0]); ++i)

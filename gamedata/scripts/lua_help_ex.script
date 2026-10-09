@@ -23,6 +23,9 @@
 
         telekinetic_objects_include_corpses [0; 1] // Enable the ability for poltergeists and burers to throw corpses
         
+        sds_enable [0; 1] // Enable shader based scopes
+        sds_speed_enable [0; 1] // Enable mouse sensitivity change on zooming
+        sds_zoom_enable [0; 1] // Enable correction of max. zoom with scope_factor, if this option is enabled then max. zoom will be such as prescribed in settings regardless of scope_factor value, if this option is disabled then max. zoom will be sum of value prescribed in settings and the increase that gives scope_factor.
         new_zoom_enable [0; 1] // Enable alternative zoom control. Minimal zoom is equal to either mechanical zoom or the one prescribed in section min_scope_zoom_factor. The step of zoom adjustment is more precise. 
         zoom_step_count [1.0, 10.0] // Adjust the step of zoom if new_zoom_enable is on
         new_zoom_delta_algorithm [0; 1] // New zoom delta algorithm

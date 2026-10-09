@@ -28,6 +28,11 @@ class CNightVisionEffector;
 
 extern float f_weapon_deterioration;
 
+extern xr_map<shared_str, float> listScopeRadii;
+
+extern float scope_scrollpower;
+extern float sens_multiple;
+
 struct PickParam
 {
 	collide::rq_result RQ;
@@ -1143,4 +1148,6 @@ public:
 	{
 		return cNameSect();
 	};
+    
+    float SDS_Radius(bool alt = false);
 };

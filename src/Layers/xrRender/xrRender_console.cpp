@@ -258,6 +258,10 @@ Fvector4 ps_r2_mask_control = {.0f, .0f, .0f, .0f}; // r2-only
 Fvector ps_r2_drops_control = {.0f, 1.15f, .0f}; // r2-only
 
 int ps_r2_nightvision = 0;
+//crookr
+int scope_fake_enabled = 1;
+int scope_3D_fake_enabled = 0; // Redotix99: for 3D Shader Based Scopes
+//string32 scope_fake_texture = "wpn\\wpn_crosshair_pso1";
 
 float ps_r2_ss_sunshafts_length = 1.f;
 float ps_r2_ss_sunshafts_radius = 1.f;
@@ -302,6 +306,11 @@ int ps_markswitch_current = 0;
 int ps_markswitch_count = 0;
 Fvector4 ps_markswitch_color = { 0, 0, 0, 0 };
 
+// Shader 3D Scopes
+Fvector4 ps_s3ds_param_1 = { 0, 0, 0, 0 };
+Fvector4 ps_s3ds_param_2 = { 0, 0, 0, 0 };
+Fvector4 ps_s3ds_param_3 = { 0, 0, 0, 0 };
+Fvector4 ps_s3ds_param_4 = { 0, 0, 0, 0 };
 
 float hud_fov_aim_factor = 0;
 
@@ -884,7 +893,11 @@ static const struct
 	{"shader_param_5", &ps_dev_param_5},
 	{"shader_param_6", &ps_dev_param_6},
 	{"shader_param_7", &ps_dev_param_7},
-	{"shader_param_8", &ps_dev_param_8}
+	{"shader_param_8", &ps_dev_param_8},
+	{"s3ds_param_1", &ps_s3ds_param_1},
+	{"s3ds_param_2", &ps_s3ds_param_2},
+	{"s3ds_param_3", &ps_s3ds_param_3},
+	{"s3ds_param_4", &ps_s3ds_param_4}
 };
 
 class CCC_BusList : public IConsole_Command
@@ -1221,6 +1234,8 @@ void xrRender_initconsole()
 	CMD4(CCC_Vector4, "r__bloom_thresh", &ps_pp_bloom_thresh, twb_min, twb_max);
 	CMD4(CCC_Integer, "r__nightvision", &ps_r2_nightvision, 0, 3); //For beef's nightvision shader or other stuff
 
+	CMD4(CCC_Integer, "r__fakescope", &scope_fake_enabled, 0, 1); //crookr for fake scope
+	CMD4(CCC_Integer, "r__3Dfakescope", &scope_3D_fake_enabled, 0, 1); // Redotix99: for 3D Shader Based Scopes
 
 	CMD3(CCC_Mask, "r2_terrain_z_prepass", &ps_r2_ls_flags, R2FLAG_TERRAIN_PREPASS); //Terrain Z Prepass @Zagolski
 	
@@ -1257,6 +1272,11 @@ void xrRender_initconsole()
 	CMD4(CCC_Integer, "markswitch_count", &ps_markswitch_count, 0, 32);
 	CMD4(CCC_Vector4, "markswitch_color", &ps_markswitch_color, Fvector4().set(0.0, 0.0, 0.0, 0.0), Fvector4().set(1.0, 1.0, 1.0, 1.0));
 
+	// Shader 3D Scopes
+	CMD4(CCC_Vector4Legacy, "s3ds_param_1", &ps_s3ds_param_1, tw2_min, tw2_max);
+	CMD4(CCC_Vector4Legacy, "s3ds_param_2", &ps_s3ds_param_2, tw2_min, tw2_max);
+	CMD4(CCC_Vector4Legacy, "s3ds_param_3", &ps_s3ds_param_3, tw2_min, tw2_max);
+	CMD4(CCC_Vector4Legacy, "s3ds_param_4", &ps_s3ds_param_4, tw2_min, tw2_max);
 
 	CMD4(CCC_Float, "hud_fov_aim_factor", &hud_fov_aim_factor, 0.0f, 1.0f);
 

@@ -1330,6 +1330,7 @@
     <ClInclude Include="..\Needles.h" />
     <ClInclude Include="..\NET_Queue.h" />
     <ClInclude Include="..\NewZoomFlag.h" />
+    <ClInclude Include="..\new_sds.h" />
     <ClInclude Include="..\NoGravityZone.h" />
     <ClInclude Include="..\object_actions.h" />
     <ClInclude Include="..\object_actions_inline.h" />

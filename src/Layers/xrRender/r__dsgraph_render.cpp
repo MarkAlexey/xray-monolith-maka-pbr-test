@@ -515,6 +515,15 @@ void R_dsgraph_structure::r_dsgraph_render_hud()
 
 	rmNormal();
 
+#if defined(USE_DX11) //  Redotix99: for 3D Shader Based Scopes 		
+
+	if (scope_3D_fake_enabled)
+	{
+		mapScopeHUD.traverseLR(sorted_L1);
+	}
+	mapScopeHUD.clear();
+#endif
+
 	if (mapCamAttached.size())
 	{
 		rmNear();
@@ -625,6 +634,29 @@ void R_dsgraph_structure::r_dsgraph_render_sorted()
 	Device.mFullTransform = FTold;
 	RCache.set_xform_project(Device.mProject);
 }
+
+#if defined(USE_DX11)
+//////////////////////////////////////////////////////////////////////////
+// strict-sorted render
+void R_dsgraph_structure::r_dsgraph_render_ScopeSorted()  //  Redotix99: for 3D Shader Based Scopes 	
+{
+	// Change projection
+	Fmatrix FTold = Device.mFullTransform;
+
+	Device.mFullTransform = Device.mFullTransformHud;
+	RCache.set_xform_project(Device.mProjectHud);
+
+	// Rendering
+	rmNear();
+	mapScopeHUDSorted.traverseRL(sorted_L1);
+	mapScopeHUDSorted.clear();
+	rmNormal();
+
+	// Restore projection
+	Device.mFullTransform = FTold;
+	RCache.set_xform_project(Device.mProject);
+}
+#endif
 
 //////////////////////////////////////////////////////////////////////////
 // strict-sorted render
