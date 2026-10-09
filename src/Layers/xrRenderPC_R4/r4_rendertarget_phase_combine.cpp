@@ -374,11 +374,6 @@ void CRenderTarget::phase_combine()
 			phase_sunshafts();
 	}
 
-	if (scope_3D_fake_enabled)
-	{
-		phase_3DSSReticle(); // Redotix99: for 3D Shader Based Scopes
-	}
-
 	//Compute blur textures
 	phase_blur();
 
@@ -404,10 +399,6 @@ void CRenderTarget::phase_combine()
 	if(ps_r2_nightvision > 0)
 		phase_nightvision();
 
-	if (scope_fake_enabled)
-	{
-		phase_fakescope(); //crookr
-	}
 
     //SMAA
 	if (ps_smaa_quality)

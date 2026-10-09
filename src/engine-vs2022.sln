@@ -99,7 +99,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "scripts", "scripts", "{8EC4
 		..\gamedata\scripts\class_registrator_modded_exes.script = ..\gamedata\scripts\class_registrator_modded_exes.script
 		..\gamedata\scripts\dxml_core.script = ..\gamedata\scripts\dxml_core.script
 		..\gamedata\scripts\dynamic_callbacks.lua = ..\gamedata\scripts\dynamic_callbacks.lua
-		..\gamedata\scripts\fakelens.script = ..\gamedata\scripts\fakelens.script
 		..\gamedata\scripts\global.lua = ..\gamedata\scripts\global.lua
 		..\gamedata\scripts\imgui_helper.script = ..\gamedata\scripts\imgui_helper.script
 		..\gamedata\scripts\item_weapon.script = ..\gamedata\scripts\item_weapon.script
@@ -141,7 +140,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "scripts", "scripts", "{8EC4
 		..\gamedata\scripts\options_modded_exes_visual.script = ..\gamedata\scripts\options_modded_exes_visual.script
 		..\gamedata\scripts\options_modded_exes_wallmarks.script = ..\gamedata\scripts\options_modded_exes_wallmarks.script
 		..\gamedata\scripts\options_modded_exes_weapons.script = ..\gamedata\scripts\options_modded_exes_weapons.script
-		..\gamedata\scripts\scopeRadii.script = ..\gamedata\scripts\scopeRadii.script
 		..\gamedata\scripts\se_projector.script = ..\gamedata\scripts\se_projector.script
 		..\gamedata\scripts\se_stmgun.script = ..\gamedata\scripts\se_stmgun.script
 		..\gamedata\scripts\slaxml.script = ..\gamedata\scripts\slaxml.script
@@ -200,7 +198,6 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "r2", "r2", "{DC223170-1570-4855-ABFD-7E221F867A96}"
 	ProjectSection(SolutionItems) = preProject
 		..\gamedata\shaders\r2\combine_2_naa.ps = ..\gamedata\shaders\r2\combine_2_naa.ps
-		..\gamedata\shaders\r2\fakescope.ps = ..\gamedata\shaders\r2\fakescope.ps
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "r3", "r3", "{AAE035C4-0F51-435B-A0E0-9FC62D070877}"
@@ -213,7 +210,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "r3", "r3", "{AAE035C4-0F51-
 		..\gamedata\shaders\r3\editor.vs = ..\gamedata\shaders\r3\editor.vs
 		..\gamedata\shaders\r3\effects_sun.ps = ..\gamedata\shaders\r3\effects_sun.ps
 		..\gamedata\shaders\r3\effects_sun.s = ..\gamedata\shaders\r3\effects_sun.s
-		..\gamedata\shaders\r3\fakescope.ps = ..\gamedata\shaders\r3\fakescope.ps
 		..\gamedata\shaders\r3\hdr10.h = ..\gamedata\shaders\r3\hdr10.h
 		..\gamedata\shaders\r3\hdr10_bloom.h = ..\gamedata\shaders\r3\hdr10_bloom.h
 		..\gamedata\shaders\r3\hdr10_bloom_blur.ps = ..\gamedata\shaders\r3\hdr10_bloom_blur.ps

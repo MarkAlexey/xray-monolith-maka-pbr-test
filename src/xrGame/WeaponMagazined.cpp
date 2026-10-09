@@ -1509,7 +1509,6 @@ bool CWeaponMagazined::Detach(const char* item_section_name, bool b_spawn_item)
 		return inherited::Detach(item_section_name, b_spawn_item);;
 }
 
-extern int scope_2dtexactive; //crookr
 void CWeaponMagazined::InitAddons()
 {
 	if (IsScopeAttached())
@@ -1527,7 +1526,6 @@ void CWeaponMagazined::InitAddons()
 			if (m_UIScope)
 			{
 				xr_delete(m_UIScope);
-				scope_2dtexactive = 0;//crookr
 			}
 
 			if (!g_dedicated_server && scope_tex_name != NULL)
@@ -1544,7 +1542,6 @@ void CWeaponMagazined::InitAddons()
 		if (m_eScopeStatus != ALife::eAddonPermanent && m_UIScope)
 		{
 			xr_delete(m_UIScope);
-			scope_2dtexactive = 0;//crookr
 		}
 		ResetScopeKoeffs();
 	}

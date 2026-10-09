@@ -39,7 +39,6 @@ public:
 	IBlender* b_gasmask_drops;
 	IBlender* b_gasmask_dudv;
 	IBlender* b_nightvision;
-	IBlender* b_fakescope; //crookr
 	IBlender* b_lut;
 
 	IBlender* b_smaa;
@@ -69,8 +68,6 @@ public:
 	ref_rt rt_secondVP;		// 32bit		(r,g,b,a) --//#SM+#-- +SecondVP+
 	ref_rt rt_ui_pda;
 
-	ref_rt rt_fakescope; //crookr
-	ref_rt rt_Generic_PingPong;
 
 	ref_rt rt_dof;
 
@@ -129,7 +126,6 @@ private:
 	ref_shader s_gasmask_drops;
 	ref_shader s_gasmask_dudv;
 	ref_shader s_nightvision;
-	ref_shader s_fakescope; //crookr
 
 	ref_shader s_blur;
 	ref_shader s_dof;
@@ -268,7 +264,6 @@ public:
 	void phase_gasmask_drops();
 	void phase_gasmask_dudv();
 	void phase_nightvision();
-	void phase_fakescope(); //crookr
 	void phase_lut();
 	void phase_smaa();
 

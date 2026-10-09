@@ -46,10 +46,6 @@ public:
 	R_dsgraph::mapSorted_T mapDistort;
 	R_dsgraph::mapHUD_T mapHUDSorted;
 	R_dsgraph::mapHUD_T mapCamAttachedSorted;
-#if defined(USE_DX11)
-	R_dsgraph::mapScopeHUD_T mapScopeHUD;	//  Redotix99: for 3D Shader Based Scopes
-	R_dsgraph::mapScopeHUD_T mapScopeHUDSorted;
-#endif
 	R_dsgraph::mapLandscape_T mapLandscape;
 
 #if RENDER!=R_R1
@@ -210,9 +206,6 @@ public:
 	void r_dsgraph_render_cam_ui();
 	void r_dsgraph_render_lods(bool _setup_zb, bool _clear);
 	void r_dsgraph_render_sorted();
-#if defined(USE_DX11)
-	void r_dsgraph_render_ScopeSorted(); // Redotix99: for 3D Shader Based Scopes
-#endif
 	void r_dsgraph_render_emissive();
 	void r_dsgraph_render_wmarks();
 	void r_dsgraph_render_distort();
