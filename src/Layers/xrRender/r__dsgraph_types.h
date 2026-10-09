@@ -218,11 +218,6 @@ namespace R_dsgraph
 	typedef FixedMAP<float, _MatrixItemS, render_allocator> mapHUD_T;
 	typedef mapHUD_T::TNode mapHUD_Node;
 
-#if defined(USE_DX11)
-	typedef FixedMAP<float, _MatrixItemS, render_allocator> mapScopeHUD_T; // Redotix99: for 3D Shader Based Scopes
-	typedef mapScopeHUD_T::TNode mapScopeHUD_T_Node;
-#endif
-
 	typedef FixedMAP<float, _LodItem, render_allocator> mapLOD_T;
 	typedef mapLOD_T::TNode mapLOD_Node;
 

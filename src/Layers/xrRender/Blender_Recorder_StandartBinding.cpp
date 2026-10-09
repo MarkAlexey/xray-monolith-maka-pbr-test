@@ -261,24 +261,6 @@ class cl_eye_P : public R_constant_setup
 };
 static cl_eye_P binder_eye_P;
 
-// interpolated eye position (crookr scope parallax)
-// We can improve this by clamping the magnitude of the travel here instead of in-shader. 
-// it would fix the issue with the fog "sticking" when moving too far off center
-extern float scope_fog_interp;
-extern float scope_fog_travel;
-class cl_eye_PL : public R_constant_setup
-{
-	Fvector tV;
-	virtual void setup(R_constant* C)
-	{
-		Fvector& V = RDEVICE.vCameraPosition;
-		tV = tV.lerp(tV, V, scope_fog_interp);
-
-		RCache.set_c(C, tV.x, tV.y, tV.z, 1);
-	}
-};
-static cl_eye_PL binder_eye_PL;
-
 // eye-params
 class cl_eye_D : public R_constant_setup
 {
@@ -289,20 +271,6 @@ class cl_eye_D : public R_constant_setup
 	}
 };
 static cl_eye_D binder_eye_D;
-
-// interpolated eye direction (crookr scope parallax)
-class cl_eye_DL : public R_constant_setup
-{
-	Fvector tV;
-	virtual void setup(R_constant* C)
-	{
-		Fvector& V = RDEVICE.vCameraDirection;
-		tV = tV.lerp(tV, V, scope_fog_interp);
-
-		RCache.set_c(C, tV.x, tV.y, tV.z, 0);
-	}
-};
-static cl_eye_DL binder_eye_DL;
 
 // eye-params
 class cl_eye_N : public R_constant_setup
@@ -317,45 +285,6 @@ class cl_eye_N : public R_constant_setup
 static cl_eye_N binder_eye_N;
 
 
-// fake scope params (crookr)
-extern float scope_outerblur;
-extern float scope_innerblur;
-extern float scope_scrollpower;
-extern float scope_brightness;
-class cl_fakescope_params : public R_constant_setup
-{
-	virtual void setup(R_constant* C)
-	{
-		RCache.set_c(C, scope_scrollpower, scope_innerblur, scope_outerblur, scope_brightness);
-	}
-};
-static cl_fakescope_params binder_fakescope_params;
-
-extern float scope_ca;
-extern float scope_fog_attack;
-extern float scope_fog_mattack;
-//extern float scope_fog_travel;
-class cl_fakescope_ca : public R_constant_setup
-{
-	virtual void setup(R_constant* C)
-	{
-		RCache.set_c(C, scope_ca, scope_fog_attack, scope_fog_mattack, scope_fog_travel);
-	}
-};
-static cl_fakescope_ca binder_fakescope_ca;
-
-extern float scope_radius;
-extern float scope_fog_radius;
-extern float scope_fog_sharp;
-//extern float scope_drift_amount;
-class cl_fakescope_params3 : public R_constant_setup
-{
-	virtual void setup(R_constant* C)
-	{
-		RCache.set_c(C, scope_radius, scope_fog_radius, scope_fog_sharp, 0.0f);
-	}
-};
-static cl_fakescope_params3 binder_fakescope_params3;
 // Mark Switch
 extern int ps_markswitch_current;
 extern int ps_markswitch_count;
@@ -384,43 +313,6 @@ static class markswitch_color : public R_constant_setup
 		RCache.set_c(C, ps_markswitch_color.x, ps_markswitch_color.y, ps_markswitch_color.z, ps_markswitch_color.w);
 	}
 }    markswitch_color;
-// Shader 3D Scopes
-extern Fvector4 ps_s3ds_param_1;
-extern Fvector4 ps_s3ds_param_2;
-extern Fvector4 ps_s3ds_param_3;
-extern Fvector4 ps_s3ds_param_4;
-
-static class s3ds_param_1 : public R_constant_setup
-{
-	virtual void setup(R_constant* C)
-	{
-		RCache.set_c(C, ps_s3ds_param_1.x, ps_s3ds_param_1.y, ps_s3ds_param_1.z, ps_s3ds_param_1.w);
-	}
-}    s3ds_param_1;
-
-static class s3ds_param_2 : public R_constant_setup
-{
-	virtual void setup(R_constant* C)
-	{
-		RCache.set_c(C, ps_s3ds_param_2.x, ps_s3ds_param_2.y, ps_s3ds_param_2.z, ps_s3ds_param_2.w);
-	}
-}    s3ds_param_2;
-
-static class s3ds_param_3 : public R_constant_setup
-{
-	virtual void setup(R_constant* C)
-	{
-		RCache.set_c(C, ps_s3ds_param_3.x, ps_s3ds_param_3.y, ps_s3ds_param_3.z, ps_s3ds_param_3.w);
-	}
-}    s3ds_param_3;
-
-static class s3ds_param_4 : public R_constant_setup
-{
-	virtual void setup(R_constant* C)
-	{
-		RCache.set_c(C, ps_s3ds_param_4.x, ps_s3ds_param_4.y, ps_s3ds_param_4.z, ps_s3ds_param_4.w);
-	}
-}    s3ds_param_4;
 
 
 
@@ -943,9 +835,7 @@ void CBlender_Compile::SetMapping()
 
 	// eye-params
 	r_Constant("eye_position", &binder_eye_P);
-	r_Constant("eye_position_lerp", &binder_eye_PL); // crookr
 	r_Constant("eye_direction", &binder_eye_D);
-	r_Constant("eye_direction_lerp", &binder_eye_DL); // crookr
 	r_Constant("eye_normal", &binder_eye_N);
 
 #ifndef _EDITOR
@@ -1001,17 +891,6 @@ void CBlender_Compile::SetMapping()
 	r_Constant("markswitch_current", &markswitch_current);
 	r_Constant("markswitch_count", &markswitch_count);
 	r_Constant("markswitch_color", &markswitch_color);
-
-	// Shader 3D Scopes
-	r_Constant("s3ds_param_1", &s3ds_param_1);
-	r_Constant("s3ds_param_2", &s3ds_param_2);
-	r_Constant("s3ds_param_3", &s3ds_param_3);
-	r_Constant("s3ds_param_4", &s3ds_param_4);
-
-	// crookr
-	r_Constant("fakescope_params1", &binder_fakescope_params);
-	r_Constant("fakescope_params2", &binder_fakescope_ca);
-	r_Constant("fakescope_params3", &binder_fakescope_params3);
 
 	// other common
 	for (u32 it = 0; it < DEV->v_constant_setup.size(); it++)

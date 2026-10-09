@@ -369,7 +369,6 @@ CRenderTarget::CRenderTarget()
 	b_gasmask_drops = xr_new<CBlender_gasmask_drops>();
 	b_gasmask_dudv = xr_new<CBlender_gasmask_dudv>();
 	b_nightvision = xr_new<CBlender_nightvision>();
-	b_fakescope = xr_new<CBlender_fakescope>(); //crookr
 	b_lut = xr_new<CBlender_lut>();
 	b_smaa = xr_new<CBlender_smaa>();
 
@@ -434,7 +433,6 @@ CRenderTarget::CRenderTarget()
 			rt_MSAADepth.create(r2_RT_MSAAdepth, w, h, D3DFMT_D24S8, SampleCount);
 		}
 
-		rt_tempzb.create("$user$temp_zb", w, h, D3DFMT_D24S8); // Redotix99: for 3D Shader Based Scopes
 
 		// select albedo & accum
 		if (RImplementation.o.mrtmixdepth)
@@ -478,7 +476,6 @@ CRenderTarget::CRenderTarget()
 			rt_Generic.create(r2_RT_generic, w, h, D3DFMT_A8R8G8B8, 1);
 		}
 
-		rt_fakescope.create(r2_RT_scopert, w, h, D3DFMT_A8R8G8B8, 1); //crookr fakescope
 
 		if (RImplementation.o.dx11_hdr10) {
 			rt_Generic_temp.create("$user$generic_temp", w, h, D3DFMT_A16B16G16R16F, RImplementation.o.dx10_msaa ? SampleCount : 1);
@@ -548,7 +545,6 @@ CRenderTarget::CRenderTarget()
 	s_gasmask_dudv.create(b_gasmask_dudv, "r2\\gasmask_dudv");
 	s_nightvision.create(b_nightvision, "r2\\nightvision");
 
-	s_fakescope.create(b_fakescope, "r2\\fakescope"); //crookr
 
 
 	s_lut.create(b_lut, "r2\\lut");
@@ -1228,7 +1224,6 @@ CRenderTarget::~CRenderTarget()
 	xr_delete(b_gasmask_drops);
 	xr_delete(b_gasmask_dudv);
 	xr_delete(b_nightvision);
-	xr_delete(b_fakescope); //crookr
 	xr_delete(b_lut);
 	xr_delete(b_smaa);
 
