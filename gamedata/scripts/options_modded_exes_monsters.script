@@ -5,7 +5,6 @@ options_builder.import_into(this)
 
 PAGE = page {
 	{ id = "monsters" },
-	list_bool { id = "heat_vision_zombie_cold" },
 	list_bool { id = "pseudogiant_can_damage_objects_on_stomp" },
 	list_bool { id = "pseudogiant_dodge_stomp_while_falling" },
 	list_bool { id = "telekinetic_objects_include_corpses" },

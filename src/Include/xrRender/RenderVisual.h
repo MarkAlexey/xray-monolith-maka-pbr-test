@@ -42,9 +42,6 @@ public:
 
 	virtual void SetShaderTexture(LPCSTR shader, LPCSTR texture) {};
 	virtual void ResetShaderTexture() {};
-	virtual void MarkAsHot(bool is_hot) {};				//--DSR-- HeatVision
-	virtual void MarkAsGlowing(bool is_glowing) {};		//--DSR-- SilencerOverheat
-
 	virtual IRenderVisual* _BCL dcast_RenderVisual() { return this; }
 	virtual IKinematics* _BCL dcast_PKinematics() { return 0; }
 	virtual IKinematicsAnimated* dcast_PKinematicsAnimated() { return 0; }
