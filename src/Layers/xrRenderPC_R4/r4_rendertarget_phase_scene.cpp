@@ -14,10 +14,6 @@ void CRenderTarget::phase_scene_prepare()
 		FLOAT ColorRGBA[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 		HW.pContext->ClearRenderTargetView(rt_Position->pRT, ColorRGBA);
 
-		//--DSR-- HeatVision_start
-		HW.pContext->ClearRenderTargetView(rt_Heat->pRT, ColorRGBA);
-		//--DSR-- HeatVision_end
-
 		if (!RImplementation.o.dx10_msaa)
 			HW.pContext->ClearDepthStencilView(HW.pBaseZB, D3D_CLEAR_DEPTH | D3D_CLEAR_STENCIL, 1.0f, 0);
 		else
@@ -43,10 +39,8 @@ void CRenderTarget::phase_scene_begin()
 
 	// Targets, use accumulator for temporary storage
 	{
-		//--DSR-- HeatVision_start
-		if (RImplementation.o.albedo_wo) u_setrt(rt_Position, rt_Accumulator, rt_Heat, pZB);
-		else u_setrt(rt_Position, rt_Color, rt_Heat, pZB);
-		//--DSR-- HeatVision_end
+		if (RImplementation.o.albedo_wo) u_setrt(rt_Position, rt_Accumulator, pZB);
+		else u_setrt(rt_Position, rt_Color, pZB);
 	}
 
 

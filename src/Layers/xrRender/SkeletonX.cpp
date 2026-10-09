@@ -352,7 +352,7 @@ void CSkeletonX::_Load(const char* N, IReader* data, u32& dwVertCount)
 #ifdef _EDITOR
 	if (bids.size()>0)	
 #else
-	if (bids.size()>0)		//--DSR-- SilencerOverheat (1 -> 0). Why was 1 tho?
+	if (bids.size() > 1)
 #endif
 	{
 		crc = crc32(&*bids.begin(), bids.size() * sizeof(u16));

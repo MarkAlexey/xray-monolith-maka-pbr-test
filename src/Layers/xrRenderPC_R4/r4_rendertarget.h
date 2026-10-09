@@ -68,7 +68,6 @@ public:
 	IBlender* b_gasmask_dudv;
 	IBlender* b_nightvision;
 	IBlender* b_fakescope; //crookr
-	IBlender* b_heatvision; //--DSR-- HeatVision
 	IBlender* b_lut;
 	IBlender* b_smaa;
 	// compute shader for hdao
@@ -93,10 +92,6 @@ public:
 	ref_rt rt_Generic;
 	ref_rt rt_Position; // 64bit,	fat	(x,y,z,?)				(eye-space)
 	ref_rt rt_Color; // 64/32bit,fat	(r,g,b,specular-gloss)	(or decompressed MET-8-8-8-8)
-
-	//--DSR-- HeatVision_start
-	ref_rt rt_Heat;
-	//--DSR-- HeatVision_end
 
 	//
 	ref_rt rt_Accumulator; // 64bit		(r,g,b,specular)
@@ -199,7 +194,6 @@ private:
 	ref_shader s_gasmask_dudv;
 	ref_shader s_nightvision;
 	ref_shader s_fakescope; //crookr
-	ref_shader s_heatvision; //--DSR-- HeatVision
 	ref_shader s_smaa;
 
 	ref_shader s_lut;
@@ -337,7 +331,6 @@ public:
 	void phase_gasmask_dudv();
 	void phase_nightvision();
 	void phase_fakescope(); //crookr
-	void phase_heatvision(); //--DSR-- HeatVision
 	void phase_3DSSReticle(); // Redotix99: for 3D Shader Based Scopes
 	void phase_lut();
 	void phase_smaa();

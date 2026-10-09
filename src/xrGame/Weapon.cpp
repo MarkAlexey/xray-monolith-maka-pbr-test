@@ -160,7 +160,6 @@ CWeapon::CWeapon()
 	bHasBulletsToHide = false;
 	bullet_cnt = 0;
 	IsCustomReloadAvaible = false;
-	temperature = 0.f;	//--DSR-- SilencerOverheat
 }
 
 extern int scope_2dtexactive; //crookr
@@ -894,20 +893,7 @@ void CWeapon::Load(LPCSTR section)
 	m_safemode_anm[1].power = READ_IF_EXISTS(pSettings, r_float, *hud_sect, "safemode_anm_power2", 1.f);
 
 	m_shoot_shake_mat.identity();
-
 	m_playFullShotAnim = READ_IF_EXISTS(pSettings, r_bool, *hud_sect, "rpm_anim_fix", true);
-	//--DSR-- SilencerOverheat_start
-	if (m_eSilencerStatus == ALife::eAddonAttachable)
-	{
-		auto kinematics = smart_cast<IKinematics*>(renderable.visual);
-		if (kinematics)
-		{
-			auto visual = kinematics->GetVisualByBone("wpn_silencer");
-			if (visual)
-				visual->MarkAsGlowing(true);
-		}
-	}
-	//--DSR-- SilencerOverheat_end
 
 	m_nearwall_zoomed_range = READ_IF_EXISTS(pSettings, r_float, section, "nearwall_zoomed_range", 0.04f);
 
@@ -1209,11 +1195,6 @@ void CWeapon::shedule_Update(u32 dT)
 
 	// Inherited
 	inherited::shedule_Update(dT);
-	//--DSR-- SilencerOverheat_start
-	temperature -= (float)dT / 1000.f * sil_glow_cool_temp_rate;
-	if (temperature < 0.f)
-		temperature = 0.f;
-	//--DSR-- SilencerOverheat_end
 }
 
 void CWeapon::OnH_B_Independent(bool just_before_destroy)

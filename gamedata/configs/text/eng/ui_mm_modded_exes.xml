@@ -1137,9 +1137,6 @@
 		<text>Monsters</text>
 	</string>
 	
-	<string id="ui_mm_modded_exes_gameplay_monsters_heat_vision_zombie_cold">
-		<text>Cold zombies in Heat Vision (heat_vision_zombie_cold)</text>
-	</string>
 	<string id="ui_mm_modded_exes_gameplay_monsters_pseudogiant_can_damage_objects_on_stomp">
 		<text>Pseudogiant Damage Objects On Stomp (pseudogiant_can_damage_objects_on_stomp)</text>
 	</string>
