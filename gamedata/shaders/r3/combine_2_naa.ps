@@ -1,6 +1,5 @@
 #include "common.h"
 #include "anomaly_shaders.h"
-#include "hdr10.h"
 
 //////////////////////////////////////////////////////////////////////////////////////////
 #ifndef USE_MSAA
@@ -71,14 +70,12 @@ c2_out main( v2p_aa_AA I )
 
 	img = blend_soft(img, bloom.xyz*bloom.w);
 		
-	if (!HDR10_IS_ENABLED) {
-		if (tnmp_onoff == 1.0)
-		{		
-			img = Uncharted2ToneMapping(img);
-		}
-
-		img = img_corrections(img);
+	if (tnmp_onoff == 1.0)
+	{		
+		img = Uncharted2ToneMapping(img);
 	}
+
+	img = img_corrections(img);
 		
 	{
 		/*

@@ -52,15 +52,6 @@ public:
 	IBlender* b_ssao;
 	IBlender* b_ssao_msaa[8];
 
-	IBlender* b_hdr10_bloom_downsample;
-	IBlender* b_hdr10_bloom_blur;
-	IBlender* b_hdr10_bloom_upsample;
-	
-	IBlender* b_hdr10_lens_flare_downsample;
-	IBlender* b_hdr10_lens_flare_fgen;
-	IBlender* b_hdr10_lens_flare_blur;
-	IBlender* b_hdr10_lens_flare_upsample;
-
 	IBlender* b_blur;
 	IBlender* b_dof;
 	IBlender* b_pp_bloom;
@@ -104,8 +95,6 @@ public:
 
 	ref_rt rt_secondVP;	// 32bit		(r,g,b,a) --//#SM+#-- +SecondVP+
 
-
-
 	ref_rt rt_dof;
 	ref_rt rt_ui_pda;
 
@@ -134,9 +123,6 @@ public:
 	ref_texture t_LUM_src; // source
 	ref_texture t_LUM_dest; // destination & usage for current frame
 
-	// HDR10
-	ref_rt rt_HDR10_HalfRes[2];
-
 	// env
 	ref_texture t_envmap_0; // env-0
 	ref_texture t_envmap_1; // env-1
@@ -147,7 +133,6 @@ public:
 	ref_rt rt_smap_depth_minmax; //	is used for min/max sm
 	//	TODO: DX10: CHeck if we need old-style SMAP
 	//	IDirect3DSurface9*			rt_smap_ZB;		//
-
 
 	//	Igor: for async screenshots
 	ID3DTexture2D* t_ss_async; //32bit		(r,g,b,a) is situated in the system memory
@@ -172,8 +157,6 @@ private:
 	ref_shader s_ssao_msaa[8];
 	ref_shader s_hdao_cs;
 	ref_shader s_hdao_cs_msaa;
-
-
 
 	// Accum
 	ref_shader s_accum_mask;
@@ -234,16 +217,6 @@ private:
 	ref_shader s_bloom;
 	ref_shader s_bloom_msaa;
 	float f_bloom_factor;
-
-	// HDR10
-	ref_shader s_hdr10_bloom_downsample;
-	ref_shader s_hdr10_bloom_blur;
-	ref_shader s_hdr10_bloom_upsample;
-	
-	ref_shader s_hdr10_lens_flare_downsample;
-	ref_shader s_hdr10_lens_flare_fgen;
-	ref_shader s_hdr10_lens_flare_blur;
-	ref_shader s_hdr10_lens_flare_upsample;
 
 	// Luminance
 	ref_shader s_luminance;
@@ -309,7 +282,6 @@ public:
 	void u_compute_texgen_screen(Fmatrix& dest);
 	void u_compute_texgen_jitter(Fmatrix& dest);
 	void u_setrt(const ref_rt& _1, const ref_rt& _2, const ref_rt& _3, ID3DDepthStencilView* zb);
-	void set_viewport_size(ID3DDeviceContext* dev, float w, float h);
 	void u_setrt(const ref_rt& _1, const ref_rt& _2, ID3DDepthStencilView* zb);
 	void u_setrt(u32 W, u32 H, ID3DRenderTargetView* _1, ID3DRenderTargetView* _2, ID3DRenderTargetView* _3,
 	             ID3DDepthStencilView* zb);
@@ -344,10 +316,6 @@ public:
 	void phase_accumulator();
 	void phase_vol_accumulator();
 	void shadow_direct(light* L, u32 dls_phase);
-
-	// HDR10
-	void phase_hdr10_bloom();
-	void phase_hdr10_lens_flare();
 
 	//	Generates min/max sm
 	void create_minmax_SM();

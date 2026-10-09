@@ -25,23 +25,10 @@
 #include "blender_nightvision.h"
 #include "blender_lut.h"
 
-// HDR10
-#include "blender_hdr10_bloom.h"
-#include "blender_hdr10_lens_flare.h"
-
 #include "../xrRender/dxRenderDeviceRender.h"
 #include "../xrRender/xrRender_console.h"
 
 #include <D3DX10Tex.h>
-
-D3D_VIEWPORT custom_viewport[1] = { 0, 0, 0, 0, 0.f, 1.f };
-
-void CRenderTarget::set_viewport_size(ID3DDeviceContext * dev, float w, float h)
-{
-	custom_viewport[0].Width = w;
-	custom_viewport[0].Height = h;
-	dev->RSSetViewports(1, custom_viewport);
-}
 
 void CRenderTarget::u_setrt(const ref_rt& _1, const ref_rt& _2, const ref_rt& _3, ID3DDepthStencilView* zb)
 {
@@ -372,16 +359,6 @@ CRenderTarget::CRenderTarget()
 	b_lut = xr_new<CBlender_lut>();
 	b_smaa = xr_new<CBlender_smaa>();
 
-	// HDR10
-	b_hdr10_bloom_downsample = xr_new<CBlender_hdr10_bloom_downsample>();
-	b_hdr10_bloom_blur 		 = xr_new<CBlender_hdr10_bloom_blur>();
-	b_hdr10_bloom_upsample   = xr_new<CBlender_hdr10_bloom_upsample>();
-	
-	b_hdr10_lens_flare_downsample = xr_new<CBlender_hdr10_lens_flare_downsample>();
-	b_hdr10_lens_flare_fgen 	  = xr_new<CBlender_hdr10_lens_flare_fgen>();
-	b_hdr10_lens_flare_blur       = xr_new<CBlender_hdr10_lens_flare_blur>();
-	b_hdr10_lens_flare_upsample   = xr_new<CBlender_hdr10_lens_flare_upsample>();
-
 	// HDAO
 	b_hdao_cs = xr_new<CBlender_CS_HDAO>();
 	if (RImplementation.o.dx10_msaa)
@@ -433,16 +410,11 @@ CRenderTarget::CRenderTarget()
 			rt_MSAADepth.create(r2_RT_MSAAdepth, w, h, D3DFMT_D24S8, SampleCount);
 		}
 
-
 		// select albedo & accum
 		if (RImplementation.o.mrtmixdepth)
 		{
 			// NV50
-			if (RImplementation.o.dx11_hdr10) {
-				rt_Color.create(r2_RT_albedo, w, h, D3DFMT_A16B16G16R16F, SampleCount);
-			} else {
-				rt_Color.create(r2_RT_albedo, w, h, D3DFMT_A8R8G8B8, SampleCount);
-			}
+			rt_Color.create(r2_RT_albedo, w, h, D3DFMT_A8R8G8B8, SampleCount);
 			rt_Accumulator.create(r2_RT_accum, w, h, D3DFMT_A16B16G16R16F, SampleCount);
 		}
 		else
@@ -466,38 +438,17 @@ CRenderTarget::CRenderTarget()
 
 		// generic(LDR) RTs
 		//LV - we should change their formats into D3DFMT_A16B16G16R16F for better HDR support.
-		if (RImplementation.o.dx11_hdr10) {
-			rt_Generic_0.create(r2_RT_generic0, w, h, D3DFMT_A16B16G16R16F, 1);
-			rt_Generic_1.create(r2_RT_generic1, w, h, D3DFMT_A16B16G16R16F, 1);
-			rt_Generic.create(r2_RT_generic, w, h, D3DFMT_A16B16G16R16F, 1);
-		} else {
-			rt_Generic_0.create(r2_RT_generic0, w, h, D3DFMT_A8R8G8B8, 1);
-			rt_Generic_1.create(r2_RT_generic1, w, h, D3DFMT_A8R8G8B8, 1);
-			rt_Generic.create(r2_RT_generic, w, h, D3DFMT_A8R8G8B8, 1);
-		}
+		rt_Generic_0.create(r2_RT_generic0, w, h, D3DFMT_A8R8G8B8, 1);
+		rt_Generic_1.create(r2_RT_generic1, w, h, D3DFMT_A8R8G8B8, 1);
+		rt_Generic.create(r2_RT_generic, w, h, D3DFMT_A8R8G8B8, 1);
 
+		rt_Generic_temp.create("$user$generic_temp", w, h, D3DFMT_A8R8G8B8, RImplementation.o.dx10_msaa ? SampleCount : 1);
 
-		if (RImplementation.o.dx11_hdr10) {
-			rt_Generic_temp.create("$user$generic_temp", w, h, D3DFMT_A16B16G16R16F, RImplementation.o.dx10_msaa ? SampleCount : 1);
-		} else {
-			rt_Generic_temp.create("$user$generic_temp", w, h, D3DFMT_A8R8G8B8, RImplementation.o.dx10_msaa ? SampleCount : 1);
-		}
+		rt_dof.create(r2_RT_dof, w, h, D3DFMT_A8R8G8B8);
 
-		rt_dof.create(r2_RT_dof, w, h, RImplementation.o.dx11_hdr10 ? D3DFMT_A16B16G16R16F : D3DFMT_A8R8G8B8);
+		rt_secondVP.create(r2_RT_secondVP, w, h, D3DFMT_A8R8G8B8, 1); //--#SM+#-- +SecondVP+
+		rt_ui_pda.create(r2_RT_ui, w, h, D3DFMT_A8R8G8B8);
 
-		if (RImplementation.o.dx11_hdr10) {
-			rt_secondVP.create(r2_RT_secondVP, w, h, D3DFMT_A2R10G10B10, 1); //--#SM+#-- +SecondVP+ // NOTE: this is a hack to use DXGI R10G10B10A2_UNORM
-			rt_ui_pda.create(r2_RT_ui, w, h, D3DFMT_A2R10G10B10); // NOTE: this is a hack to use DXGI R10G10B10A2_UNORM
-		} else {
-			rt_secondVP.create(r2_RT_secondVP, w, h, D3DFMT_A8R8G8B8, 1); //--#SM+#-- +SecondVP+
-			rt_ui_pda.create(r2_RT_ui, w, h, D3DFMT_A8R8G8B8);
-		}
-
-		// TODO: R11G11B10F? needs another horrible hack + cast + update to converter function
-		if (RImplementation.o.dx11_hdr10) {
-			rt_HDR10_HalfRes[0].create(r4_RT_HDR10_halfres0, w/2,  h/2,  D3DFMT_A16B16G16R16F);
-			rt_HDR10_HalfRes[1].create(r4_RT_HDR10_halfres1, w/2,  h/2,  D3DFMT_A16B16G16R16F);
-		}
 		// PDA, probably not ideal though
 // RT - KD
 		rt_sunshafts_0.create(r2_RT_sunshafts0, w, h, D3DFMT_A8R8G8B8);
@@ -517,8 +468,8 @@ CRenderTarget::CRenderTarget()
 
 		if (RImplementation.o.dx10_msaa)
 		{
-            rt_Generic_0_r.create(r2_RT_generic0_r, w, h, ps_r4_hdr10_on ? D3DFMT_A16B16G16R16F : D3DFMT_A8R8G8B8, SampleCount);
-            rt_Generic_1_r.create(r2_RT_generic1_r, w, h, ps_r4_hdr10_on ? D3DFMT_A16B16G16R16F : D3DFMT_A8R8G8B8, SampleCount);
+            rt_Generic_0_r.create(r2_RT_generic0_r, w, h, D3DFMT_A8R8G8B8, SampleCount);
+            rt_Generic_1_r.create(r2_RT_generic1_r, w, h, D3DFMT_A8R8G8B8, SampleCount);
 			//rt_Generic.create		      (r2_RT_generic,w,h,   D3DFMT_A8R8G8B8, 1		);
 		}
 		//	Igor: for volumetric lights
@@ -528,15 +479,6 @@ CRenderTarget::CRenderTarget()
 			rt_Generic_2.create(r2_RT_generic2, w, h, D3DFMT_A16B16G16R16F, SampleCount);
 	}
 
-	s_hdr10_bloom_downsample.create(b_hdr10_bloom_downsample, "hdr10_bloom_downsample");
-	s_hdr10_bloom_blur.create(b_hdr10_bloom_blur, "hdr10_bloom_blur");
-	s_hdr10_bloom_upsample.create(b_hdr10_bloom_upsample, "hdr10_bloom_upsample");
-
-	s_hdr10_lens_flare_downsample.create(b_hdr10_lens_flare_downsample, "hdr10_lens_flare_downsample");
-	s_hdr10_lens_flare_fgen.create(b_hdr10_lens_flare_fgen, "hdr10_lens_flare_fgen");
-	s_hdr10_lens_flare_blur.create(b_hdr10_lens_flare_blur, "hdr10_lens_flare_blur");
-	s_hdr10_lens_flare_upsample.create(b_hdr10_lens_flare_upsample, "hdr10_lens_flare_upsample");
-
 	s_sunshafts.create(b_sunshafts, "r2\\sunshafts");
 	s_blur.create(b_blur, "r2\\blur");
 	s_pp_bloom.create(b_pp_bloom, "r2\\pp_bloom");
@@ -544,8 +486,6 @@ CRenderTarget::CRenderTarget()
 	s_gasmask_drops.create(b_gasmask_drops, "r2\\gasmask_drops");
 	s_gasmask_dudv.create(b_gasmask_dudv, "r2\\gasmask_dudv");
 	s_nightvision.create(b_nightvision, "r2\\nightvision");
-
-
 
 	s_lut.create(b_lut, "r2\\lut");
 	// OCCLUSION
@@ -573,7 +513,6 @@ CRenderTarget::CRenderTarget()
 		//rt_smap_ZB					= NULL;
 		s_accum_mask.create(b_accum_mask, "r3\\accum_mask");
 		s_accum_direct.create(b_accum_direct, "r3\\accum_direct");
-
 
 		if (RImplementation.o.dx10_msaa)
 		{
@@ -692,7 +631,6 @@ CRenderTarget::CRenderTarget()
 		accum_volumetric_geom_create();
 		g_accum_volumetric.create(D3DFVF_XYZ, g_accum_volumetric_vb, g_accum_volumetric_ib);
 	}
-
 
 	// REFLECTED
 	{
@@ -1117,7 +1055,6 @@ CRenderTarget::CRenderTarget()
 			t_noise[it] = dxRenderDeviceRender::Instance().Resources->_CreateTexture(name);
 			t_noise[it]->surface_set(t_noise_surf[it]);
 
-
 			//	Create noise mipped
 			{
 				//	Autogen mipmaps
@@ -1227,16 +1164,6 @@ CRenderTarget::~CRenderTarget()
 	xr_delete(b_lut);
 	xr_delete(b_smaa);
 
-
-	// HDR10
-	xr_delete(b_hdr10_bloom_downsample);
-	xr_delete(b_hdr10_bloom_blur);
-	xr_delete(b_hdr10_bloom_upsample);
-	
-	xr_delete(b_hdr10_lens_flare_downsample);
-	xr_delete(b_hdr10_lens_flare_fgen);
-	xr_delete(b_hdr10_lens_flare_blur);
-	xr_delete(b_hdr10_lens_flare_upsample);
 	if (RImplementation.o.dx10_msaa)
 	{
 		int bound = RImplementation.o.dx10_msaa_samples;
