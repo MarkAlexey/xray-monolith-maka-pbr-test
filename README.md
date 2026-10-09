@@ -2,6 +2,8 @@
 
 # STALKER-Anomaly-modded-exes
 
+> **`clean-renderer` branch:** this branch removes the renderer feature additions (SSS, Heatvision, shader scopes, HDR10) to get a clean base for renderer work. The changes were made by an AI; see [README-Claude.md](README-Claude.md) for what changed and what that means for mods.
+
 Here is list of exe files for Anomaly 1.5.3 that contains all engine patches by community required for some advanced mods to work.
 
 # Versions
