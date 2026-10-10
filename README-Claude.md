@@ -207,9 +207,10 @@ bright.
   by it. A shader pack has to be merged with these files by hand to keep both.
 - Rain does not make PBR surfaces wet, and tessellation displacement still reads the legacy
   height channel.
-- Reflections use the sky cubemaps without the skybox rotation, and there are no screen-space
-  reflections or contact shadows (IX-Ray's versions of those depend on systems Monolith does not
-  have).
+- Reflections sample the sky cubemaps the same way the skybox is drawn (its rotation and its
+  stretched upper half) and fade to the hemisphere cubemap below the horizon. There are no
+  screen-space reflections or contact shadows (IX-Ray's versions of those depend on systems
+  Monolith does not have).
 - Lighting is IX-Ray's, not a match for the legacy look: light falloff, specular highlights and
   the ambient reflections differ by design.
 

@@ -175,6 +175,31 @@ float3 pbr_light_sun( pbr_material M, float3 P, float3 N, float3 light_dir, floa
 TextureCube		sky_s0;
 TextureCube		sky_s1;
 uniform float4	L_sky_color;	// rgb = sky colour of the current weather, w = blend factor
+uniform float4	L_sky_rotation;	// x = cos, y = sin of the skybox rotation around Y
+
+// World direction -> sky cubemap coordinates, matching how the engine draws the skybox
+// (dxEnvironmentRender.cpp): the box is rotated by the weather's sky_rotation, and its texture
+// coordinates put the horizon at the bottom edge of the side faces, so the visible upper half of
+// the sky covers the whole cubemap (y * 2 - 1 on the box). Below the horizon the skybox shows
+// that bottom edge, so the coordinates are clamped there.
+float3 pbr_sky_coords( float3 w )
+{
+	float2 cs	= dot( L_sky_rotation.xy, L_sky_rotation.xy ) > 0.5 ? L_sky_rotation.xy : float2( 1.0, 0.0 );
+	float3 p	= float3( w.x * cs.x - w.z * cs.y, w.y, w.x * cs.y + w.z * cs.x );
+	p			/= max( abs( p.x ), max( abs( p.y ), abs( p.z ) ) );
+	p.y			= max( p.y * 2.0 - 1.0, -1.0 );
+	return p;
+}
+
+// World direction -> hemisphere cubemap coordinates for reflections, the same "fake remapping"
+// the legacy hmodel() uses for its reflections
+float3 pbr_env_coords( float3 w )
+{
+	w			/= max( abs( w.x ), max( abs( w.y ), abs( w.z ) ) );
+	if( w.y < 0.999 )
+		w.y		= w.y * 2.0 - 1.0;
+	return w;
+}
 
 // Split-sum environment BRDF, fitted for height-correlated Smith (IX-Ray)
 float2 pbr_env_brdf_approx( float NdotV, float roughness )
@@ -247,18 +272,25 @@ float3 pbr_specular_irradiance( float3 R, float hemi, float roughness )
 	float env_blend	= min( mips0, mips1 ) > 1.0 ? 0.0 : roughness;
 #endif
 
-	float3 s0	= sky_s0.SampleLevel( smp_linear, rw, lod0 ).rgb;
-	float3 s1	= sky_s1.SampleLevel( smp_linear, rw, lod1 ).rgb;
+	float3 sc	= pbr_sky_coords( rw );
+	float3 ec	= pbr_env_coords( rw );
+
+	float3 s0	= sky_s0.SampleLevel( smp_linear, sc, lod0 ).rgb;
+	float3 s1	= sky_s1.SampleLevel( smp_linear, sc, lod1 ).rgb;
 	float3 sky	= lerp( s0, s1, env_color.w ) * L_sky_color.rgb;
 
-	float3 a0	= sky_s0.SampleLevel( smp_linear, rw, avg0 ).rgb;
-	float3 a1	= sky_s1.SampleLevel( smp_linear, rw, avg1 ).rgb;
+	float3 a0	= sky_s0.SampleLevel( smp_linear, sc, avg0 ).rgb;
+	float3 a1	= sky_s1.SampleLevel( smp_linear, sc, avg1 ).rgb;
 	float3 sky_avg	= lerp( a0, a1, env_color.w ) * L_sky_color.rgb;
 
-	float3 e0	= env_s0.SampleLevel( smp_rtlinear, rw, 0 ).rgb;
-	float3 e1	= env_s1.SampleLevel( smp_rtlinear, rw, 0 ).rgb;
+	float3 e0	= env_s0.SampleLevel( smp_rtlinear, ec, 0 ).rgb;
+	float3 e1	= env_s1.SampleLevel( smp_rtlinear, ec, 0 ).rgb;
 	float3 env	= env_color.rgb * lerp( e0, e1, env_color.w );
 	env			*= env;
+
+	// Below the horizon the reflection is the ground, not the sky: fade to the hemisphere
+	// cubemap, which is what the legacy lighting reflects there
+	env_blend	= max( env_blend, saturate( -rw.y * 4.0 ) );
 
 	float scale	= pbr_luminance( env ) / max( pbr_luminance( sky_avg ), 1e-4 );
 	sky			*= min( scale, PBR_REFLECTION_SCALE_MAX );

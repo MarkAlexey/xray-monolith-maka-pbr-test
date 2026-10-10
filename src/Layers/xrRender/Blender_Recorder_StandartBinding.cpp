@@ -535,6 +535,19 @@ class cl_sky_color : public R_constant_setup
 };
 
 static cl_sky_color binder_sky_color;
+
+// IX-Ray PBR: rotation of the skybox around Y (x = cos, y = sin, z = angle), so sky reflections
+// line up with the sky that is drawn
+class cl_sky_rotation : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		const float angle = g_pGamePersistent->Environment().CurrentEnv->sky_rotation;
+		RCache.set_c(C, _cos(angle), _sin(angle), angle, 0.f);
+	}
+};
+
+static cl_sky_rotation binder_sky_rotation;
 #endif
 
 static class cl_screen_res : public R_constant_setup
@@ -835,6 +848,7 @@ void CBlender_Compile::SetMapping()
 	//	r_Constant				("L_lmap_color",	&binder_lm_color);
 	r_Constant("L_hemi_color", &binder_hemi_color);
 	r_Constant("L_sky_color", &binder_sky_color); // IX-Ray PBR
+	r_Constant("L_sky_rotation", &binder_sky_rotation); // IX-Ray PBR
 	r_Constant("L_ambient", &binder_amb_color);
 #endif
 
