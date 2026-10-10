@@ -97,6 +97,13 @@ void uber_deffer(CBlender_Compile& C, bool hq, LPCSTR _vspec, LPCSTR _pspec, BOO
 	// Uber-construct
 #if defined(USE_DX10) || defined(USE_DX11)
 #	ifdef USE_DX11
+	// IX-Ray PBR: textures whose THM material is "PBR (metallic/roughness)" carry metallic/roughness
+	// data in bump#. The define is also added to the shader name, so the shader cache keeps the
+	// PBR and legacy variants apart.
+	const bool pbr = bump && !!DEV->m_textures_description.UsePBRTextures(fname);
+	// A detail bump is decoded IX-Ray style only when its own THM is marked PBR as well
+	const bool pbr_detail = pbr && bHasDetailBump && !!DEV->m_textures_description.UsePBRTextures(dt);
+
 	if (bump && hq && RImplementation.o.dx11_enable_tessellation && C.TessMethod != 0)
 	{
 		char hs[256], ds[256]; // = "DX11\\tess", ds[256] = "DX11\\tess";
@@ -132,6 +139,18 @@ void uber_deffer(CBlender_Compile& C, bool hq, LPCSTR _vspec, LPCSTR _pspec, BOO
 			xr_strcat(params, "USE_TDETAIL_BUMP,");
 		}
 
+		if (pbr)
+		{
+			RImplementation.addShaderOption("USE_PBR", "1");
+			xr_strcat(params, "USE_PBR,");
+		}
+
+		if (pbr_detail)
+		{
+			RImplementation.addShaderOption("USE_PBR_DETAIL", "1");
+			xr_strcat(params, "USE_PBR_DETAIL,");
+		}
+
 		xr_strcat(params, ")");
 
 		strconcat(sizeof(vs), vs, "deffer_", _vspec, "_bump", params);
@@ -159,9 +178,26 @@ void uber_deffer(CBlender_Compile& C, bool hq, LPCSTR _vspec, LPCSTR _pspec, BOO
 		}
 	}
 	else
-#	endif
+	{
+		if (pbr)
+		{
+			RImplementation.addShaderOption("USE_PBR", "1");
+			if (pbr_detail)
+			{
+				RImplementation.addShaderOption("USE_PBR_DETAIL", "1");
+				xr_strcat(ps, "(USE_PBR,USE_PBR_DETAIL)");
+			}
+			else
+				xr_strcat(ps, "(USE_PBR)");
+		}
+		if (DO_NOT_WRITE) C.r_Pass(vs, ps, FALSE, TRUE, FALSE);
+		else C.r_Pass(vs, ps, FALSE);
+		RImplementation.clearAllShaderOptions();
+	}
+#	else
 	if (DO_NOT_WRITE) C.r_Pass(vs, ps, FALSE, TRUE, FALSE);
 	else C.r_Pass(vs, ps, FALSE);
+#	endif
 	//C.r_Sampler		("s_base",		C.L_textures[0],	false,	D3DTADDRESS_WRAP,	D3DTEXF_ANISOTROPIC,D3DTEXF_LINEAR,	D3DTEXF_ANISOTROPIC);
 	//C.r_Sampler		("s_bumpX",		fnameB,				false,	D3DTADDRESS_WRAP,	D3DTEXF_ANISOTROPIC,D3DTEXF_LINEAR,	D3DTEXF_ANISOTROPIC);	// should be before base bump
 	//C.r_Sampler		("s_bump",		fnameA,				false,	D3DTADDRESS_WRAP,	D3DTEXF_ANISOTROPIC,D3DTEXF_LINEAR,	D3DTEXF_ANISOTROPIC);
