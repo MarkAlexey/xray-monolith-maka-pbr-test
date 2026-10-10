@@ -35,5 +35,10 @@ f_deffer main ( p_bumped I )
 //								float4 	(I.position.xyz, ms),
 								float4	(S.base.xyz, 								S.gloss	) );
 
+#if defined(USE_PBR) && defined(PBR_GBUFFER)
+	// IX-Ray PBR material: metalness, roughness, AO, PBR flag + subsurface
+	O.surface = float4( S.pbr.x, S.pbr.y, S.pbr.z, 0.5 + 0.5 * S.pbr.w );
+#endif
+
   return O;
 }

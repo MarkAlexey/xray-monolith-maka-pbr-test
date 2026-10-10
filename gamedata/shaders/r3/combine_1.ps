@@ -3,6 +3,7 @@
 
 #include "lmodel.h"
 #include "hmodel.h"
+#include "pbr_ixray.h"
 
 Texture2D s_half_depth;
 #include "ssao.ps"
@@ -77,6 +78,12 @@ _out main ( _input I, uint iSample : SV_SAMPLEINDEX )
 	float4   L = s_accumulator.Load( int3( I.tc0 * screen_res.xy, 0 ), ISAMPLE );
 #endif
 
+#ifdef PBR_GBUFFER
+	// IX-Ray PBR: the accumulator already holds linear radiance for PBR pixels
+	pbr_material pm = pbr_load( GLD_P(I.tc0, I.pos2d, ISAMPLE), D.rgb );
+	float3 pbr_light = L.rgb;
+#endif
+
      // static sun
 	float mtl = P.w;
 
@@ -85,6 +92,9 @@ _out main ( _input I, uint iSample : SV_SAMPLEINDEX )
 
 	mtl = xmaterial;
 	L += Ldynamic_color * sun_occ * plight_infinity	(mtl, P.xyz, N.xyz, D.xyzw, Ldynamic_dir);
+#ifdef PBR_GBUFFER
+	pbr_light += sun_occ * pbr_light_sun( pm, P.xyz, N.xyz, Ldynamic_dir.xyz, Ldynamic_color.rgb );
+#endif
 #endif
 
 	// hemisphere
@@ -120,10 +130,26 @@ _out main ( _input I, uint iSample : SV_SAMPLEINDEX )
 #endif
 #endif // USE_HDAO
 
+#ifdef PBR_GBUFFER
+	float pbr_occ = occ.x;	// before the albedo tint below, PBR multiplies the albedo itself
+#endif
+
 #ifdef SSAO_QUALITY
 	occ = compute_colored_ao(occ.x, D.xyz);
 #endif
-	
+
+	float3 color;
+
+#ifdef PBR_GBUFFER
+	[branch] if( pm.enabled )
+	{
+		// IX-Ray PBR: ambient (IBL) + direct light in linear space, back to gamma for the rest
+		// of the pipeline (fog, tonemapping, post-processing)
+		color = pbr_to_gamma( pbr_light + pbr_ambient( pm, P.xyz, N.xyz, N.w, pbr_occ * pm.ao ) );
+	}
+	else
+#endif
+	{
 	hmodel	(hdiffuse, hspecular, mtl, N.w, D.w, P.xyz, N.xyz);
 
 	hdiffuse *= occ;
@@ -133,7 +159,8 @@ _out main ( _input I, uint iSample : SV_SAMPLEINDEX )
         float4 C = D*light;                             // rgb.gloss * light(diffuse.specular)
 		float3 spec = C.www * L.rgb + hspecular * C.rgba;              // replicated specular
 
-		float3       color     = C.rgb + spec;
+		color     = C.rgb + spec;
+	}
 
 ////////////////////////////////////////////////////////////////////////////////
 

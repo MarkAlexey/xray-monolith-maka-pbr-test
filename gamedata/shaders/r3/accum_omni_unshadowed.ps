@@ -1,5 +1,6 @@
 #include "common.h"
 #include "lmodel.h"
+#include "pbr_ixray.h"
 
 //	TODO: DX10: Move to Load
 #ifdef MSAA_OPTIMIZATION
@@ -26,5 +27,12 @@ float4 main ( float4 tc:TEXCOORD0, float4 pos2d : SV_Position ) : SV_Target
 	float rsqr;
 	float4 light = plight_local( m, _P, _N, _C, Ldynamic_pos, Ldynamic_pos.w, rsqr );
 	
+#ifdef PBR_GBUFFER
+	// IX-Ray PBR pixel: linear radiance, no separate specular
+	pbr_material pm = pbr_load( GLD_P(tcProj, pos2d, ISAMPLE), gbd.C );
+	[branch] if( pm.enabled )
+		return float4( pbr_light_local( pm, gbd.P, gbd.N, Ldynamic_pos, Ldynamic_color.rgb ), 0 );
+#endif
+
 	return float4(Ldynamic_color * light);
 }

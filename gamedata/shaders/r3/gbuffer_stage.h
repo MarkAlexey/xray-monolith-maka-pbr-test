@@ -1,11 +1,31 @@
 #ifndef	GBUFFER_STAGE_H
 #define	GBUFFER_STAGE_H
 
+// Monolith: IX-Ray PBR. On DX11 (SM_5) the G-buffer has a third target, s_surface:
+//   x = metalness, y = roughness, z = ambient occlusion,
+//   w = 0 for legacy pixels, 0.5 + 0.5 * subsurface for PBR pixels.
+// Every shader that writes f_deffer through pack_gbuffer() writes zero there, so only
+// textures marked "PBR (metallic/roughness)" in their THM switch to the PBR lighting model.
+#if defined(SM_5) && !defined(PBR_DISABLE)
+#	define PBR_GBUFFER
+#endif
+
+#ifdef PBR_GBUFFER
+#	ifdef USE_MSAA
+		Texture2DMS<float4> s_surface;
+#	else
+		Texture2D s_surface;
+#	endif
+#endif
+
 //GBuffer targets struct
 struct f_deffer        		
 {
 	float4 position : SV_Target0; //XY - Normal, Z - Depth, W - Hemi/M_ID
 	float4 C : SV_Target1; //XYZ - Albedo, W - Specular
+#ifdef PBR_GBUFFER
+	float4 surface : SV_Target2; //X - Metalness, Y - Roughness, Z - AO, W - PBR flag/SSS (0 = legacy)
+#endif
 #ifdef EXTEND_F_DEFFER
 	uint mask : SV_COVERAGE;
 #endif
@@ -104,6 +124,10 @@ f_deffer pack_gbuffer( float4 norm, float4 pos, float4 col, uint imask )
 	res.position = float4( gbuf_pack_normal( norm.xyz ), pos.z, gbuf_pack_hemi_mtl( norm.w, pos.w ) );
 	res.C = col;
 
+#ifdef PBR_GBUFFER
+	res.surface = float4( 0.0, 0.0, 0.0, 0.0 ); // legacy lighting; PBR shaders overwrite it
+#endif
+
 #ifdef EXTEND_F_DEFFER
    res.mask = imask;
 #endif
@@ -141,6 +165,18 @@ gbuffer_data gbuffer_load_data( float2 tc : TEXCOORD, float2 pos2d, uint iSample
 
 	return gbd;
 }
+
+#ifdef PBR_GBUFFER
+//Unpacking stage for the PBR material target
+float4 gbuffer_load_surface( float2 tc : TEXCOORD, float2 pos2d, uint iSample )
+{
+#ifndef USE_MSAA
+	return s_surface.Sample( smp_nofilter, tc );
+#else
+	return s_surface.Load( int3( pos2d, 0 ), iSample );
+#endif
+}
+#endif
 
 gbuffer_data gbuffer_load_data( float2 tc : TEXCOORD, float2 pos2d )
 {

@@ -25,8 +25,23 @@ struct	surface_bumped
 	float3	normal;
 	float	gloss;
 	float	height;
-
+#ifdef USE_PBR
+	float4	pbr;	// IX-Ray PBR: x = metalness, y = roughness, z = ambient occlusion, w = subsurface
+#endif
 };
+
+// Monolith: IX-Ray PBR. USE_PBR is set by the engine for textures whose THM material is
+// "PBR (metallic/roughness)". Their bump textures follow IX-Ray's layout (sload.hlsli):
+//   bump  : x = height, y = normal Y, w = normal X (z is unused)
+//   bump# : x = metalness, y = roughness, z = subsurface, w = ambient occlusion
+// The parallax code below reads the height from the matching channel.
+#ifdef USE_PBR
+#	define SLOAD_HEIGHT(tc)		s_bump.Sample( smp_base, tc ).x
+#	define SLOAD_HEIGHT_LOD0(tc)	s_bump.SampleLevel( smp_base, tc, 0 ).x
+#else
+#	define SLOAD_HEIGHT(tc)		s_bumpX.Sample( smp_base, tc ).w
+#	define SLOAD_HEIGHT_LOD0(tc)	s_bumpX.SampleLevel( smp_base, tc, 0 ).a
+#endif
 
 float4 tbase( float2 tc )
 {
@@ -69,7 +84,7 @@ void UpdateTC( inout p_bumped I)
 			if (fCurrHeight < fCurrentBound)
 			{	
 				vTexCurrentOffset += vTexOffsetPerStep;		
-				fCurrHeight = s_bumpX.SampleLevel( smp_base, vTexCurrentOffset.xy, 0 ).a; 
+				fCurrHeight = SLOAD_HEIGHT_LOD0( vTexCurrentOffset.xy ); 
 				fCurrentBound -= fStepSize;
 			}
 		}
@@ -79,12 +94,12 @@ void UpdateTC( inout p_bumped I)
 		for( ;fCurrHeight < fCurrentBound; fCurrentBound -= fStepSize )
 		{
 			vTexCurrentOffset += vTexOffsetPerStep;		
-			fCurrHeight = s_bumpX.SampleLevel( smp_base, vTexCurrentOffset.xy, 0 ).a; 
+			fCurrHeight = SLOAD_HEIGHT_LOD0( vTexCurrentOffset.xy ); 
 		}
 */
 		//	Reconstruct previouse step's data
 		vTexCurrentOffset -= vTexOffsetPerStep;
-		float fPrevHeight = s_bumpX.Sample( smp_base, float3(vTexCurrentOffset.xy,0) ).a;
+		float fPrevHeight = SLOAD_HEIGHT( vTexCurrentOffset.xy );
 
 		//	Smooth tc position between current and previouse step
 		float	fDelta2 = ((fCurrentBound + fStepSize) - fPrevHeight);
@@ -112,7 +127,7 @@ void UpdateTC( inout p_bumped I)
 								 I.M1.y, I.M2.y, I.M3.y,
 								 I.M1.z, I.M2.z, I.M3.z), -I.position.xyz);
 								 
-	float	height	= s_bumpX.Sample( smp_base, I.tcdh).w;	//
+	float	height	= SLOAD_HEIGHT( I.tcdh );	//
 			//height  /= 2;
 			//height  *= 0.8;
 			height	= height*(parallax.x) + (parallax.y);	//
@@ -130,6 +145,52 @@ void UpdateTC( inout p_bumped I)
 }
 
 #endif	//	USE_PARALLAX
+
+#ifdef USE_PBR
+// Port of IX-Ray's SloadNew() USE_PBR path. Called at the end of sload_i(), after the legacy
+// code, so it only has to replace the fields that mean something else for PBR textures.
+// Detail bump textures are decoded IX-Ray style only when they are PBR too (USE_PBR_DETAIL);
+// legacy detail bumps keep their normal and do not touch the material.
+void sload_pbr( inout surface_bumped S, p_bumped I, float4 Nu, float4 NuE )
+{
+	float3 N;
+	N.xy		= Nu.wy * 2.0 - 1.0;
+	N.z			= sqrt( 1.0 - saturate( dot( N.xy, N.xy ) ) );
+
+	S.height	= Nu.x;
+	S.pbr		= float4( NuE.x, NuE.y, NuE.w, NuE.z );
+
+#if defined(USE_TDETAIL) && defined(USE_TDETAIL_BUMP)
+	float4 NDetail		= s_detailBump.Sample( smp_base, I.tcdbump );
+	float4 NDetailX		= s_detailBumpX.Sample( smp_base, I.tcdbump );
+#	ifdef USE_PBR_DETAIL
+	float3 ND;
+	ND.xy		= NDetail.wy * 2.0 - 1.0;
+	ND.z		= sqrt( 1.0 - saturate( dot( ND.xy, ND.xy ) ) );
+	N			+= ND;
+	S.pbr.x		*= NDetailX.x * 2.0;
+	S.pbr.y		*= NDetailX.y * 2.0;
+	S.pbr.w		*= NDetailX.z;
+	S.pbr.z		*= NDetailX.w;
+#	else	//	USE_PBR_DETAIL
+	float3 ND	= NDetail.wzy + NDetailX.xyz - 1.0;
+	ND.y		= -ND.y;	// undo the flip below, legacy maps are already in the engine's convention
+	N			+= ND;
+#	endif	//	USE_PBR_DETAIL
+#endif
+
+#ifndef USE_DX_NORMAL_MAP
+	N.y			= -N.y;		// IX-Ray PBR normal maps are OpenGL style (green up)
+#endif
+	S.normal	= N;
+
+	S.pbr		= saturate( S.pbr );
+	S.pbr.y		= max( 0.02, S.pbr.y );
+
+	// Legacy-style gloss, only for passes that still read the albedo alpha (rain, mods)
+	S.gloss		= ( 1.0 - S.pbr.y ) * ( 1.0 - S.pbr.y );
+}
+#endif	//	USE_PBR
 
 surface_bumped sload_i( p_bumped I)
 {
@@ -164,6 +225,10 @@ surface_bumped sload_i( p_bumped I)
 	S.gloss				= S.gloss * detail.w * 2;
 
 #endif        //	USE_TDETAIL_BUMP
+#endif
+
+#ifdef USE_PBR
+	sload_pbr( S, I, Nu, NuE );
 #endif
 
 	return S;
@@ -215,6 +280,10 @@ surface_bumped sload_i( p_bumped I, float2 pixeloffset )
 	S.base.rgb			= S.base.rgb * detail.rgb * 2;
 	S.gloss				= S.gloss * detail.w * 2;
 #endif        //	USE_TDETAIL_BUMP
+#endif
+
+#ifdef USE_PBR
+	sload_pbr( S, I, Nu, NuE );
 #endif
 
 	return S;

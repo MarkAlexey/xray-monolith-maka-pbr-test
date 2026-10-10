@@ -1,5 +1,6 @@
 #include "common.h"
 #include "lmodel.h"
+#include "pbr_ixray.h"
 
 #ifdef USE_MINMAX_SM
 #define SM_MINMAX
@@ -58,6 +59,13 @@ float4 main ( v2p_volume I ) : SV_Target
 	float4 	PS	= mul( m_shadow, P4 );
 	float 	s 	= sunmask( P4 );
 			s *= shadow( PS );
+
+#ifdef PBR_GBUFFER
+	// IX-Ray PBR pixel: linear radiance, no separate specular
+	pbr_material pm = pbr_load( GLD_P(I.tc.xy/I.tc.w, I.hpos, ISAMPLE), gbd.C );
+	[branch] if( pm.enabled )
+		return float4( pbr_light_sun( pm, gbd.P, gbd.N, Ldynamic_dir.xyz, Ldynamic_color.rgb ) * pbr_to_linear( s ), 0 );
+#endif
 
 	return 	float4( Ldynamic_color * light * s);
 }

@@ -1,5 +1,6 @@
 #include "common.h"
 #include "lmodel.h"
+#include "pbr_ixray.h"
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // Pixel
@@ -25,6 +26,13 @@ float4 main ( float4 tc:TEXCOORD0, float4 pos2d : SV_Position ) : SV_Target
 	float  	att 	= saturate	( 1 - rsqr*Ldynamic_pos.w );// q-linear attenuate
 	float  	light	= saturate	( dot( -L2P_N, _N.xyz ) );
 	float	hemi 	= saturate	( dot( L2P_N, direction ) );
+
+#ifdef PBR_GBUFFER
+	// IX-Ray PBR pixel: linear radiance, diffuse only (this is a bounce light)
+	pbr_material pm = pbr_load( GLD_P(tcProj, pos2d, ISAMPLE), gbd.C );
+	[branch] if( pm.enabled )
+		return float4( pbr_to_linear( Ldynamic_color.xyz ) * att * light * hemi * pm.diffuse, 0 );
+#endif
 
   // Final color
 	return 	float4( Ldynamic_color.xyz * att * light * hemi, 0 );
