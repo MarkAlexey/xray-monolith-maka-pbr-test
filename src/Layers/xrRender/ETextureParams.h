@@ -48,6 +48,7 @@ struct ECORE_API STextureParams
 		tmBlin_Phong,
 		tmPhong_Metal,
 		tmMetal_OrenNayar,
+		tmPBR_Material, // IX-Ray: metallic/roughness material, value 4 matches IX-Ray THMs
 		tmForceU32 = u32(-1)
 	};
 

@@ -108,6 +108,11 @@ void CTextureDescrMngr::LoadTHM(LPCSTR initial, map_TD& s_texture_details, map_C
 			desc.m_spec = xr_new<texture_spec>();
 			desc.m_spec->m_material = tp.material + (tp.material < 4 ? tp.material_weight : 0);
 			desc.m_spec->m_use_steep_parallax = false;
+			desc.m_spec->m_use_pbr = (tp.material == STextureParams::tmPBR_Material);
+			// The legacy material LUT has four slots; keep the G-buffer material id in range for
+			// anything that still reads it from a PBR pixel (same default as GetMaterial)
+			if (desc.m_spec->m_use_pbr)
+				desc.m_spec->m_material = 1.0f;
 
 			if (tp.bump_mode == STextureParams::tbmUse)
 			{
@@ -173,6 +178,19 @@ BOOL CTextureDescrMngr::UseSteepParallax(const shared_str& tex_name) const
 		if (I->second.m_spec)
 		{
 			return I->second.m_spec->m_use_steep_parallax;
+		}
+	}
+	return FALSE;
+}
+
+BOOL CTextureDescrMngr::UsePBRTextures(const shared_str& tex_name) const
+{
+	map_TD::const_iterator I = m_texture_details.find(tex_name);
+	if (I != m_texture_details.end())
+	{
+		if (I->second.m_spec)
+		{
+			return I->second.m_spec->m_use_pbr;
 		}
 	}
 	return FALSE;

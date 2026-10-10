@@ -30,6 +30,7 @@ class CTextureDescrMngr
 		shared_str m_bump_name;
 		float m_material;
 		bool m_use_steep_parallax;
+		bool m_use_pbr; // material == tmPBR_Material (IX-Ray PBR packing in bump/bump#)
 	};
 
 public:
@@ -63,5 +64,6 @@ public:
 	void GetTextureUsage(const shared_str& tex_name, BOOL& bDiffuse, BOOL& bBump) const;
 	BOOL GetDetailTexture(const shared_str& tex_name, LPCSTR& res, R_constant_setup* & CS) const;
 	BOOL UseSteepParallax(const shared_str& tex_name) const;
+	BOOL UsePBRTextures(const shared_str& tex_name) const;
 };
 #endif
