@@ -113,19 +113,57 @@ PBR uses IX-Ray's texture conventions, so textures made for IX-Ray work as they 
 - In the texture's THM, set the material to **PBR (metallic/roughness)**. That is material value
   4, the same value IX-Ray's SDK writes, so THMs from IX-Ray projects work unchanged. Everything
   else in the THM (bump name, parallax mode, detail texture) works as usual.
-- Normal maps are OpenGL style (green channel points up), as in IX-Ray. Flip the green channel of
-  DirectX-style maps.
+- Normal maps are OpenGL style (green channel points up), as in IX-Ray. For a DirectX-style map
+  (what Substance's "DirectX" preset and most game pipelines export), either flip its green
+  channel or add the per-texture option `USE_DX_NORMAL_MAP` described below. A map in the wrong
+  convention lights bumps and bevels from the wrong side.
 - A detail texture's bump is read the PBR way only when the detail texture's own THM is also
   marked PBR; otherwise it is treated as a normal Anomaly detail bump.
-- Non-metals use a fixed F0 of 0.04 (IX-Ray's `F0_BASE`). IX-Ray's optional IOR texture and its
-  per-texture `.ltx` shader options are not ported.
+- Non-metals use a fixed F0 of 0.04 (IX-Ray's `F0_BASE`). IX-Ray's optional IOR texture is not
+  ported.
+
+### Per-texture options (`.ltx`)
+
+As in IX-Ray, a texture can have an `.ltx` file next to it with the same name, for example
+`textures\wpn\wpn_pm.ltx` for `wpn_pm.dds`:
+
+```ini
+[shaders_options]
+USE_DX_NORMAL_MAP = 1   ; the normal map is DirectX style (green down)
+```
+
+Every line becomes a shader define for that texture's G-buffer shader (DX11 only), and is added
+to the shader's name so the shader cache keeps the combinations apart. A value of `0` leaves the
+line out. `USE_DX_NORMAL_MAP` is the option the shaders here understand; others are passed
+through for future use. The file is read when the game starts.
+
+### Global options and the debug view
+
+The top of `gamedata\shaders\r3\pbr_ixray.h` has commented-out defines that apply to every PBR
+texture. Uncomment one and restart the game:
+
+- `USE_NORMAL_HEMI_DISTRIBUTION` (IX-Ray option, off there too): the normal limits the sky
+  light, so detail facing down gets darker in shade. It also darkens vertical surfaces.
+- `IBL_FAKE_IRRADANCE` (IX-Ray option): always blur rough reflections with the hemisphere
+  cubemap. By default that only happens when the sky cubemap has no mipmaps.
+- `PBR_DEBUG_VIEW` 1 to 6: shows, on PBR pixels only, the world-space normal, the ambient
+  occlusion, roughness, metalness, the ambient light alone or the direct light alone. The normal
+  view is the quickest way to check a normal map: surfaces facing up should be green, and bumps
+  should tilt the colour the same way the geometry around them does.
+
+About normal and AO detail in shade: IX-Ray does not bake normals into the albedo. In PBR mode
+(this port) the AO texture only darkens ambient light, and a normal map only shows in shade
+through the ambient light's direction and the reflections, which are soft under the usual
+Anomaly skies. IX-Ray's own default for Call of Pripyat content is its legacy lighting mode, which
+does multiply the AO into the albedo (and has no metalness); that mode is not ported.
 
 ### What changed
 
 Engine (`src/`):
 
-- `ETextureParams` / `TextureDescrManager`: the PBR material type and `UsePBRTextures()`. PBR
-  textures get the legacy material slot 1 so nothing that still reads it goes out of range.
+- `ETextureParams` / `TextureDescrManager`: the PBR material type and `UsePBRTextures()`, and
+  the per-texture `.ltx` shader options (`GetShaderOptions()`). PBR textures get the legacy
+  material slot 1 so nothing that still reads it goes out of range.
 - `uber_deffer.cpp` (DX11 only): PBR textures compile their G-buffer pixel shader with `USE_PBR`
   (and `USE_PBR_DETAIL`), with the option in the shader name so the shader cache keeps both
   variants apart. Tessellated and plain passes are both covered.
