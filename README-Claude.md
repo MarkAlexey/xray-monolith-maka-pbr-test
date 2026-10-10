@@ -1,7 +1,7 @@
-# README-Claude — about the `clean-renderer` and `pbr` branches
+# README-Claude — about the `clean-renderer`, `pbr` and `pbr-mt` branches
 
-**The changes on this branch were made by an AI (Claude, by Anthropic), working at the
-request of the branch owner.** The code changes, the commit messages and this document were
+**The changes on this branch were made by MarkAlexey together with an AI (Claude, by
+Anthropic).** The code changes, the commit messages and this document were
 written by the AI. Treat it the way you would treat any large patch from a new contributor:
 build it, test it, and report what breaks.
 
@@ -21,6 +21,9 @@ Where this document says something about scopes, the note in brackets says how i
 `pbr` is `clean-renderer-scopes` plus opt-in physically based materials ported from IX-Ray. It
 is described in [its own section](#the-pbr-branch) at the end; everything above that section
 applies to it too.
+
+`pbr-mt` is `pbr` merged with upstream's multithreaded build (`all-in-one-vs2022-wpo-mt`), see
+[its section](#the-pbr-mt-branch).
 
 Everything else in Modded Exes is kept: scripting extensions, gameplay and AI fixes, DLTX/DXML,
 the shader bus, ImGui, the profiler, multi-monitor support, the DX11 swapchain fixes, the zoom
@@ -228,3 +231,42 @@ The AI could not run MSVC or the game, so again the checks were static:
 **No image has been rendered with this code.** Before relying on it: build the branch, play with
 vanilla gamedata and check that nothing changed, then add one IX-Ray-style PBR texture and check
 it under the sun, a flashlight, at night and indoors.
+
+## The `pbr-mt` branch
+
+Upstream ships two builds: the normal one (`all-in-one-vs2022-wpo`, which everything above is
+based on) and a multithreaded one (`all-in-one-vs2022-wpo-mt`). `pbr-mt` is `pbr` with the
+multithreaded branch merged in, as one squashed commit, so it is to `pbr` what upstream's MT
+build is to the normal build. `pbr` itself stays single-threaded.
+
+The merge brings in upstream's MT branch as of commit `7b79d2be` (about 1,000 changed files:
+the reworked render graph, asynchronous particles, the threaded rain update, the new HUD/camera
+matrix handling, and the fixes and features that only exist there).
+40 files conflicted with the feature removals and the PBR work. In most of them the MT branch had
+rewritten the code, so the resolution was to take the MT version and remove the same features
+from it again. The decisions worth knowing:
+
+- **Render graph** (`r__dsgraph_*`, `CDSGraphManager`): MT's version, without the SSS water
+  and HUD-mask maps. The 3D-scope pass no longer redirects an SSS render target.
+- **HUD and camera matrices**: MT's `mViewHud`/`mViewCam` and `CHudInitializer` are kept. The
+  previous-frame matrices (only used for SSS motion vectors) and the calls that uploaded them are
+  removed, as on the other branches.
+- **Rain**: MT's threaded rain update is kept, with the SSS rain behaviour removed again (wind
+  gusts, the SSS drop angles and distances, the `ssfx_rain_*` settings, `level.rain_hemi()`).
+  MT's own `r__rain_exp` and `r__rain_k` console variables stay.
+- **Grass**: MT's detail manager is kept, without SSS grass shadows from lights, grass fade-in and
+  the terrain slope limit. Grass shadows from the sun are drawn in the nearest cascade when
+  `r__enable_grass_shadow` is on, which is what MT did with the SSS settings at their defaults.
+- **Volumetric lights**: MT's new `accum_volumetric_lv` path is kept without the SSS distance
+  fade. Sun cascade sizes stay fixed at 20/40/160 m.
+- **PBR**: carried over unchanged; its edits merged without conflicts.
+
+Everything else from the MT branch (scripts in `gamedata\scripts`, xrGame, xrCore, xrPhysics,
+xrParticles and so on) comes in exactly as upstream has it.
+
+How it was checked: every identifier the feature removals took out was searched for in the
+merged tree, so that MT code which still used one could be fixed. Then the C++ files of the four
+renderers and the engine, plus every xrGame file that changed or includes a changed header, were
+syntax-checked with clang on upstream's MT branch and on `pbr-mt`, and the error lists compared
+(see the commit message for the numbers). As with everything here, it has not been built with
+MSVC or run.
