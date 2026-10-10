@@ -523,6 +523,18 @@ class cl_hemi_color : public R_constant_setup
 };
 
 static cl_hemi_color binder_hemi_color;
+
+// IX-Ray PBR: sky colour of the current weather, used to tint sky reflections (w = blend factor)
+class cl_sky_color : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		CEnvDescriptorMixer& desc = *g_pGamePersistent->Environment().CurrentEnv;
+		RCache.set_c(C, desc.sky_color.x, desc.sky_color.y, desc.sky_color.z, desc.weight);
+	}
+};
+
+static cl_sky_color binder_sky_color;
 #endif
 
 static class cl_screen_res : public R_constant_setup
@@ -822,6 +834,7 @@ void CBlender_Compile::SetMapping()
 	r_Constant("L_sun_dir_e", &binder_sun0_dir_e);
 	//	r_Constant				("L_lmap_color",	&binder_lm_color);
 	r_Constant("L_hemi_color", &binder_hemi_color);
+	r_Constant("L_sky_color", &binder_sky_color); // IX-Ray PBR
 	r_Constant("L_ambient", &binder_amb_color);
 #endif
 

@@ -35,6 +35,7 @@ void CBlender_accum_spot::Compile(CBlender_Compile& C)
 		//C.r_Sampler			("s_lmap",			C.L_textures[0],false,D3DTADDRESS_CLAMP);
 		//C.r_Sampler_rtf		("s_accumulator",	r2_RT_accum		);
 		C.r_dx10Texture("s_position", r2_RT_P);
+		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
 		C.r_dx10Texture("s_diffuse", r2_RT_albedo);
 
 		C.r_dx10Texture("s_material", r2_material);
@@ -61,6 +62,7 @@ void CBlender_accum_spot::Compile(CBlender_Compile& C)
 		//jitter				(C);
 		//C.r_Sampler_rtf		("s_accumulator",	r2_RT_accum		);
 		C.r_dx10Texture("s_position", r2_RT_P);
+		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
 		C.r_dx10Texture("s_diffuse", r2_RT_albedo);
 
 		C.r_dx10Texture("s_material", r2_material);
@@ -90,6 +92,7 @@ void CBlender_accum_spot::Compile(CBlender_Compile& C)
 		//jitter				(C);
 		//C.r_Sampler_rtf		("s_accumulator",	r2_RT_accum		);
 		C.r_dx10Texture("s_position", r2_RT_P);
+		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
 		C.r_dx10Texture("s_diffuse", r2_RT_albedo);
 
 		C.r_dx10Texture("s_material", r2_material);
@@ -118,6 +121,7 @@ void CBlender_accum_spot::Compile(CBlender_Compile& C)
 		//C.r_Sampler_rtf		("s_accumulator",	r2_RT_accum		);
 		//jitter				(C);
 		C.r_dx10Texture("s_position", r2_RT_P);
+		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
 		C.r_dx10Texture("s_diffuse", r2_RT_albedo);
 
 		C.r_dx10Texture("s_material", r2_material);
@@ -172,6 +176,7 @@ void CBlender_accum_spot_msaa::Compile(CBlender_Compile& C)
 		//C.r_Sampler			("s_lmap",			C.L_textures[0],false,D3DTADDRESS_CLAMP);
 		//C.r_Sampler_rtf		("s_accumulator",	r2_RT_accum		);
 		C.r_dx10Texture("s_position", r2_RT_P);
+		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
 		C.r_dx10Texture("s_diffuse", r2_RT_albedo);
 
 		C.r_dx10Texture("s_material", r2_material);
@@ -198,6 +203,7 @@ void CBlender_accum_spot_msaa::Compile(CBlender_Compile& C)
 		//jitter				(C);
 		//C.r_Sampler_rtf		("s_accumulator",	r2_RT_accum		);
 		C.r_dx10Texture("s_position", r2_RT_P);
+		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
 		C.r_dx10Texture("s_diffuse", r2_RT_albedo);
 
 		C.r_dx10Texture("s_material", r2_material);
@@ -227,6 +233,7 @@ void CBlender_accum_spot_msaa::Compile(CBlender_Compile& C)
 		//jitter				(C);
 		//C.r_Sampler_rtf		("s_accumulator",	r2_RT_accum		);
 		C.r_dx10Texture("s_position", r2_RT_P);
+		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
 		C.r_dx10Texture("s_diffuse", r2_RT_albedo);
 
 		C.r_dx10Texture("s_material", r2_material);
@@ -255,6 +262,7 @@ void CBlender_accum_spot_msaa::Compile(CBlender_Compile& C)
 		//C.r_Sampler_rtf		("s_accumulator",	r2_RT_accum		);
 		//jitter				(C);
 		C.r_dx10Texture("s_position", r2_RT_P);
+		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
 		C.r_dx10Texture("s_diffuse", r2_RT_albedo);
 
 		C.r_dx10Texture("s_material", r2_material);

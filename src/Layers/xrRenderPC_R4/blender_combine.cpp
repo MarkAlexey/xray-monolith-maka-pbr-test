@@ -33,6 +33,7 @@ void CBlender_combine::Compile(CBlender_Compile& C)
 		//C.r_Sampler_clf		("sky_s1",			r2_T_sky1			);
 
 		C.r_dx10Texture("s_position", r2_RT_P);
+		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
 		C.r_dx10Texture("s_diffuse", r2_RT_albedo);
 		C.r_dx10Texture("s_accumulator", r2_RT_accum);
 		C.r_dx10Texture("s_depth", r2_RT_depth);
@@ -50,6 +51,7 @@ void CBlender_combine::Compile(CBlender_Compile& C)
 		C.r_dx10Sampler("smp_nofilter");
 		C.r_dx10Sampler("smp_material");
 		C.r_dx10Sampler("smp_rtlinear");
+		C.r_dx10Sampler("smp_linear"); // IX-Ray PBR: mip-filtered sky reflections
 		C.r_End();
 		break;
 	case 1: // aa-edge-detection + AA :)
@@ -191,6 +193,7 @@ void CBlender_combine_msaa::Compile(CBlender_Compile& C)
 		//C.r_Sampler_clf		("sky_s1",			r2_T_sky1			);
 
 		C.r_dx10Texture("s_position", r2_RT_P);
+		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
 		C.r_dx10Texture("s_diffuse", r2_RT_albedo);
 		C.r_dx10Texture("s_accumulator", r2_RT_accum);
 		C.r_dx10Texture("s_depth", r2_RT_depth);
@@ -208,6 +211,7 @@ void CBlender_combine_msaa::Compile(CBlender_Compile& C)
 		C.r_dx10Sampler("smp_nofilter");
 		C.r_dx10Sampler("smp_material");
 		C.r_dx10Sampler("smp_rtlinear");
+		C.r_dx10Sampler("smp_linear"); // IX-Ray PBR: mip-filtered sky reflections
 		C.r_End();
 		break;
 	case 1: // aa-edge-detection + AA :)

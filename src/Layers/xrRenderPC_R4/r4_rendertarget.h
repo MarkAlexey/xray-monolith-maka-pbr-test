@@ -83,6 +83,7 @@ public:
 	ref_rt rt_Generic;
 	ref_rt rt_Position; // 64bit,	fat	(x,y,z,?)				(eye-space)
 	ref_rt rt_Color; // 64/32bit,fat	(r,g,b,specular-gloss)	(or decompressed MET-8-8-8-8)
+	ref_rt rt_Surface; // 32bit, IX-Ray PBR material (metalness, roughness, AO, PBR flag)
 
 	//
 	ref_rt rt_Accumulator; // 64bit		(r,g,b,specular)

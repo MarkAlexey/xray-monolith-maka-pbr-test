@@ -34,6 +34,7 @@ void CBlender_accum_direct::Compile(CBlender_Compile& C)
 		C.PassSET_ZB(TRUE,FALSE,TRUE); // force inverted Z-Buffer
 
 		C.r_dx10Texture("s_position", r2_RT_P);
+		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
 		C.r_dx10Texture("s_diffuse", r2_RT_albedo);
 
 		C.r_dx10Texture("s_material", r2_material);
@@ -57,6 +58,7 @@ void CBlender_accum_direct::Compile(CBlender_Compile& C)
 		C.r_CullMode(D3DCULL_NONE);
 
 		C.r_dx10Texture("s_position", r2_RT_P);
+		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
 		C.r_dx10Texture("s_diffuse", r2_RT_albedo);
 
 		C.r_dx10Texture("s_material", r2_material);
@@ -84,6 +86,7 @@ void CBlender_accum_direct::Compile(CBlender_Compile& C)
 		C.r_CullMode(D3DCULL_NONE);
 
 		C.r_dx10Texture("s_position", r2_RT_P);
+		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
 		C.r_dx10Texture("s_diffuse", r2_RT_albedo);
 
 		C.r_dx10Texture("s_material", r2_material);
@@ -103,6 +106,7 @@ void CBlender_accum_direct::Compile(CBlender_Compile& C)
 		C.PassSET_ZB(TRUE,FALSE,TRUE); // force inverted Z-Buffer
 
 		C.r_dx10Texture("s_position", r2_RT_P);
+		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
 		C.r_dx10Texture("s_diffuse", r2_RT_albedo);
 
 		C.r_dx10Texture("s_material", r2_material);
@@ -165,6 +169,7 @@ void CBlender_accum_direct_msaa::Compile(CBlender_Compile& C)
 		C.PassSET_ZB(TRUE,FALSE,TRUE); // force inverted Z-Buffer
 
 		C.r_dx10Texture("s_position", r2_RT_P);
+		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
 		C.r_dx10Texture("s_diffuse", r2_RT_albedo);
 
 		C.r_dx10Texture("s_material", r2_material);
@@ -187,6 +192,7 @@ void CBlender_accum_direct_msaa::Compile(CBlender_Compile& C)
 		C.r_CullMode(D3DCULL_NONE);
 
 		C.r_dx10Texture("s_position", r2_RT_P);
+		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
 		C.r_dx10Texture("s_diffuse", r2_RT_albedo);
 
 		C.r_dx10Texture("s_material", r2_material);
@@ -219,6 +225,7 @@ void CBlender_accum_direct_msaa::Compile(CBlender_Compile& C)
 		//jitter				(C);
 
 		C.r_dx10Texture("s_position", r2_RT_P);
+		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
 		C.r_dx10Texture("s_diffuse", r2_RT_albedo);
 
 		C.r_dx10Texture("s_material", r2_material);
@@ -239,6 +246,7 @@ void CBlender_accum_direct_msaa::Compile(CBlender_Compile& C)
 		C.PassSET_ZB(TRUE,FALSE,TRUE); // force inverted Z-Buffer
 
 		C.r_dx10Texture("s_position", r2_RT_P);
+		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
 		C.r_dx10Texture("s_diffuse", r2_RT_albedo);
 
 		C.r_dx10Texture("s_material", r2_material);
@@ -335,6 +343,7 @@ void CBlender_accum_direct_volumetric_sun_msaa::Compile(CBlender_Compile& C)
 		         0);
 		C.r_dx10Texture("s_smap", r2_RT_smap_depth);
 		C.r_dx10Texture("s_position", r2_RT_P);
+		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
 		jitter(C);
 
 		C.r_dx10Sampler("smp_nofilter");

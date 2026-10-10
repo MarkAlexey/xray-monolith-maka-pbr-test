@@ -405,6 +405,8 @@ CRenderTarget::CRenderTarget()
 	{
 		u32 w = Device.dwWidth, h = Device.dwHeight;
 		rt_Position.create(r2_RT_P, w, h, D3DFMT_A16B16G16R16F, SampleCount);
+		// IX-Ray PBR: third G-buffer target, written by every deferred shader (zero = legacy lighting)
+		rt_Surface.create(r2_RT_surface, w, h, D3DFMT_A8R8G8B8, SampleCount);
 
 		if (RImplementation.o.dx10_msaa)
 		{
