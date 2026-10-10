@@ -146,6 +146,8 @@ texture. Uncomment one and restart the game:
   light, so detail facing down gets darker in shade. It also darkens vertical surfaces.
 - `IBL_FAKE_IRRADANCE` (IX-Ray option): always blur rough reflections with the hemisphere
   cubemap. By default that only happens when the sky cubemap has no mipmaps.
+- `PBR_REFLECTION_SCALE_MAX` (default 16): limit for matching the sky reflection's brightness
+  to the ambient light. Lower it if reflections of dark parts of the sky look too bright.
 - `PBR_DEBUG_VIEW` 1 to 6: shows, on PBR pixels only, the world-space normal, the ambient
   occlusion, roughness, metalness, the ambient light alone or the direct light alone. The normal
   view is the quickest way to check a normal map: surfaces facing up should be green, and bumps
@@ -187,7 +189,8 @@ Anomaly 1.5.3 files with the PBR path added; the legacy code in them is unchange
 How it renders: PBR pixels are lit in linear space. Each light adds linear radiance (albedo and
 BRDF included) to the accumulator; `combine_1` adds ambient light (the weather's hemisphere
 cubemap for diffuse, the sky cubemaps blurred by roughness for reflections, scaled by SSAO and
-the material AO) and converts the result back to the gamma space the rest of the pipeline
+the material AO; the reflections' brightness is matched to the hemisphere light, so metals are
+as bright as everything else around them) and converts the result back to the gamma space the rest of the pipeline
 (fog, tonemapping, bloom, post-processing) expects. Diffuse ambient uses the same formula as the
 legacy lighting, so a matte PBR surface and a legacy one under the same sky are about equally
 bright.

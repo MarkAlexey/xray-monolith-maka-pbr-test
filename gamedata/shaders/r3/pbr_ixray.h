@@ -37,6 +37,10 @@
 // cubemap. Without it, that only happens when the sky cubemap has no mipmaps to blur with.
 // #define IBL_FAKE_IRRADANCE
 
+// Upper limit for matching the sky reflection's brightness to the ambient light (see
+// pbr_specular_irradiance). Lower it if reflections of dark sky areas look too bright.
+// #define PBR_REFLECTION_SCALE_MAX 16.0
+
 // Debug view for PBR pixels, written by combine_1: 1 = world-space normal, 2 = ambient
 // occlusion (material AO x SSAO), 3 = roughness, 4 = metalness, 5 = ambient light only,
 // 6 = direct light only
@@ -208,8 +212,23 @@ float3 pbr_diffuse_irradiance( float3 N, float hemi )
 }
 
 // Specular irradiance from the sky cubemaps, blurred by roughness through the mip chain.
-// A sky texture without mipmaps cannot be blurred, so then the blurry hemisphere cubemap is
-// blended in by roughness instead (IX-Ray's IBL_FAKE_IRRADANCE, which forces it always).
+//
+// Anomaly lights everything else with the hemisphere cubemap scaled by env_color (and squared),
+// which is several times brighter than the raw sky texture times the sky colour. Reflecting the
+// raw sky made metals (which have no diffuse term) far too dark next to everything else. So the
+// sky only provides the shape and detail of the reflection: its brightness is rescaled to match
+// the hemisphere cubemap around the same direction (the ratio of their luminances, the sky
+// measured on a heavily blurred mip). Rough reflections therefore end up as bright as the
+// ambient light, and smooth ones keep the sky's detail.
+//
+// A sky texture without mipmaps cannot be blurred, so then the hemisphere cubemap is blended in
+// by roughness instead (IX-Ray's IBL_FAKE_IRRADANCE, which forces it always).
+#ifndef PBR_REFLECTION_SCALE_MAX
+#	define PBR_REFLECTION_SCALE_MAX 16.0	// limit for the sky -> hemisphere brightness match
+#endif
+
+float pbr_luminance( float3 c ) { return dot( c, float3( 0.2126, 0.7152, 0.0722 ) ); }
+
 float3 pbr_specular_irradiance( float3 R, float hemi, float roughness )
 {
 	float3 rw	= mul( m_inv_V, R );
@@ -219,6 +238,9 @@ float3 pbr_specular_irradiance( float3 R, float hemi, float roughness )
 	sky_s1.GetDimensions( 0, w, h, mips1 );
 	float lod0	= ( mips0 - 1.0 ) * roughness;
 	float lod1	= ( mips1 - 1.0 ) * roughness;
+	// A few texels per face: smooth enough to stand for the sky's local average brightness
+	float avg0	= max( mips0 - 3.0, 0.0 );
+	float avg1	= max( mips1 - 3.0, 0.0 );
 #ifdef IBL_FAKE_IRRADANCE
 	float env_blend	= roughness;
 #else
@@ -229,10 +251,17 @@ float3 pbr_specular_irradiance( float3 R, float hemi, float roughness )
 	float3 s1	= sky_s1.SampleLevel( smp_linear, rw, lod1 ).rgb;
 	float3 sky	= lerp( s0, s1, env_color.w ) * L_sky_color.rgb;
 
+	float3 a0	= sky_s0.SampleLevel( smp_linear, rw, avg0 ).rgb;
+	float3 a1	= sky_s1.SampleLevel( smp_linear, rw, avg1 ).rgb;
+	float3 sky_avg	= lerp( a0, a1, env_color.w ) * L_sky_color.rgb;
+
 	float3 e0	= env_s0.SampleLevel( smp_rtlinear, rw, 0 ).rgb;
 	float3 e1	= env_s1.SampleLevel( smp_rtlinear, rw, 0 ).rgb;
 	float3 env	= env_color.rgb * lerp( e0, e1, env_color.w );
 	env			*= env;
+
+	float scale	= pbr_luminance( env ) / max( pbr_luminance( sky_avg ), 1e-4 );
+	sky			*= min( scale, PBR_REFLECTION_SCALE_MAX );
 
 	return lerp( sky, env, env_blend ) * hemi;
 }
