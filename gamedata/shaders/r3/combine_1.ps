@@ -145,7 +145,25 @@ _out main ( _input I, uint iSample : SV_SAMPLEINDEX )
 	{
 		// IX-Ray PBR: ambient (IBL) + direct light in linear space, back to gamma for the rest
 		// of the pipeline (fog, tonemapping, post-processing)
-		color = pbr_to_gamma( pbr_light + pbr_ambient( pm, P.xyz, N.xyz, N.w, pbr_occ * pm.ao ) );
+		float3 pbr_amb = pbr_ambient( pm, P.xyz, N.xyz, N.w, pbr_occ * pm.ao );
+		color = pbr_to_gamma( pbr_light + pbr_amb );
+
+#ifdef PBR_DEBUG_VIEW
+		float4 pbr_dbg_s = gbuffer_load_surface( GLD_P(I.tc0, I.pos2d, ISAMPLE) );
+#	if PBR_DEBUG_VIEW == 1
+		color = mul( m_inv_V, normalize( N.xyz ) ) * 0.5 + 0.5;
+#	elif PBR_DEBUG_VIEW == 2
+		color = pbr_occ * pm.ao;
+#	elif PBR_DEBUG_VIEW == 3
+		color = pbr_dbg_s.y;
+#	elif PBR_DEBUG_VIEW == 4
+		color = pbr_dbg_s.x;
+#	elif PBR_DEBUG_VIEW == 5
+		color = pbr_to_gamma( pbr_amb );
+#	elif PBR_DEBUG_VIEW == 6
+		color = pbr_to_gamma( pbr_light );
+#	endif
+#endif
 	}
 	else
 #endif
@@ -168,6 +186,9 @@ _out main ( _input I, uint iSample : SV_SAMPLEINDEX )
         float3        	pos        		= P.xyz;
         float         	distance		= length		(pos);
         float         	fog				= saturate		(distance*fog_params.w + fog_params.x); //
+#if defined(PBR_GBUFFER) && defined(PBR_DEBUG_VIEW)
+		if( !pm.enabled )
+#endif
                       	color			= lerp     		(color,fog_color,fog);        			//
         float        	skyblend		= saturate		(fog*fog);
 

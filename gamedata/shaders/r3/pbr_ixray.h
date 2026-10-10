@@ -25,6 +25,23 @@
 
 #ifdef PBR_GBUFFER
 
+//////////////////////////////////////////////////////////////////////////////////////////
+// Options. Uncomment to change them for every PBR texture (shaders recompile on restart).
+
+// IX-Ray's USE_NORMAL_HEMI_DISTRIBUTION: let the normal limit the hemisphere (sky) light, so
+// downward-facing detail gets darker in shade. Off by default, as in IX-Ray. It also darkens
+// vertical surfaces (sides of walls, weapons) noticeably.
+// #define USE_NORMAL_HEMI_DISTRIBUTION
+
+// IX-Ray's IBL_FAKE_IRRADANCE: always blend rough reflections toward the blurry hemisphere
+// cubemap. Without it, that only happens when the sky cubemap has no mipmaps to blur with.
+// #define IBL_FAKE_IRRADANCE
+
+// Debug view for PBR pixels, written by combine_1: 1 = world-space normal, 2 = ambient
+// occlusion (material AO x SSAO), 3 = roughness, 4 = metalness, 5 = ambient light only,
+// 6 = direct light only
+// #define PBR_DEBUG_VIEW 1
+
 #ifndef PBR_GAMMA
 #	define PBR_GAMMA 2.2
 #endif
@@ -181,6 +198,9 @@ float2 pbr_env_brdf_approx( float NdotV, float roughness )
 float3 pbr_diffuse_irradiance( float3 N, float hemi )
 {
 	float3 nw	= mul( m_inv_V, N );
+#ifdef USE_NORMAL_HEMI_DISTRIBUTION
+	hemi		= min( hemi, nw.y * 0.375 + 0.375 );
+#endif
 	float3 e0	= env_s0.SampleLevel( smp_rtlinear, nw, 0 ).rgb;
 	float3 e1	= env_s1.SampleLevel( smp_rtlinear, nw, 0 ).rgb;
 	float3 env	= env_color.rgb * lerp( e0, e1, env_color.w );
@@ -188,17 +208,22 @@ float3 pbr_diffuse_irradiance( float3 N, float hemi )
 }
 
 // Specular irradiance from the sky cubemaps, blurred by roughness through the mip chain.
-// Sky textures often ship without mips, so the diffuse cubemap is blended in by roughness as
-// well (IX-Ray's IBL_FAKE_IRRADANCE).
+// A sky texture without mipmaps cannot be blurred, so then the blurry hemisphere cubemap is
+// blended in by roughness instead (IX-Ray's IBL_FAKE_IRRADANCE, which forces it always).
 float3 pbr_specular_irradiance( float3 R, float hemi, float roughness )
 {
 	float3 rw	= mul( m_inv_V, R );
 
-	float w, h, mips;
-	sky_s0.GetDimensions( 0, w, h, mips );
-	float lod0	= ( mips - 1.0 ) * roughness;
-	sky_s1.GetDimensions( 0, w, h, mips );
-	float lod1	= ( mips - 1.0 ) * roughness;
+	float w, h, mips0, mips1;
+	sky_s0.GetDimensions( 0, w, h, mips0 );
+	sky_s1.GetDimensions( 0, w, h, mips1 );
+	float lod0	= ( mips0 - 1.0 ) * roughness;
+	float lod1	= ( mips1 - 1.0 ) * roughness;
+#ifdef IBL_FAKE_IRRADANCE
+	float env_blend	= roughness;
+#else
+	float env_blend	= min( mips0, mips1 ) > 1.0 ? 0.0 : roughness;
+#endif
 
 	float3 s0	= sky_s0.SampleLevel( smp_linear, rw, lod0 ).rgb;
 	float3 s1	= sky_s1.SampleLevel( smp_linear, rw, lod1 ).rgb;
@@ -209,7 +234,7 @@ float3 pbr_specular_irradiance( float3 R, float hemi, float roughness )
 	float3 env	= env_color.rgb * lerp( e0, e1, env_color.w );
 	env			*= env;
 
-	return lerp( sky, env, roughness ) * hemi;
+	return lerp( sky, env, env_blend ) * hemi;
 }
 
 // Linear ambient radiance (IX-Ray AmbientLightingImpl). occ = SSAO * material AO.
