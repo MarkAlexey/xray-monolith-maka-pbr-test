@@ -2,7 +2,7 @@
 
 # STALKER-Anomaly-modded-exes
 
-> **`clean-renderer` branches:** these branches remove the renderer feature additions (SSS, Heatvision, shader scopes, HDR10) to get a clean base for renderer work; `clean-renderer-scopes` keeps the 2D and 3D shader scopes. The changes were made by an AI; see [README-Claude.md](README-Claude.md) for what changed and what that means for mods.
+> **`clean-renderer` branches:** these branches remove the renderer feature additions (SSS, Heatvision, shader scopes, HDR10) to get a clean base for renderer work; `clean-renderer-scopes` keeps the 2D and 3D shader scopes, and `pbr` adds opt-in IX-Ray PBR materials on top of it (DX11). The changes were made by an AI; see [README-Claude.md](README-Claude.md) for what changed and what that means for mods.
 
 Here is list of exe files for Anomaly 1.5.3 that contains all engine patches by community required for some advanced mods to work.
 

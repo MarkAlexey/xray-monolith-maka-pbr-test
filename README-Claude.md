@@ -1,4 +1,4 @@
-# README-Claude — about the `clean-renderer` branches
+# README-Claude — about the `clean-renderer` and `pbr` branches
 
 **The changes on this branch were made by an AI (Claude, by Anthropic), working at the
 request of the branch owner.** The code changes, the commit messages and this document were
@@ -17,6 +17,10 @@ step is a physically based shading port from
 scopes back, so weapon packs that depend on them keep working. Everything else is the same.
 Where this document says something about scopes, the note in brackets says how it differs on
 `clean-renderer-scopes`.
+
+`pbr` is `clean-renderer-scopes` plus opt-in physically based materials ported from IX-Ray. It
+is described in [its own section](#the-pbr-branch) at the end; everything above that section
+applies to it too.
 
 Everything else in Modded Exes is kept: scripting extensions, gameplay and AI fixes, DLTX/DXML,
 the shader bus, ImGui, the profiler, multi-monitor support, the DX11 swapchain fixes, the zoom
@@ -84,3 +88,102 @@ All of the removed features belong to their authors (Ascii1457, vegeta1k95, Croo
 LVutner, Redotix, deggua, party_50 and others). They were removed only to get a minimal
 renderer to build on, not because anything was wrong with them. The upstream Modded Exes by
 themrdemonized and contributors remain the place to get them.
+
+The PBR lighting model, its texture conventions and most of the shader math on the `pbr` branch
+come from the IX-Ray team's [ixray-1.6-stcop](https://github.com/ixray-team/ixray-1.6-stcop)
+(LVutner and the other IX-Ray contributors). The port only adapts it to the stock renderer.
+
+## The `pbr` branch
+
+`pbr` ports IX-Ray's metallic/roughness lighting model
+([ixray-1.6-stcop](https://github.com/ixray-team/ixray-1.6-stcop), checked against commit
+`2ba06c98`) into the DX11 renderer as an **opt-in, per-texture** feature. Textures that are not
+marked as PBR are lit exactly as before, so a stock Anomaly install looks the same.
+
+### Making a PBR texture
+
+PBR uses IX-Ray's texture conventions, so textures made for IX-Ray work as they are:
+
+| Texture | Channels |
+|---|---|
+| `name.dds` | albedo (RGB), alpha test / transparency (A), same as before |
+| `name_bump.dds` | **x** = height (parallax), **y** = normal Y, **w** = normal X (z is unused) |
+| `name_bump#.dds` | **x** = metalness, **y** = roughness, **z** = subsurface, **w** = ambient occlusion |
+
+- In the texture's THM, set the material to **PBR (metallic/roughness)**. That is material value
+  4, the same value IX-Ray's SDK writes, so THMs from IX-Ray projects work unchanged. Everything
+  else in the THM (bump name, parallax mode, detail texture) works as usual.
+- Normal maps are OpenGL style (green channel points up), as in IX-Ray. Flip the green channel of
+  DirectX-style maps.
+- A detail texture's bump is read the PBR way only when the detail texture's own THM is also
+  marked PBR; otherwise it is treated as a normal Anomaly detail bump.
+- Non-metals use a fixed F0 of 0.04 (IX-Ray's `F0_BASE`). IX-Ray's optional IOR texture and its
+  per-texture `.ltx` shader options are not ported.
+
+### What changed
+
+Engine (`src/`):
+
+- `ETextureParams` / `TextureDescrManager`: the PBR material type and `UsePBRTextures()`. PBR
+  textures get the legacy material slot 1 so nothing that still reads it goes out of range.
+- `uber_deffer.cpp` (DX11 only): PBR textures compile their G-buffer pixel shader with `USE_PBR`
+  (and `USE_PBR_DETAIL`), with the option in the shader name so the shader cache keeps both
+  variants apart. Tessellated and plain passes are both covered.
+- R4 render target: a third G-buffer target, `$user$surface` (RGBA8, MSAA-aware), cleared every
+  frame and bound with position and albedo. The light and combine blenders bind it as
+  `s_surface`, and `combine_1` also gets the `smp_linear` sampler for blurred sky reflections.
+- A new shader constant, `L_sky_color` (the weather's sky colour), used to tint sky reflections.
+
+Shaders (`gamedata/shaders/r3/`, packed into the modded exes gamedata as usual). These are the
+Anomaly 1.5.3 files with the PBR path added; the legacy code in them is unchanged:
+
+- `gbuffer_stage.h`: the third G-buffer output. Every deferred shader writes "not PBR" into it
+  unless it is a PBR texture.
+- `sload.h`: IX-Ray's PBR texture decoding, and parallax reading height from the right channel.
+- `deffer_base_bump.ps`, `deffer_base_aref_bump.ps`: write the PBR material.
+- `pbr_ixray.h` (new): the IX-Ray BRDF (GGX, Smith, Schlick), attenuation, translucency and the
+  split-sum ambient/IBL code, with credit to IX-Ray.
+- `accum_base.ps`, `accum_omni_unshadowed.ps`, `accum_sun.ps`, `accum_sun_near.ps`,
+  `accum_sun_far.ps`, `accum_indirect.ps`, `combine_1.ps`: a PBR branch for PBR pixels.
+
+How it renders: PBR pixels are lit in linear space. Each light adds linear radiance (albedo and
+BRDF included) to the accumulator; `combine_1` adds ambient light (the weather's hemisphere
+cubemap for diffuse, the sky cubemaps blurred by roughness for reflections, scaled by SSAO and
+the material AO) and converts the result back to the gamma space the rest of the pipeline
+(fog, tonemapping, bloom, post-processing) expects. Diffuse ambient uses the same formula as the
+legacy lighting, so a matte PBR surface and a legacy one under the same sky are about equally
+bright.
+
+### Limits and known differences
+
+- **DX11 only.** DX10 and DX9 renderers ignore the PBR flag and draw these textures the legacy
+  way (with the bump channels read the legacy way, so they will look wrong there).
+- Shader mods that replace any of the files listed above (Screen Space Shaders, Enhanced
+  Shaders, GAMMA's shader stack and similar) will either override the PBR code or be overridden
+  by it. A shader pack has to be merged with these files by hand to keep both.
+- Rain does not make PBR surfaces wet, and tessellation displacement still reads the legacy
+  height channel.
+- Reflections use the sky cubemaps without the skybox rotation, and there are no screen-space
+  reflections or contact shadows (IX-Ray's versions of those depend on systems Monolith does not
+  have).
+- Lighting is IX-Ray's, not a match for the legacy look: light falloff, specular highlights and
+  the ambient reflections differ by design.
+
+### How it was checked
+
+The AI could not run MSVC or the game, so again the checks were static:
+
+- every C++ file of the DX11 renderer project plus the changed shared files for the other
+  renderers (235 file checks) were syntax-checked with clang against the mingw-w64 Windows headers,
+  on `clean-renderer-scopes` and on this branch; no new errors appeared. A deliberate typo in the
+  new code was caught by the same check, to confirm it covers that code;
+- the changed shaders and the shaders that include them (33 shader files, in DX11, DX11 MSAA,
+  DX10, static sun and PBR/non-PBR variants) were compiled with Microsoft's DXC in its legacy
+  HLSL mode, before and after the change. DXC is not the compiler the game uses (the game uses
+  the D3D11 FXC compiler), so this catches syntax and type errors but cannot promise FXC accepts
+  every line. The compiled output was also checked to confirm the PBR code is really present in
+  the DX11 shaders and absent from the DX10 ones.
+
+**No image has been rendered with this code.** Before relying on it: build the branch, play with
+vanilla gamedata and check that nothing changed, then add one IX-Ray-style PBR texture and check
+it under the sun, a flashlight, at night and indoors.
