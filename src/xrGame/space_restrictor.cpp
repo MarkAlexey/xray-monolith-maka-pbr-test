@@ -81,7 +81,7 @@ BOOL CSpaceRestrictor::net_Spawn(CSE_Abstract* data)
 	CCustomZone* zone = smart_cast<CCustomZone*>(this);
 	//if (g_ai_die_in_anomaly == 0 || !zone || smart_cast<CRadioactiveZone*>(zone) || smart_cast<CZoneCampfire*>(zone))
 	if (!zone || smart_cast<CRadioactiveZone*>(zone) || smart_cast<CZoneCampfire*>(zone))
-		spatial.type &= ~STYPE_VISIBLEFORAI;
+		SpatialComponent->spatial.type &= ~STYPE_VISIBLEFORAI;
 
 	setEnabled(FALSE);
 	setVisible(FALSE);
@@ -330,3 +330,9 @@ void CSpaceRestrictor::OnRender	()
 
 }
 #endif
+
+void CSpaceRestrictor::shedule_Update(u32 dt)
+{
+	PROF_EVENT("CSpaceRestrictor::shedule_Update");
+	inherited::shedule_Update(dt);
+}

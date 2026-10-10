@@ -64,6 +64,9 @@ void CALifeSimulatorBase::unregister_object(CSE_ALifeDynamicObject* object, bool
 		graph().detach(*objects().object(item->base()->ID_Parent), item,
 		               objects().object(item->base()->ID_Parent)->m_tGraphID, alife_query);
 
+	// Do not rely on m_bOnline to reflect schedule registry membership during destruction.
+	scheduled().remove(object, true);
+
 	objects().remove(object->ID);
 	story_objects().remove(object->m_story_id);
 	smart_terrains().remove(object);
@@ -72,7 +75,6 @@ void CALifeSimulatorBase::unregister_object(CSE_ALifeDynamicObject* object, bool
 	if (!object->m_bOnline)
 	{
 		graph().remove(object, object->m_tGraphID);
-		scheduled().remove(object);
 	}
 	else if (object->ID_Parent == 0xffff)
 	{

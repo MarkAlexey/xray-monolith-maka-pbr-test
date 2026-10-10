@@ -82,7 +82,7 @@ void xrMemory::_initialize(BOOL bDebug)
 
 #ifndef M_BORLAND
 #ifndef PURE_ALLOC
-    if (!strstr(Core.Params, "-pure_alloc"))
+    if (!Core.ParamsData.test(ECoreParams::pure_alloc))
     {
         // initialize POOLs
         u32 element = mem_pools_ebase;
@@ -97,14 +97,14 @@ void xrMemory::_initialize(BOOL bDebug)
 #endif // M_BORLAND
 
 #ifdef DEBUG_MEMORY_MANAGER
-    if (0 == strstr(Core.Params, "-memo")) mem_initialized = TRUE;
+    if (!Core.ParamsData.test(ECoreParams::memo)) mem_initialized = TRUE;
     else g_bMEMO = TRUE;
 #else // DEBUG_MEMORY_MANAGER
 	mem_initialized = TRUE;
 #endif // DEBUG_MEMORY_MANAGER
 
 	// DUMP_PHASE;
-	g_pStringContainer = xr_new<str_container>();
+    g_pStringContainer = str_container::create();
 	shared_str_initialized = true;
 	// DUMP_PHASE;
 	g_pSharedMemoryContainer = xr_new<smem_container>();
@@ -128,8 +128,11 @@ void xrMemory::_destroy()
     if (debug_mode) dbg_dump_str_leaks();
 #endif // DEBUG_MEMORY_MANAGER
 
+	// Release own reference of g_pStringContainer
+	// The actual str_container will be destroyed only when no shared_str instances hold it
+    g_pStringContainer = nullptr;
+
 	xr_delete(g_pSharedMemoryContainer);
-	xr_delete(g_pStringContainer);
 
 #ifndef M_BORLAND
 # ifdef DEBUG_MEMORY_MANAGER
@@ -145,6 +148,7 @@ void xrMemory::_destroy()
 
 void xrMemory::mem_compact()
 {
+	PROF_EVENT("mem_compact");
 #ifdef DEBUG_MEMORY_MANAGER
 	RegFlushKey(HKEY_CLASSES_ROOT);
 	RegFlushKey(HKEY_CURRENT_USER);
@@ -153,8 +157,6 @@ void xrMemory::mem_compact()
 	HeapCompact(GetProcessHeap(), 0);
 	if (g_pStringContainer) g_pStringContainer->clean();
 	if (g_pSharedMemoryContainer) g_pSharedMemoryContainer->clean();
-	if (strstr(Core.Params, "-swap_on_compact"))
-		SetProcessWorkingSetSize(GetCurrentProcess(), size_t(-1), size_t(-1));
 #endif
 }
 
@@ -273,13 +275,11 @@ void xrMemory::mem_statistic(LPCSTR fn)
 // xr_strdup
 char* xr_strdup(const char* string)
 {
-	VERIFY(string);
-	u32 len = u32(xr_strlen(string)) + 1;
-	char* memory = (char*)Memory.mem_alloc(len
-#ifdef DEBUG_MEMORY_NAME
-                                           , "strdup"
-#endif // DEBUG_MEMORY_NAME
-	);
+	if (string == nullptr)
+		return nullptr;
+
+	const size_t len = xr_strlen(string) + 1;
+	char* memory = (char*)Memory.mem_alloc(len);
 	CopyMemory(memory, string, len);
 	return memory;
 }

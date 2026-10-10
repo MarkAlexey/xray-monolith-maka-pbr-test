@@ -593,7 +593,7 @@ void CPHSimpleCharacter::PhDataUpdate(dReal /**step/**/)
 	}
 	m_last_move.sub(cast_fv(dBodyGetPosition(m_body)), m_last_move);
 	m_last_move.mul(1.f / fixed_step);
-	VERIFY2(dBodyStateValide(m_body), "WRONG BODYSTATE IN PhDataUpdate");
+	VERIFY2(dV_valid(dBodyGetPosition(m_body)), "WRONG BODYSTATE IN PhDataUpdate");
 	if (PhOutOfBoundaries(cast_fv(dBodyGetPosition(m_body))))Disable();
 	VERIFY_BOUNDARIES(cast_fv(dBodyGetPosition(m_body)), phBoundaries, PhysicsRefObject());
 	m_body_interpolation.UpdatePositions();
@@ -624,7 +624,7 @@ void CPHSimpleCharacter::PhTune(dReal step)
 		
 	}
 #endif
-	bool b_good_graund = b_valide_ground_contact && m_ground_contact_normal[1] > M_SQRT1_2;
+	const bool b_good_graund = b_valide_ground_contact && m_ground_contact_normal[1] > M_SQRT1_2;
 
 	dxGeomUserData* ud = dGeomGetUserData(m_wheel);
 	if ((ud->pushing_neg || ud->pushing_b_neg) && !b_death_pos)
@@ -1389,6 +1389,20 @@ void CPHSimpleCharacter::SafeAndLimitVelocity()
 
 	dVectorSet(m_safe_position, dBodyGetPosition(m_body));
 	dVectorSet(m_safe_velocity, linear_velocity);
+
+	// FX: Нахер всякие e-37
+	if (fis_zero(m_safe_velocity[0]))
+	{
+		m_safe_velocity[0] = 0;
+	}
+	if (fis_zero(m_safe_velocity[1]))
+	{
+		m_safe_velocity[1] = 0;
+	}
+	if (fis_zero(m_safe_velocity[2]))
+	{
+		m_safe_velocity[2] = 0;
+	}
 }
 
 void CPHSimpleCharacter::SetObjectContactCallback(ObjectContactCallbackFun* callback)
@@ -1786,7 +1800,7 @@ void CPHSimpleCharacter::set_State(const SPHNetState& state)
 
 void CPHSimpleCharacter::get_spatial_params()
 {
-	spatialParsFromDGeom((dGeomID)m_space, spatial.sphere.P, AABB, spatial.sphere.R);
+	spatialParsFromDGeom((dGeomID)m_space, SpatialComponent->spatial.sphere.P, AABB, SpatialComponent->spatial.sphere.R);
 }
 
 float CPHSimpleCharacter::FootRadius()
@@ -1906,7 +1920,6 @@ void CPHSimpleCharacter::SCollisionDamageInfo::Reinit()
 	//m_damege_contact;
 
 	m_obj_id = u16(-1);
-	m_hit_callback = NULL;
 	m_contact_velocity = 0;
 	is_initiated = false;
 
@@ -1948,7 +1961,16 @@ CElevatorState* CPHSimpleCharacter::ElevatorState()
 
 ICollisionHitCallback* CPHSimpleCharacter::HitCallback() const
 {
-	return m_collision_damage_info.m_hit_callback;
+	if (m_collision_damage_info.m_dmc_type != SCollisionDamageInfo::ctObject ||
+		m_collision_damage_info.m_obj_id == u16(-1))
+		return nullptr;
+
+	CObject* obj = inl_ph_world().LevelObjects().net_Find(m_collision_damage_info.m_obj_id);
+	IPhysicsShellHolder* object = smart_cast<IPhysicsShellHolder*>(obj);
+	if (!object || object->ObjectGetDestroy())
+		return nullptr;
+
+	return object->ObjectGetCollisionHitCallback();
 }
 
 const float resolve_depth = 0.05f;

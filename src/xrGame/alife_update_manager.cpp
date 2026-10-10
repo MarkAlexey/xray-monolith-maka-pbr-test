@@ -77,7 +77,7 @@ CALifeUpdateManager::~CALifeUpdateManager()
 {
 	shedule_unregister();
 	Device.remove_from_seq_parallel(
-		fastdelegate::FastDelegate0<>(
+		xr_make_delegate(
 			this,
 			&CALifeUpdateManager::update
 		)
@@ -112,6 +112,7 @@ void CALifeUpdateManager::update_scheduled(bool init_ef)
 
 void CALifeUpdateManager::update()
 {
+	PROF_EVENT("AI: A-Life Update");
 	update_switch();
 	update_scheduled(false);
 }
@@ -126,7 +127,7 @@ void CALifeUpdateManager::shedule_Update(u32 dt)
 	if (!m_first_time && g_mt_config.test(mtALife))
 	{
 		Device.seqParallel.push_back(
-			fastdelegate::FastDelegate0<>(
+			xr_make_delegate(
 				this,
 				&CALifeUpdateManager::update
 			)
@@ -274,8 +275,11 @@ void CALifeUpdateManager::new_game(LPCSTR save_name)
 	Msg("* New game is successfully created!");
 }
 
+extern xr_task_group level_load;
+
 void CALifeUpdateManager::load(LPCSTR game_name, bool no_assert, bool new_only)
 {
+	PROF_EVENT("Load Alife Simulator");
 	//	g_pGamePersistent->LoadTitle		("st_loading_alife_simulator");
 	g_pGamePersistent->LoadTitle();
 
@@ -300,6 +304,7 @@ void CALifeUpdateManager::load(LPCSTR game_name, bool no_assert, bool new_only)
 #endif
 	//	g_pGamePersistent->LoadTitle		("st_server_connecting");
 	g_pGamePersistent->LoadTitle(true, g_pGameLevel->name());
+	level_load.wait();
 }
 
 void CALifeUpdateManager::reload(LPCSTR section)
@@ -562,7 +567,7 @@ void CALifeUpdateManager::remove_restriction(ALife::_OBJECT_ID id, ALife::_OBJEC
 				return;
 			}
 
-			creature->m_dynamic_out_restrictions.erase(I);
+			creature->m_dynamic_out_restrictions.erase_fast(I);
 
 			break;
 		}
@@ -579,7 +584,7 @@ void CALifeUpdateManager::remove_restriction(ALife::_OBJECT_ID id, ALife::_OBJEC
 				return;
 			}
 
-			creature->m_dynamic_in_restrictions.erase(I);
+			creature->m_dynamic_in_restrictions.erase_fast(I);
 
 			break;
 		}

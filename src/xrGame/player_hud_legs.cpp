@@ -250,7 +250,7 @@ void player_legs_controller::update(CActor* actor, bool isShadowPass)
     actor->XFORMShadow.translate_over(m_legs_transform.c);
 }
 
-void player_legs_controller::render()
+void player_legs_controller::render(IDSGraphManager* DM)
 {
     if (!m_model)
         return;
@@ -267,6 +267,5 @@ void player_legs_controller::render()
     if (!visual)
         return;    
 
-    ::Render->set_Transform(&m_legs_transform);
-    ::Render->add_Visual(visual);
+    DM->add_Dynamic(visual, &m_legs_transform);
 }

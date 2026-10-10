@@ -111,15 +111,12 @@ BOOL dltx_use_cache = TRUE;
 xr_unordered_flat_map<xr_string, CInifile::Root> CInifile::CachedData;
 xrCriticalSection CInifile::CacheCS;
 void CInifile::InvalidateCache(LPCSTR path) {
-	if (path)
+	if (path && path[0])
 	{
-		if (path[0])
-		{
-			xr_string FileName(path);
-			toLowerCase(FileName);
-			xrCriticalSectionGuard g(CacheCS);
-			CachedData.erase(FileName);
-		}
+		xr_string FileName(path);
+		toLowerCase(FileName);
+		xrCriticalSectionGuard g(CacheCS);
+		CachedData.erase(FileName);
 	}
 	else
 	{
@@ -152,6 +149,7 @@ CInifile::CInifile(IReader* F, LPCSTR path
 #endif
 )
 {
+	PROF_EVENT("CInifile::CInifile IReader");
 	m_file_name[0] = 0;
 	m_flags.zero();
 	m_flags.set(eSaveAtEnd, FALSE);
@@ -175,6 +173,7 @@ CInifile::CInifile(LPCSTR szFileName,
 )
 
 {
+	PROF_EVENT("CInifile::CInifile FileName");
 	if (szFileName && strstr(szFileName, "system"))
 		Msg("-----loading %s", szFileName);
 
@@ -1510,9 +1509,7 @@ void CInifile::save_as(IWriter& writer, bool bcheck) const
 		writer.w_string(temp);
 		if (bcheck)
 		{
-			xr_sprintf(temp, sizeof(temp), "; %d %d %d", (*r_it).Name._get()->dwCRC,
-			           (*r_it).Name._get()->dwReference,
-			           (*r_it).Name._get()->dwLength);
+			xr_sprintf(temp, sizeof(temp), "; %d %d", (*r_it).Name._get()->intrusive_ref_count(), xr_strlen((*r_it).Name._get()->value));
 			writer.w_string(temp);
 		}
 

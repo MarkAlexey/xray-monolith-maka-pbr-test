@@ -267,12 +267,6 @@ NET_Compressor::NET_Compressor()
 
 NET_Compressor::~NET_Compressor()
 {
-#if 1//def DEBUG
-	//	if( strstr(Core.Params,"-dump_traffic") ) 
-	//	{
-	//		fclose( OriginalTrafficDump );
-	//		fclose( CompressedTrafficDump );
-	//	}
 	if (CompressionDump)
 	{
 		fclose(CompressionDump);
@@ -283,24 +277,7 @@ NET_Compressor::~NET_Compressor()
 		fclose(RawTrafficDump);
 		RawTrafficDump = NULL;
 	}
-#endif // DEBUG
 }
-
-/*
-void NET_Compressor::Initialize	()
-{
-	CS.Enter		();
-
-#if 1//def DEBUG
-	if( strstr(Core.Params,"-dump_traffic") ) 
-	{
-		OriginalTrafficDump     = fopen( "x:/network_out_original.dat", "wb" );
-		CompressedTrafficDump   = fopen( "x:/network_out_compressed.dat", "wb" );
-	}
-#endif // DEBUG
-
-	CS.Leave		();
-}*/
 
 u16 NET_Compressor::compressed_size(const u32& count)
 {
@@ -340,14 +317,6 @@ u16 NET_Compressor::Compress(BYTE* dest, const u32& dest_size, BYTE* src, const 
 	VERIFY(dest);
 	VERIFY(src);
 	VERIFY(count);
-
-#if 1//def DEBUG
-	if (strstr(Core.Params, "-dump_traffic"))
-	{
-		//		fwrite( src,count,1,OriginalTrafficDump );
-		//		fflush( OriginalTrafficDump );
-	}
-#endif // DEBUG
 
 #if !NET_USE_COMPRESSION
 
@@ -421,28 +390,6 @@ u16 NET_Compressor::Compress(BYTE* dest, const u32& dest_size, BYTE* src, const 
 	}
 	if (g_net_compressor_gather_stats && b_compress_packet)
 		_p->compressed_size += compressed_size;
-
-#if 1//def DEBUG
-	//	if( strstr(Core.Params,"-dump_traffic")) 
-	//	{
-	//		fwrite(dest,compressed_size,1,CompressedTrafficDump);
-	//		fflush(CompressedTrafficDump);
-	//	}	
-#endif // DEBUG
-
-#ifdef DEBUG
-	/*
-		BYTE			*src_back = (BYTE*)_alloca(count);
-		Decompress		(src_back,count,dest,compressed_size);
-		BYTE			*I = src_back;
-		BYTE			*E = src_back + count;
-		BYTE			*J = src;
-		for ( ; I != E; ++I, ++J)
-			VERIFY		(*I == *J);
-	
-	*/
-	//	CS.Leave		();
-#endif // DEBUG
 
 	return (u16(compressed_size));
 

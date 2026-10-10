@@ -95,8 +95,10 @@ void CInventoryItem::Load(LPCSTR section)
 {
 	CHitImmunity::LoadImmunities(pSettings->r_string(section, "immunities_sect"), pSettings);
 
-	ISpatial* self = smart_cast<ISpatial*>(this);
-	if (self) self->spatial.type |= STYPE_VISIBLEFORAI;
+	if (cast_game_object())
+	{
+		cast_game_object()->SpatialComponent->spatial.type |= STYPE_VISIBLEFORAI;
+	}
 
 	m_section_id._set(section);
 	m_name = CStringTable().translate(pSettings->r_string(section, "inv_name"));
@@ -232,6 +234,7 @@ extern	Flags32	dbg_net_Draw_Flags;
 
 void CInventoryItem::UpdateCL()
 {
+    PROF_EVENT("CInventoryItem::UpdateCL")
 #ifdef DEBUG
 	if(bDebug){
 		if (dbg_net_Draw_Flags.test(dbg_draw_invitem) )

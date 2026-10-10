@@ -151,6 +151,16 @@ CMapLocation* CMapManager::AddRelationLocation(CInventoryOwner* pInvOwner)
 	return l;
 }
 
+void CMapManager::RemoveRelationLocation(CInventoryOwner* pInvOwner)
+{
+	for (int t = ALife::eRelationTypeFriend; t < ALife::eRelationTypeLast; ++t)
+	{
+		ALife::ERelationType tt = (ALife::ERelationType)t;
+		Level().MapManager().RemoveMapLocation(RELATION_REGISTRY().GetSpotName(tt), pInvOwner->object_id());
+	}
+	Level().MapManager().RemoveMapLocation("deadbody_location", pInvOwner->object_id());
+}
+
 void CMapManager::Destroy(CMapLocation* ml)
 {
 	m_deffered_destroy_queue.push_back(ml);
@@ -272,6 +282,7 @@ void CMapManager::GetMapLocations(u16 id, xr_vector<CMapLocation*>& res)
 
 void CMapManager::Update()
 {
+	PROF_EVENT("Map: Update");
 	delete_data(m_deffered_destroy_queue); //from prev frame
 
 	Locations_it it = Locations().begin();

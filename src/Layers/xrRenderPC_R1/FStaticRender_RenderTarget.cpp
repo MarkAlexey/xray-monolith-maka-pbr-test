@@ -317,12 +317,7 @@ void CRenderTarget::End()
 	BOOL bDistort = RImplementation.o.distortion;
 	BOOL bCMap = NeedColorMapping();
 	bool _menu_pp = g_pGamePersistent ? g_pGamePersistent->OnRenderPPUI_query() : false;
-	u32 count = RImplementation.mapDistort.size() + RImplementation.mapHUDDistort.size();
-
-	if ((0 == count) && !_menu_pp)
-	{
-		bDistort = FALSE;
-	}
+	if ((0==RImplementation.GMBase.RGraph.mapStaticSorted.Distort.size() && 0 == RImplementation.GMBase.RGraph.mapDynamicSorted.Distort.size() && 0 == RImplementation.GMBase.RGraph.mapHUDSorted.Distort.size()) && !_menu_pp)	bDistort	= FALSE;
 	if (bDistort)
 	{
 		phase_distortion();
@@ -412,12 +407,13 @@ void CRenderTarget::phase_distortion()
 
 	if (g_pGameLevel && g_pGamePersistent && !g_pGamePersistent->OnRenderPPUI_query())
 	{
-		RImplementation.r_dsgraph_render_distort();
+		RImplementation.GMBase.r_dsgraph_render_distort();
 	}
 	else
 	{
-		RImplementation.mapDistort.clear();
-		RImplementation.mapHUDDistort.clear();
+		RImplementation.GMBase.RGraph.mapStaticSorted.Distort.clear();
+		RImplementation.GMBase.RGraph.mapDynamicSorted.Distort.clear();
+		RImplementation.GMBase.RGraph.mapHUDSorted.Distort.clear();
 	}
 
 	if (g_pGamePersistent) g_pGamePersistent->OnRenderPPUI_PP(); // PP-UI

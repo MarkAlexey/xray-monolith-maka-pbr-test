@@ -214,6 +214,7 @@ void __cdecl xrFactory_Destroy(DLL_Pure* O);
 
 void CEngineAPI::Initialize(void)
 {
+	PROF_EVENT("CEngineAPI::Initialize");
 	//////////////////////////////////////////////////////////////////////////
 	// render
 	LPCSTR r1_name = "xrRender_R1.dll";
@@ -261,7 +262,7 @@ void CEngineAPI::Initialize(void)
 	//////////////////////////////////////////////////////////////////////////
 	// vTune
 	tune_enabled = FALSE;
-	if (strstr(Core.Params, "-tune"))
+	if (Core.ParamsData.test(ECoreParams::tune))
 	{
 		LPCSTR g_name = "vTuneAPI.dll";
 		Log("Loading DLL:", g_name);
@@ -310,6 +311,7 @@ bool /*_declspec(dllexport)*/ SupportsDX10Rendering();
 
 void CEngineAPI::CreateRendererList()
 {
+	PROF_EVENT("CreateRendererList");
 #ifdef DEDICATED_SERVER
 
     vid_quality_token = xr_alloc<xr_token>(2);
@@ -332,7 +334,7 @@ void CEngineAPI::CreateRendererList()
 	LPCSTR r3_name = "xrRender_R3.dll";
 	LPCSTR r4_name = "xrRender_R4.dll";
 
-	if (strstr(Core.Params, "-perfhud_hack"))
+	if (Core.ParamsData.test(ECoreParams::perfhud_hack))
 	{
 		bSupports_r2 = true;
 		bSupports_r2_5 = true;
@@ -440,4 +442,16 @@ void CEngineAPI::CreateRendererList()
 		//#endif // DEBUG
 	}
 #endif //#ifndef DEDICATED_SERVER
+}
+
+thread_local int SkinningMode = -1;
+
+int CEngineAPI::GetSkinningMode() const
+{
+	return SkinningMode;
+}
+
+void CEngineAPI::SetSkinningMode(int Mode)
+{
+	SkinningMode = Mode;
 }

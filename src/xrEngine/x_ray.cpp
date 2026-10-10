@@ -32,6 +32,7 @@
 
 #include "xrSash.h"
 #include "MonitorList.h"
+#include "renderdoc_integration.h"
 
 extern "C" void XR_EARLY_INIT();
 
@@ -109,6 +110,7 @@ static char szEngineHash[33] = DEFAULT_MODULE_HASH;
 
 void compute_build_id()
 {
+	PROF_EVENT("compute_build_id");
 	build_date = __DATE__;
 
 	int days;
@@ -170,6 +172,9 @@ ENGINE_API string_path g_sLaunchWorkingFolder;
 // startup point
 void InitEngine()
 {
+	PROF_EVENT("InitEngine");
+	DevicePtr = &Device;
+
 	Engine.Initialize();
 	while (!g_bIntroFinished) Sleep(100);
 	Device.Initialize();
@@ -197,6 +202,7 @@ extern float g_fTimeFactor;
 
 PROTECT_API void InitSettings()
 {
+	PROF_EVENT("InitSettings");
 	string_path fname;
 	FS.update_path(fname, "$game_config$", "system.ltx");
 #ifdef DEBUG
@@ -247,7 +253,7 @@ PROTECT_API void InitConsole()
 	Console->Initialize();
 
 	xr_strcpy(Console->ConfigFile, "user.ltx");
-	if (strstr(Core.Params, "-ltx "))
+	if (Core.ParamsData.test(ECoreParams::ltx))
 	{
 		string64 c_name;
 		sscanf(strstr(Core.Params, "-ltx ") + 5, "%[^ ] ", c_name);
@@ -259,7 +265,8 @@ PROTECT_API void InitConsole()
 
 PROTECT_API void InitInput()
 {
-	BOOL bCaptureInput = FALSE; // !strstr(Core.Params, "-i");
+	PROF_EVENT("InitInput");
+	BOOL bCaptureInput = FALSE;
 
 	pInput = xr_new<CInput>(bCaptureInput);
 }
@@ -303,14 +310,20 @@ void destroyConsole()
 void destroyEngine()
 {
 	Device.Destroy();
+
+	// This should prevent empty log file in some cases
+	xrLogger::FlushLog();
+
 	Engine.Destroy();
+	DevicePtr = nullptr;
 }
 
 void execUserScript()
 {
 	Console->Execute("default_controls");
 	Console->ExecuteScript(Console->ConfigFile);
-	Console->Execute("dump_cvar");
+    if (Console->GetBool("dump_cvar_enable"))
+	    Console->Execute("dump_cvar");
 }
 
 void slowdownthread(void*)
@@ -321,7 +334,6 @@ void slowdownthread(void*)
 	for (;;)
 	{
 		if (Device.Statistic->fFPS < 30) Sleep(1);
-		if (Device.mt_bMustExit) return;
 		if (0 == pSettings) return;
 		if (0 == Console) return;
 		if (0 == pInput) return;
@@ -332,11 +344,11 @@ void slowdownthread(void*)
 void CheckPrivilegySlowdown()
 {
 #ifdef DEBUG
-    if (strstr(Core.Params, "-slowdown"))
+    if (Core.ParamsData.test(ECoreParams::slowdown))
     {
         thread_spawn(slowdownthread, "slowdown", 0, 0);
     }
-    if (strstr(Core.Params, "-slowdown2x"))
+    if (Core.ParamsData.test(ECoreParams::slowdown2x))
     {
         thread_spawn(slowdownthread, "slowdown", 0, 0);
         thread_spawn(slowdownthread, "slowdown", 0, 0);
@@ -350,7 +362,7 @@ LPCSTR xr_ToUTF8(LPCSTR input, int max_length)
 	UConverter *conv_from = ucnv_open("cp1251", &errorCode);
 	R_ASSERT3(conv_from, "[Discord RPC] Error creating UConverter!\n", std::to_string(errorCode).c_str());
 
-	std::vector<UChar> converted(strlen(input) * 2);
+	xr_vector<UChar> converted(strlen(input) * 2);
 	int32_t conv_len = ucnv_toUChars(conv_from, &converted[0], converted.size(), input, strlen(input), &errorCode);
 	if (errorCode != U_ZERO_ERROR)
 	{
@@ -362,7 +374,7 @@ LPCSTR xr_ToUTF8(LPCSTR input, int max_length)
 	ucnv_close(conv_from);
 
 	// needs to be static so the data buffer is still valid after this function returns
-	static std::string g;
+	static xr_string g;
 	g.clear();
 
 	g.resize(converted.size() * 4);
@@ -625,11 +637,11 @@ void Startup()
 	// ...command line for auto start
 	{
 		LPCSTR pStartup = strstr(Core.Params, "-start ");
-		if (pStartup) Console->Execute(pStartup + 1);
+		if (Core.ParamsData.test(ECoreParams::start)) Console->Execute(pStartup + 1);
 	}
 	{
 		LPCSTR pStartup = strstr(Core.Params, "-load ");
-		if (pStartup) Console->Execute(pStartup + 1);
+		if (Core.ParamsData.test(ECoreParams::load)) Console->Execute(pStartup + 1);
 	}
 
 	// Initialize APP
@@ -640,6 +652,7 @@ void Startup()
 	g_pGamePersistent = (IGame_Persistent*)NEW_INSTANCE(CLSID_GAME_PERSISTANT);
 	g_SpatialSpace = xr_new<ISpatial_DB>();
 	g_SpatialSpacePhysic = xr_new<ISpatial_DB>();
+	g_SpatialSpaceLights = xr_new<ISpatial_DB>();
 
 	// Destroy LOGO
 	DestroyWindow(logoWindow);
@@ -657,7 +670,7 @@ void Startup()
 
 	// Main cycle
 	Msg("* [x-ray]: Starting Main Loop");
-	Memory.mem_usage();
+	//Memory.mem_usage();
 
 	Device.Run();
 
@@ -671,6 +684,7 @@ void Startup()
 	// Destroy APP
 	xr_delete(g_SpatialSpacePhysic);
 	xr_delete(g_SpatialSpace);
+	xr_delete(g_SpatialSpaceLights);
 	DEL_INSTANCE(g_pGamePersistent);
 
 	xr_delete(pApp);
@@ -1091,6 +1105,7 @@ int APIENTRY WinMain_impl(HINSTANCE hInstance,
 
 	compute_build_id();
 	Core._initialize("xray", NULL, TRUE, fsgame[0] ? fsgame : NULL);
+	renderdoc_initialize();
 
 	InitSettings();
 	Msg(XRAY_MONOLITH_VERSION);
@@ -1153,9 +1168,15 @@ int APIENTRY WinMain_impl(HINSTANCE hInstance,
 		}
 
 		extern bool ignore_verify;
-		ignore_verify = !strstr(Core.Params, "-dbgdev");
+		ignore_verify = !Core.ParamsData.test(ECoreParams::dbgdev);
 
 		Msg("command line %s", Core.Params);
+		/*Msg("params: ");
+		for (const auto& v: Core.ParamsData.getBitsetAsMap())
+		{
+			Msg("%s: %s", v.first.c_str(), v.second ? "true" : "false");
+		}*/
+
 		LPCSTR sashName = "-openautomate ";
 		if (strstr(lpCmdLine, sashName))
 		{
@@ -1176,9 +1197,9 @@ int APIENTRY WinMain_impl(HINSTANCE hInstance,
 		};
 
 #ifndef DEDICATED_SERVER
-		if (strstr(Core.Params, "-r2a"))
+		if (Core.ParamsData.test(ECoreParams::r2a))
 			Console->Execute("renderer renderer_r2a");
-		else if (strstr(Core.Params, "-r2"))
+		else if (Core.ParamsData.test(ECoreParams::r2))
 			Console->Execute("renderer renderer_r2");
 		else
 		{
@@ -1191,7 +1212,7 @@ int APIENTRY WinMain_impl(HINSTANCE hInstance,
 #endif
 		//. InitInput ( );
 		Engine.External.Initialize();
-		Console->Execute("stat_memory");
+		Console->Execute("stat_memory_async");
 
 		Startup();
 		Core._destroy();
@@ -1408,6 +1429,7 @@ void CApplication::OnEvent(EVENT E, u64 P1, u64 P2)
 	}
 	else if (E == eStart)
 	{
+		PROF_EVENT("CApplication::OnEvent: eStart");
 		LPSTR op_server = LPSTR(P1);
 		LPSTR op_client = LPSTR(P2);
 		Level_Current = u32(-1);
@@ -1588,7 +1610,7 @@ void CApplication::LoadStage()
 	VERIFY(ll_dwReference);
 	Msg("* phase time: %d ms", phase_timer.GetElapsed_ms());
 	phase_timer.Start();
-	Msg("* phase cmem: %lld K", Memory.mem_usage() / 1024);
+	//Msg("* phase cmem: %lld K", Memory.mem_usage() / 1024);
 
 	if (g_pGamePersistent->GameType() == 1 && !xr_strcmp(g_pGamePersistent->m_game_params.m_alife, "alife"))
 		max_load_stage = 17;
@@ -1609,8 +1631,6 @@ void CApplication::OnFrame()
 	Engine.Event.OnFrame();
 	g_SpatialSpace->update();
 	g_SpatialSpacePhysic->update();
-	if (g_pGameLevel)
-		g_pGameLevel->SoundEvent_Dispatch();
 }
 
 void CApplication::Level_Append(LPCSTR folder)
@@ -1894,7 +1914,7 @@ void doBenchmark(LPCSTR name)
 		Engine.External.Initialize();
 
 		xr_strcpy(Console->ConfigFile, "user.ltx");
-		if (strstr(Core.Params, "-ltx "))
+		if (Core.ParamsData.test(ECoreParams::ltx))
 		{
 			string64 c_name;
 			sscanf(strstr(Core.Params, "-ltx ") + 5, "%[^ ] ", c_name);

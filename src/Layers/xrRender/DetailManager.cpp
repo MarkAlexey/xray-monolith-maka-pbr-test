@@ -8,6 +8,8 @@
 #include "DetailManager.h"
 #include "cl_intersect.h"
 
+#include "../../xrCore/profiler.h"
+
 #ifdef _EDITOR
 #	include "ESceneClassList.h"
 #	include "Scene.h"
@@ -89,6 +91,9 @@ CDetailManager::CDetailManager()
 	m_time_rot_2 = 0;
 	m_time_pos = 0;
 	m_global_time_old = 0;
+
+    m_frame_calc = 0;
+    m_frame_rendered.store(0, std::memory_order_relaxed);
 
 #ifdef DETAIL_RADIUS
 	// KD: variable detail radius
@@ -252,10 +257,21 @@ void CDetailManager::Load()
 	swing_desc[1].rot1 = pSettings->r_float("details", "swing_fast_rot1");
 	swing_desc[1].rot2 = pSettings->r_float("details", "swing_fast_rot2");
 	swing_desc[1].speed = pSettings->r_float("details", "swing_fast_speed");
+
+	if (ps_r2_ls_flags.test(R2FLAG_EXP_MT_CALC))
+	{
+		// MT-details (@front)
+		Device.seqParallelRender.push_back(xr_make_delegate(this, &CDetailManager::MT_CALC));
+	}
 }
 #endif
 void CDetailManager::Unload()
 {
+	auto I = std::find(Device.seqParallelRender.begin(), Device.seqParallelRender.end(), xr_make_delegate(this, &CDetailManager::MT_CALC));
+
+	if (I != Device.seqParallelRender.end())
+		Device.seqParallelRender.erase(I);
+
 	if (UseVS()) hw_Unload();
 	else soft_Unload();
 
@@ -274,7 +290,8 @@ void CDetailManager::Unload()
 }
 
 extern ECORE_API float r_ssaDISCARD;
-
+extern float ps_r__ssaDISCARD_exp;
+extern float ps_r__ssaDISCARD_fade_k;
 void CDetailManager::UpdateVisibleM()
 {
 	Fvector EYE = RDEVICE.vCameraPosition_saved;
@@ -292,6 +309,7 @@ void CDetailManager::UpdateVisibleM()
 	fade_start = fade_start * fade_start;
 	float fade_range = fade_limit - fade_start;
 	float r_ssaCHEAP = 16 * r_ssaDISCARD;
+    float fade_start_ssa = r_ssaDISCARD * ps_r__ssaDISCARD_fade_k;
 
 	// Initialize 'vis' and 'cache'
 	// Collect objects for rendering
@@ -355,7 +373,12 @@ void CDetailManager::UpdateVisibleM()
 					float alpha_i = 1.f - alpha;
 					float dist_sq_rcp = 1.f / dist_sq;
 
-					S.frame = RDEVICE.dwFrame + Random.randI(15, 30);
+					if(ps_r2_ls_flags.test(R2FLAG_FAST_DETAILS_UPDATE))
+						S.frame			= RDEVICE.dwFrame+1;
+					else
+						S.frame			= RDEVICE.dwFrame+Random.randI(15,30);
+
+                    u32 slot_hash = GetFvectorHash(S.vis.sphere.P);
 					for (int sp_id = 0; sp_id < dm_obj_in_slot; sp_id++)
 					{
 						SlotPart& sp = S.G[sp_id];
@@ -373,15 +396,44 @@ void CDetailManager::UpdateVisibleM()
 						{
 							SlotItem& Item = *(*siIT);
 							float scale = psDeviceFlags2.test(rsNoScale)
-								              ? (Item.scale_calculated = Item.scale)
-								              : (Item.scale_calculated = Item.scale * alpha_i);
+								              ? (Item.scale)
+								              : (Item.scale * alpha_i);
 							float ssa = psDeviceFlags2.test(rsNoScale) ? scale : scale * scale * Rq_drcp;
 							if (ssa < r_ssaDISCARD)
 							{
 								continue;
 							}
+
+                            // demonized: same logic as in r_dsgraph_insert_static
+                            if (ssa < fade_start_ssa)
+                            {
+                                // Base probability of survival
+                                float survival_chance = (ssa - r_ssaDISCARD) / (fade_start_ssa - r_ssaDISCARD);
+
+                                // Get the index of this specific grass blade inside the slot
+                                u32 item_index = (u32)(siIT - &(*sp.items.begin()));
+
+                                // Mix the Slot's world position with the Item's index using a prime multiplier
+                                // This ensures every blade of grass in the level has a unique, stable seed
+                                u32 blade_hash = slot_hash ^ (item_index * 0x9E3779B9u);
+
+                                // Convert to [0.0, 1.0) float
+                                constexpr float hash_to_float = 1.0f / 4294967296.0f;
+                                float val = blade_hash * hash_to_float;
+
+                                // If the object's hash value is higher than its survival chance, cull it
+                                if (val > _powf(survival_chance, ps_r__ssaDISCARD_exp))
+                                    continue;
+                            }
+
 							u32 vis_id = 0;
 							if (ssa > r_ssaCHEAP) vis_id = Item.vis_ID;
+
+							Fmatrix& M = Item.mRotY_calculated;
+							M = Item.mRotY;
+							M._11*=scale; M._21*=scale; M._31*=scale;
+							M._12*=scale; M._22*=scale; M._32*=scale;
+							M._13*=scale; M._23*=scale; M._33*=scale;
 
 							sp.r_items[vis_id].push_back(*siIT);
 
@@ -414,13 +466,16 @@ void CDetailManager::UpdateVisibleM()
 
 void CDetailManager::Render()
 {
+	PROF_EVENT("Render details");
+
 #ifndef _EDITOR
 	if (0 == dtFS) return;
 	if (!psDeviceFlags.is(rsDetails)) return;
 #endif
 
-	// MT
-	MT_SYNC();
+	// Always ensure per-frame detail visibility/cache are prepared before drawing.
+	// In MT mode this acts as a synchronization point with the worker task.
+	MT_CALC();
 
 	RDEVICE.Statistic->RenderDUMP_DT_Render.Begin();
 	g_pGamePersistent->m_pGShaderConstants->m_blender_mode.w = 1.0f; //--#SM+#-- Флaa нaчaлa ?aндa?a o?aвu [begin of grass render]
@@ -441,12 +496,12 @@ void CDetailManager::Render()
 	g_pGamePersistent->m_pGShaderConstants->m_blender_mode.w = 0.0f; //--#SM+#-- Флaa eонцa ?aндa?a o?aвu [end of grass render]	
 	
 	RDEVICE.Statistic->RenderDUMP_DT_Render.End();
-	m_frame_rendered = RDEVICE.dwFrame;
+	m_frame_rendered.store(RDEVICE.dwFrame, std::memory_order_release);
 }
 
 void __stdcall CDetailManager::MT_CALC()
 {
-	if (!this || !MT.IsValid()) return; // DIIIRTY HACK !!!
+	PROF_EVENT("MT_CALC details");
 
 #ifndef _EDITOR
 	if (0 == RImplementation.Details) return; // possibly deleted
@@ -454,21 +509,23 @@ void __stdcall CDetailManager::MT_CALC()
 	if (!psDeviceFlags.is(rsDetails)) return;
 #endif
 
-	MT.Enter();
-	if (m_frame_calc != RDEVICE.dwFrame)
-		if ((m_frame_rendered + 1) == RDEVICE.dwFrame) //already rendered
-		{
-			Fvector EYE = RDEVICE.vCameraPosition_saved;
+	xrCriticalSectionGuard guard(m_mt_calc_guard);
+	const u32 current_frame = RDEVICE.dwFrame;
+    const u32 frame_calc = m_frame_calc;
+	const u32 frame_rendered = m_frame_rendered.load(std::memory_order_acquire);
 
-			int s_x = iFloor(EYE.x / dm_slot_size + .5f);
-			int s_z = iFloor(EYE.z / dm_slot_size + .5f);
+	if (frame_calc != current_frame && (frame_rendered + 1) == current_frame)
+	{
+		Fvector EYE = RDEVICE.vCameraPosition_saved;
 
-			RDEVICE.Statistic->RenderDUMP_DT_Cache.Begin();
-			cache_Update(s_x, s_z, EYE, dm_max_decompress);
-			RDEVICE.Statistic->RenderDUMP_DT_Cache.End();
+		int s_x = iFloor(EYE.x / dm_slot_size + .5f);
+		int s_z = iFloor(EYE.z / dm_slot_size + .5f);
 
-			UpdateVisibleM();
-			m_frame_calc = RDEVICE.dwFrame;
-		}
-	MT.Leave();
+		RDEVICE.Statistic->RenderDUMP_DT_Cache.Begin();
+		cache_Update(s_x, s_z, EYE, dm_max_decompress);
+		RDEVICE.Statistic->RenderDUMP_DT_Cache.End();
+
+		UpdateVisibleM();
+		m_frame_calc = current_frame;
+	}
 }

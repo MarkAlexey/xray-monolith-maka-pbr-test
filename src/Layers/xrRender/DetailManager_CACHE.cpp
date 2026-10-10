@@ -157,47 +157,59 @@ void CDetailManager::cache_Update(int v_x, int v_z, Fvector& view, int limit)
 	}
 
 	// Task performer
-	BOOL bFullUnpack = FALSE;
-	if (cache_task.size() == dm_cache_size)
+	if(ps_r2_ls_flags.test(R2FLAG_FAST_DETAILS_UPDATE))
 	{
-		limit = dm_cache_size;
-		bFullUnpack = TRUE;
-	}
-
-	for (int iteration = 0; cache_task.size() && (iteration < limit); iteration++)
-	{
-		u32 best_id = 0;
-		float best_dist = flt_max;
-
-		if (bFullUnpack)
+		for (u32 iteration=0; iteration<cache_task.size(); iteration++)
 		{
-			best_id = cache_task.size() - 1;
+			// Decompress and remove task
+			cache_Decompress	(cache_task[iteration]);
+			cache_task.erase	(iteration);
 		}
-		else
+	}
+	else
+	{
+		BOOL bFullUnpack = FALSE;
+		if (cache_task.size() == dm_cache_size)
 		{
-			for (u32 entry = 0; entry < cache_task.size(); entry++)
+			limit = dm_cache_size;
+			bFullUnpack = TRUE;
+		}
+
+		for (int iteration = 0; cache_task.size() && (iteration < limit); iteration++)
+		{
+			u32 best_id = 0;
+			float best_dist = flt_max;
+
+			if (bFullUnpack)
 			{
-				// Gain access to data
-				Slot* S = cache_task[entry];
-				VERIFY(stPending == S->type);
-
-				// Estimate
-				Fvector C;
-				S->vis.box.getcenter(C);
-				float D = view.distance_to_sqr(C);
-
-				// Select
-				if (D < best_dist)
+				best_id = cache_task.size() - 1;
+			}
+			else
+			{
+				for (u32 entry = 0; entry < cache_task.size(); entry++)
 				{
-					best_dist = D;
-					best_id = entry;
+					// Gain access to data
+					Slot* S = cache_task[entry];
+					VERIFY(stPending == S->type);
+
+					// Estimate
+					Fvector C;
+					S->vis.box.getcenter(C);
+					float D = view.distance_to_sqr(C);
+
+					// Select
+					if (D < best_dist)
+					{
+						best_dist = D;
+						best_id = entry;
+					}
 				}
 			}
-		}
 
-		// Decompress and remove task
-		cache_Decompress(cache_task[best_id]);
-		cache_task.erase(best_id);
+			// Decompress and remove task
+			cache_Decompress(cache_task[best_id]);
+			cache_task.erase(best_id);
+		}
 	}
 
 	if (bNeedMegaUpdate)

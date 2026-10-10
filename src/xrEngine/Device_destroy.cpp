@@ -49,6 +49,7 @@ void CRenderDevice::Destroy(void)
 	seqFrameMT.R.clear();
 	seqDeviceReset.R.clear();
 	seqParallel.clear();
+	seqParallelRender.clear();
 
 	RenderFactory->DestroyRenderDeviceRender(m_pRender);
 	m_pRender = 0;
@@ -67,6 +68,7 @@ extern ENGINE_API u32 psCurrentVidMode[];
 
 void CRenderDevice::Reset(bool precache)
 {
+	PROF_EVENT("CRenderDevice::Reset");
 	if (use_reshade)
 		unregister_reshade();
 

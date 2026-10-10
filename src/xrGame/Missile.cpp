@@ -1,4 +1,4 @@
-﻿#include "stdafx.h"
+#include "stdafx.h"
 #include "missile.h"
 //.#include "WeaponHUD.h"
 #include "../xrphysics/PhysicsShell.h"
@@ -103,6 +103,18 @@ void CMissile::Load(LPCSTR section)
 
 	if (pSettings->line_exist(section, "snd_checkout"))
 		m_sounds.LoadSound(section, "snd_checkout", "sndCheckout", false, SOUND_TYPE_WEAPON_RECHARGING);
+
+	if (pSettings->line_exist(section, "checkout_bones"))
+	{
+		m_sCheckoutBones.clear();
+		LPCSTR lineStr = pSettings->r_string(section, "checkout_bones");
+		for (int j = 0, cnt = _GetItemCount(lineStr); j < cnt; ++j)
+		{
+			string128 bone_name;
+			_GetItem(lineStr, j, bone_name);
+			m_sCheckoutBones.push_back(bone_name);
+		}
+	}
 }
 
 BOOL CMissile::net_Spawn(CSE_Abstract* DC)
@@ -601,6 +613,7 @@ void CMissile::OnEvent(NET_Packet& P, u16 type)
 			{
 				m_fake_missile = NULL;
 				IsFakeMissile = true;
+                setForceDestroy();
 			}
 
 			CMissile* missile = smart_cast<CMissile*>(Level().Objects.net_Find(id));
@@ -758,9 +771,19 @@ void CMissile::activate_physic_shell()
 	m_pPhysicsShell->SetAirResistance(0.f, 0.f);
 	m_pPhysicsShell->set_DynamicScales(1.f, 1.f);
 
-	IKinematics* kinematics = smart_cast<IKinematics*>(Visual());
+	IKinematics* kinematics = PKinematics(Visual());
 	VERIFY(kinematics);
 	kinematics->CalculateBones_Invalidate();
+	if (m_fThrowForce != 0.f && !m_sCheckoutBones.empty())
+	{
+		u16 bone_id;
+		for (const auto& boneName : m_sCheckoutBones)
+		{
+			bone_id = kinematics->LL_BoneID(boneName);
+			if (bone_id != BI_NONE && kinematics->LL_GetBoneVisible(bone_id))
+				kinematics->LL_SetBoneVisible(bone_id, FALSE, TRUE);
+		}
+	}
 	kinematics->CalculateBones(TRUE);
 }
 
@@ -788,7 +811,7 @@ void CMissile::setup_physic_shell()
 	R_ASSERT(!m_pPhysicsShell);
 	create_physic_shell();
 	m_pPhysicsShell->Activate(XFORM(), 0, XFORM()); //,true 
-	IKinematics* kinematics = smart_cast<IKinematics*>(Visual());
+	IKinematics *kinematics = PKinematics(Visual());
 	R_ASSERT(kinematics);
 	kinematics->CalculateBones_Invalidate();
 	kinematics->CalculateBones(TRUE);

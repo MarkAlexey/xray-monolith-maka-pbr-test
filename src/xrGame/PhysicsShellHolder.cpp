@@ -80,10 +80,11 @@ void CPhysicsShellHolder::net_Destroy()
 	CCharacterPhysicsSupport* char_support = character_physics_support();
 	if (char_support)
 		char_support->destroy_imotion();
+    deactivate_physics_shell();
+
 	inherited::net_Destroy();
 	b_sheduled = false;
 	
-	deactivate_physics_shell();
 	xr_delete(m_pPhysicsShell);
 }
 
@@ -388,6 +389,7 @@ void CPhysicsShellHolder::OnChangeVisual()
 
 void CPhysicsShellHolder::UpdateCL()
 {
+	PROF_EVENT();
 	inherited::UpdateCL();
 	//обновить присоединенные партиклы
 	UpdateParticles();

@@ -15,6 +15,8 @@ public:
 	virtual bool OnMouseAction(float x, float y, EUIMessages mouse_action);
 	virtual bool OnMouseDown(int mouse_btn);
 
+	virtual CUIWindow* ui_cast_window() { return this; }
+
 	float Overlap() const { return m_overlap; }
 	void  SetOverlap(float v) { m_overlap = v; }
 	float Pitch() const { return GetWndSize().x - m_overlap; }

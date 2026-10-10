@@ -11,6 +11,9 @@
 #include "patrol_path.h"
 #include "patrol_point.h"
 #include "levelgamedef.h"
+#include "ai_space.h"
+#include "level_graph.h"
+#include "game_graph.h"
 
 CPatrolPathStorage::~CPatrolPathStorage()
 {
@@ -149,4 +152,55 @@ void CPatrolPathStorage::save(IWriter& stream)
 	}
 
 	stream.close_chunk();
+}
+
+void CPatrolPathStorage::remove_path(shared_str patrol_name)
+{
+	m_registry.erase(patrol_name);
+}
+
+void CPatrolPathStorage::add_path(shared_str patrol_name, CPatrolPath *path)
+{
+	remove_path(patrol_name);
+	m_registry.insert(std::make_pair(patrol_name, path));
+}
+
+const CPatrolPath* CPatrolPathStorage::safe_path(shared_str patrol_name, bool no_assert, bool on_level) const
+{
+	if (auto it = m_registry.find(patrol_name); it == m_registry.end())
+	{
+		return path(patrol_name, no_assert);
+	}
+	else
+	{
+		for (auto&& [key, vertex] : it->second->vertices())
+		{
+			auto& pp = vertex->data();
+
+			const u32 point_lvid = pp.level_vertex_id();
+			const GameGraph::_GRAPH_ID point_gvid = pp.game_vertex_id();
+			const Fvector& point_pos = pp.position();
+			const shared_str& point_name = pp.name();
+
+			if (on_level || (ai().game_graph().valid_vertex_id(point_gvid) &&
+				ai().game_graph().vertex(point_gvid)->level_id() == ai().level_graph().level_id()))
+			{
+				if (!ai().level_graph().valid_vertex_id(point_lvid))
+				{
+                    const u32 prev_vertex_id = pp.m_level_vertex_id;
+                    pp.m_level_vertex_id = ai().level_graph().vertex(pp.
+                        m_position);
+                    Msg("! [%s]: path [%s] pp [%s] level_vertex_id [%u] -> %u",
+                        __FUNCTION__, patrol_name.c_str(), pp.m_name.c_str(),
+                        prev_vertex_id, pp.m_level_vertex_id);
+				}
+			}
+			else
+			{
+				return path(patrol_name, no_assert);
+			}
+		}
+
+		return path(patrol_name, no_assert);
+	}
 }

@@ -33,16 +33,16 @@ namespace
 #define VERTICES_PER_LINE 2
 #define LINES_PER_SLICE 4
 
-dx103DFluidGrid::dx103DFluidGrid()
-{
-}
+dx103DFluidGrid::dx103DFluidGrid() {}
 
-dx103DFluidGrid::~dx103DFluidGrid()
+dx103DFluidGrid::~dx103DFluidGrid() { DestroyVertexBuffers(); }
+
+void dx103DFluidGrid::DestroyVertexBuffers()
 {
-    _RELEASE(m_pRenderQuadBuffer);
-    _RELEASE(m_pSlicesBuffer);
-    _RELEASE(m_pBoundarySlicesBuffer);
-    _RELEASE(m_pBoundaryLinesBuffer);						 
+	_RELEASE(m_pRenderQuadBuffer);
+	_RELEASE(m_pSlicesBuffer);
+	_RELEASE(m_pBoundarySlicesBuffer);
+	_RELEASE(m_pBoundaryLinesBuffer);
 }
 
 void dx103DFluidGrid::Initialize(int gridWidth, int gridHeight, int gridDepth)

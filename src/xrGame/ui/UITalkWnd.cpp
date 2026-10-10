@@ -177,6 +177,7 @@ void CUITalkWnd::SendMessage(CUIWindow* pWnd, s16 msg, void* pData)
 //////////////////////////////////////////////////////////////////////////
 void UpdateCameraDirection(CGameObject* pTo)
 {
+	if (!pTo) return;
 	if (Actor()->cam_freelook != eflDisabled)
 		return;
 

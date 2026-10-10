@@ -130,9 +130,8 @@ struct ECORE_API R_constant : public xr_resource
 	R_constant_load samp;
 	R_constant_setup* handler;
 
-	R_constant() : type(u16(-1)), destination(0), handler(NULL)
-	{
-	};
+	R_constant() : type(u16(-1)), destination(0), handler(nullptr) {};
+	//R_constant& operator=(const R_constant& Other) = delete;
 
 	IC R_constant_load& get_load(u32 destination)
 	{
@@ -206,8 +205,12 @@ private:
 #endif	//	USE_DX10
 
 public:
+	//R_constant_table() = default;
 	~R_constant_table();
 
+	//R_constant_table& operator=(const R_constant& Other) = delete;
+
+	void _copy(const R_constant_table& Other);
 	void clear();
 	BOOL parse(void* desc, u32 destination);
 	void merge(R_constant_table* C);
@@ -217,7 +220,7 @@ public:
 	BOOL equal(R_constant_table& C);
 	BOOL equal(R_constant_table* C) { return equal(*C); }
 	BOOL empty() { return 0 == table.size(); }
-private:
+
 };
 
 typedef resptr_core<R_constant_table, resptr_base<R_constant_table>> ref_ctable;

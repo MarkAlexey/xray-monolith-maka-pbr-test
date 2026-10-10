@@ -17,6 +17,9 @@ public:
 	void SetTextureColor(u32 cl) { m_texture_color = cl; }
 	bool IsHorizontal() { return bHorizontal; }
 	void SetHorizontal(bool horiz) { bHorizontal = horiz; }
+
+	virtual CUIWindow* ui_cast_window() { return this; }
+
 	// When true, caps are scaled to fit the element -- texture->UI by height, then UI->screen for
 	// resolution -- so the caps keep their authored shape. When false the cap width is the texture's own
 	// pixel width used as-is on screen (never scaled) while its height stretches to fill the element, so

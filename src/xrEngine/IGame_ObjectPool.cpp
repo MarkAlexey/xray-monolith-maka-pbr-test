@@ -53,8 +53,13 @@ CObject* IGame_ObjectPool::create(LPCSTR name)
 {
 	CLASS_ID CLS = pSettings->r_clsid(name, "class");
 	CObject* O = (CObject*)NEW_INSTANCE(CLS);
-	O->cNameSect_set(name);
-	O->Load(name);
+
+    if (O)
+    {
+        O->cNameSect_set(name);
+        O->Load(name);
+    }
+	
 	return O;
 }
 

@@ -319,6 +319,7 @@ void CUIDragDropListEx::ClearAll(bool bDestroy)
 
 void CUIDragDropListEx::Compact()
 {
+	xrCriticalSectionGuard guard(m_container->csUi);
 	CUIWindow::WINDOW_LIST wl = m_container->GetChildWndList();
 	ClearAll(false);
 
@@ -504,6 +505,7 @@ CUICellItem* CUIDragDropListEx::RemoveItem(CUICellItem* itm, bool force_root)
 
 u32 CUIDragDropListEx::ItemsCount()
 {
+	xrCriticalSectionGuard guard(m_container->csUi);
 	return m_container->GetChildWndList().size();
 }
 
@@ -515,6 +517,7 @@ bool CUIDragDropListEx::IsOwner(CUICellItem* itm)
 CUICellItem* CUIDragDropListEx::GetItemIdx(u32 idx)
 {
 	R_ASSERT(idx<ItemsCount());
+	xrCriticalSectionGuard guard(m_container->csUi);
 	WINDOW_LIST_it it = m_container->GetChildWndList().begin();
 	std::advance(it, idx);
 	return smart_cast<CUICellItem*>(*it);
@@ -607,6 +610,7 @@ bool CUICellContainer::AddSimilar(CUICellItem* itm)
 
 CUICellItem* CUICellContainer::FindSimilar(CUICellItem* itm)
 {
+	xrCriticalSectionGuard guard(csUi);
 	for (WINDOW_LIST_it it = m_ChildWndList.begin(); m_ChildWndList.end() != it; ++it)
 	{
 #ifdef DEBUG
@@ -653,7 +657,7 @@ void CUICellContainer::PlaceItemAtPos(CUICellItem* itm, Ivector2& cell_pos)
 	itm->SetWndSize(Fvector2().set((m_cellSize.x * cs.x), (m_cellSize.y * cs.y)));
 	if (!m_pParentDragDropList->GetVirtualCells())
 		itm->SetWndPos(Fvector2().set(((m_cellSpacing.x + m_cellSize.x) * cell_pos.x),
-		                              ((m_cellSpacing.y + m_cellSize.y) * cell_pos.y)));
+			((m_cellSpacing.y + m_cellSize.y) * cell_pos.y)));
 	else
 	{
 		Ivector2 alignment_vec = m_pParentDragDropList->GetVirtualCellsAlignment();
@@ -677,6 +681,7 @@ void CUICellContainer::PlaceItemAtPos(CUICellItem* itm, Ivector2& cell_pos)
 
 CUICellItem* CUICellContainer::RemoveItem(CUICellItem* itm, bool force_root)
 {
+	xrCriticalSectionGuard guard(csUi);
 	for (WINDOW_LIST_it it = m_ChildWndList.begin(); m_ChildWndList.end() != it; ++it)
 	{
 		CUICellItem* i = (CUICellItem*)(*it);
@@ -684,7 +689,7 @@ CUICellItem* CUICellContainer::RemoveItem(CUICellItem* itm, bool force_root)
 		if (i->HasChild(itm))
 		{
 			CUICellItem* iii = i->PopChild(itm);
-			R_ASSERT(0==iii->ChildsCount());
+			R_ASSERT(0 == iii->ChildsCount());
 			return iii;
 		}
 	}
@@ -692,7 +697,7 @@ CUICellItem* CUICellContainer::RemoveItem(CUICellItem* itm, bool force_root)
 	if (!force_root && itm->ChildsCount())
 	{
 		CUICellItem* iii = itm->PopChild(NULL);
-		R_ASSERT(0==iii->ChildsCount());
+		R_ASSERT(0 == iii->ChildsCount());
 		return iii;
 	}
 
@@ -889,6 +894,8 @@ void CUICellContainer::ClearAll(bool bDestroy)
 		for (; it != it_e; ++it)
 			(*it).Clear();
 	}
+
+	xrCriticalSectionGuard guard(csUi);
 	while (!m_ChildWndList.empty())
 	{
 		CUIWindow* w = m_ChildWndList.back();

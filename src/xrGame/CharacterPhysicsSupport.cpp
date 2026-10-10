@@ -389,6 +389,7 @@ void CCharacterPhysicsSupport::UpdateCollisionActivatingDellay()
 
 void CCharacterPhysicsSupport::in_shedule_Update(u32 DT)
 {
+	PROF_EVENT();
 	///VERIFY( 0 );
 
 	//CPHSkeleton::Update(DT);
@@ -657,10 +658,10 @@ void CCharacterPhysicsSupport::in_UpdateCL()
 
 		// demonized: use screen space area to check if need update
 		float perceived_dist = Device.GetPerceivedDist(p);
-		float ssa = Device.CalcSSADynamic(m_EntityAlife.spatial.sphere.P, m_EntityAlife.spatial.sphere.R);
+		float ssa = Device.CalcSSADynamic(m_EntityAlife.SpatialComponent->spatial.sphere.P, m_EntityAlife.SpatialComponent->spatial.sphere.R);
 		if (ssa > IK_CALC_SSA)
 		{
-			if (view_frust.testSphere_dirty(m_EntityAlife.spatial.sphere.P, m_EntityAlife.spatial.sphere.R) || perceived_dist < IK_ALWAYS_CALC_DIST)
+			if (view_frust.testSphere_dirty(m_EntityAlife.SpatialComponent->spatial.sphere.P, m_EntityAlife.SpatialComponent->spatial.sphere.R) || perceived_dist < IK_ALWAYS_CALC_DIST)
 			{
 				update_interactive_anims();
 				ik_controller()->Update();

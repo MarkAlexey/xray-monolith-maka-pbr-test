@@ -107,7 +107,6 @@ void dx103DFluidManager::Initialize(int width, int height, int depth)
 	strHalfVolumeDim = "halfVolumeDim";
 	strGravityBuoyancy = "GravityBuoyancy";
 
-	//if (strstr(Core.Params,"-no_volumetric_fog"))
 	if (!RImplementation.o.volumetricfog)
 		return;
 

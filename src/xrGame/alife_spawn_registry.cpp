@@ -99,7 +99,7 @@ struct dummy
 
 static bool ignore_save_incompatibility()
 {
-	return (!!strstr(Core.Params, "-ignore_save_incompatibility"));
+	return Core.ParamsData.test(ECoreParams::ignore_save_incompatibility);
 }
 
 void CALifeSpawnRegistry::load(IReader& file_stream, xrGUID* save_guid)

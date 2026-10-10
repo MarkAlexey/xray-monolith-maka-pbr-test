@@ -62,12 +62,12 @@ public:
 
 	params m_game_params;
 public:
-	xr_set<CPS_Instance*> ps_active;
-	xr_vector<CPS_Instance*> ps_destroy;
-	xr_vector<CPS_Instance*> ps_needtoplay;
+	xr_vector<intrusive_ptr<CPS_Instance>> ps_active;
+	xr_vector<intrusive_ptr<CPS_Instance>> ps_active_deffer;
+	xr_vector<intrusive_ptr<CPS_Instance>> ps_needtoplay;
 
 public:
-	void destroy_particles(const bool& all_particles);
+	void destroy_particles(bool all_particles);
 
 public:
 	virtual void PreStart(LPCSTR op);
@@ -84,6 +84,8 @@ public:
 	IC ScriptWallmarksManager& GetWallmarksManager() const { return *m_pWallmarksManager; }
 	ShadersExternalData* m_pGShaderConstants; //--#SM+#--
 	xr_vector<script_attachment*> AttachmentUIsToRender;
+
+	void UpdateParticles();
 
 	virtual bool OnRenderPPUI_query() { return FALSE; }; // should return true if we want to have second function called
 	virtual void OnRenderPPUI_main()

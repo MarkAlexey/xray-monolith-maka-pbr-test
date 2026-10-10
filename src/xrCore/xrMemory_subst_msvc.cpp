@@ -35,10 +35,7 @@ ICF u32 get_pool(size_t size)
 	else return pid;
 }
 
-#ifdef PURE_ALLOC
-const bool g_use_pure_alloc = true;
-#endif // PURE_ALLOC
-
+#define PURE_ALLOC
 #define PURE_MEMORY_FILL_ZERO
 #define PURE_MEMORY_ALIGNMENT 1 << 4
 
@@ -46,17 +43,16 @@ void* xrMemory::mem_alloc(size_t size
 # ifdef DEBUG_MEMORY_NAME
                           , const char* _name
 # endif // DEBUG_MEMORY_NAME
-)
+, bool zeroMemory)
 {
 	stat_calls++;
 
 #ifdef PURE_ALLOC
-	if (g_use_pure_alloc)
 	{
 		//void* result = malloc(size);
 		void* result = _aligned_malloc(size, PURE_MEMORY_ALIGNMENT);
 #ifdef PURE_MEMORY_FILL_ZERO
-		if (result)
+		if (result && zeroMemory)
 			memset(result, 0, size);
 #endif // PURE_MEMORY_FILL_ZERO
 
@@ -127,7 +123,8 @@ void* xrMemory::mem_alloc(size_t size
 #ifdef USE_MEMORY_MONITOR
     memory_monitor::monitor_alloc(_ptr, size, _name);
 #endif // USE_MEMORY_MONITOR
-	memset(_ptr, 0, size);
+    if (zeroMemory)
+	    memset(_ptr, 0, size);
 	return _ptr;
 }
 
@@ -139,7 +136,6 @@ void xrMemory::mem_free(void* P)
 #endif // USE_MEMORY_MONITOR
 
 #ifdef PURE_ALLOC
-	if (g_use_pure_alloc)
 	{
 		//free(P);
 		_aligned_free(P);
@@ -194,7 +190,6 @@ void* xrMemory::mem_realloc(void* P, size_t size
 	}
 
 #ifdef PURE_ALLOC
-	if (g_use_pure_alloc)
 	{
 #ifdef PURE_MEMORY_FILL_ZERO
 		size_t old_size = P ? _aligned_msize(P, PURE_MEMORY_ALIGNMENT, 0) : 0;

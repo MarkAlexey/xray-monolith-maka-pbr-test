@@ -46,6 +46,44 @@ class CFlashlight;
 class IKinematics;
 class script_attachment;
 class CMissile;
+class CExplosiveRocket;
+class CGrenade;
+class CUsableScriptObject;
+class CBreakableObject;
+class CHudItem;
+class CCustomOutfit;
+class CHelmet;
+class CCustomDetector;
+class CWeaponAmmo;
+class CWeaponBinoculars;
+class CWeaponKnife;
+class CWeaponMagazined;
+class CWeaponMagazinedWGrenade;
+class CWeaponBM16;
+class CWeaponRPG7;
+class CWeaponRG6;
+class CTorch;
+class CBolt;
+class CPda;
+class CInventoryBox;
+class CSpectator;
+class CSilencer;
+class CScope;
+class CGrenadeLauncher;
+class CProjector;
+class CLevelChanger;
+class CPhysicItem;
+class CEatableItem;
+class CScriptZone;
+class CHelicopter;
+class CHangingLamp;
+class CPhraseDialogManager;
+class CBackpack;
+class CClimableObject;
+class CPhysicObject;
+class CTeamBaseZone;
+class CPhantom;
+class CAI_Trader;
 
 template <typename _return_type>
 class CScriptCallbackEx;
@@ -70,29 +108,67 @@ public:
 	virtual ~CGameObject();
 public:
 	//functions used for avoiding most of the smart_cast
-	virtual CAttachmentOwner* cast_attachment_owner() { return NULL; }
-	virtual CInventoryOwner* cast_inventory_owner() { return NULL; }
-	virtual CInventoryItem* cast_inventory_item() { return NULL; }
-	virtual CEntity* cast_entity() { return NULL; }
-	virtual CEntityAlive* cast_entity_alive() { return NULL; }
-	virtual CActor* cast_actor() { return NULL; }
 	virtual CGameObject* cast_game_object() { return this; }
-	virtual CCustomZone* cast_custom_zone() { return NULL; }
-	virtual CPhysicsShellHolder* cast_physics_shell_holder() { return NULL; }
-	virtual IInputReceiver* cast_input_receiver() { return NULL; }
-	virtual CParticlesPlayer* cast_particles_player() { return NULL; }
-	virtual CArtefact* cast_artefact() { return NULL; }
-	virtual CCustomMonster* cast_custom_monster() { return NULL; }
-	virtual CAI_Stalker* cast_stalker() { return NULL; }
-	virtual CScriptEntity* cast_script_entity() { return NULL; }
-	virtual CWeapon* cast_weapon() { return NULL; }
-	virtual CMissile* cast_missile() { return NULL; }
-	virtual CFlashlight* cast_flashlight() { return NULL; }
-	virtual CExplosive* cast_explosive() { return NULL; }
-	virtual CSpaceRestrictor* cast_restrictor() { return NULL; }
-	virtual CAttachableItem* cast_attachable_item() { return NULL; }
-	virtual CHolderCustom* cast_holder_custom() { return NULL; }
-	virtual CBaseMonster* cast_base_monster() { return NULL; }
+	virtual CAttachmentOwner* cast_attachment_owner() { return nullptr; }
+	virtual CInventoryOwner* cast_inventory_owner() { return nullptr; }
+	virtual CInventoryItem* cast_inventory_item() { return nullptr; }
+	virtual CEntity* cast_entity() { return nullptr; }
+	virtual CEntityAlive* cast_entity_alive() { return nullptr; }
+	virtual CActor* cast_actor() { return nullptr; }
+	virtual CCustomZone* cast_custom_zone() { return nullptr; }
+	virtual CPhysicsShellHolder* cast_physics_shell_holder() { return nullptr; }
+	virtual IInputReceiver* cast_input_receiver() { return nullptr; }
+	virtual CParticlesPlayer* cast_particles_player() { return nullptr; }
+	virtual CArtefact* cast_artefact() { return nullptr; }
+	virtual CCustomMonster* cast_custom_monster() { return nullptr; }
+	virtual CAI_Stalker* cast_stalker() { return nullptr; }
+	virtual CScriptEntity* cast_script_entity() { return nullptr; }
+	virtual CWeapon* cast_weapon() { return nullptr; }
+	virtual CExplosive* cast_explosive() { return nullptr; }
+	virtual CSpaceRestrictor* cast_restrictor() { return nullptr; }
+	virtual CAttachableItem* cast_attachable_item() { return nullptr; }
+	virtual CHolderCustom* cast_holder_custom() { return nullptr; }
+	virtual CBaseMonster* cast_base_monster() { return nullptr; }
+	virtual CCar* cast_car() { return nullptr; }
+	virtual CMissile* cast_missile() { return nullptr; }
+	virtual CExplosiveRocket* cast_explosive_rocket() { return nullptr; }
+	virtual CGrenade* cast_grenade() { return nullptr; }
+	virtual CUsableScriptObject* cast_usable_script_object() { return this; }
+	virtual CBreakableObject* cast_breakable_object() { return nullptr; }
+	virtual CHudItem* cast_hud_item() { return nullptr; }
+	virtual CCustomOutfit* cast_outfit() { return nullptr; }
+	virtual CHelmet* cast_helmet() { return nullptr; }
+	virtual CCustomDetector* cast_custom_detector() { return nullptr; }
+	virtual CWeaponAmmo* cast_weapon_ammo() { return nullptr; }
+	virtual CWeaponBinoculars* cast_weapon_binoculars() { return nullptr; }
+	virtual CWeaponKnife* cast_weapon_knife() { return nullptr; }
+	virtual CWeaponMagazined* cast_weapon_magazined() { return nullptr; }
+	virtual CWeaponMagazinedWGrenade* cast_weapon_magazined_w_grenade() { return nullptr; }
+	virtual CWeaponBM16* cast_weapon_bm16() { return nullptr; }
+	virtual CWeaponRPG7* cast_weapon_rpg7() { return nullptr; }
+	virtual CWeaponRG6* cast_weapon_rg6() { return nullptr; }
+	virtual CTorch* cast_torch() { return nullptr; }
+	virtual CBolt* cast_bolt() { return nullptr; }
+	virtual CPda* cast_pda() { return nullptr; }
+	virtual CInventoryBox* cast_inventory_box() { return nullptr; }
+	virtual CSpectator* cast_spectator() { return nullptr; }
+	virtual CSilencer* cast_addon_silencer() { return nullptr; }
+	virtual CScope* cast_addon_scope() { return nullptr; }
+	virtual CGrenadeLauncher* cast_addon_grenade_launcher() { return nullptr; }
+	virtual CProjector* cast_projector() { return nullptr; }
+	virtual CLevelChanger* cast_level_changer() { return nullptr; }
+	virtual CPhysicItem* cast_physics_item() { return nullptr; }
+	virtual CEatableItem* cast_eatable_item() { return nullptr; }
+	virtual CScriptZone* cast_script_zone() { return nullptr; }
+	virtual CHelicopter* cast_helicopter() { return nullptr; }
+	virtual CHangingLamp* cast_hanging_lamp() { return nullptr; }
+	virtual CPhraseDialogManager* cast_phrase_dialog_manager() { return nullptr; }
+	virtual CBackpack* cast_backpack() { return nullptr; }
+	virtual CClimableObject* cast_climable_object() { return nullptr; }
+	virtual CPhysicObject* cast_physics_object() { return nullptr; }
+	virtual CTeamBaseZone* cast_team_base_zone() { return nullptr; }
+	virtual CPhantom* cast_phantom() { return nullptr; }
+	virtual CAI_Trader* cast_trader() { return nullptr; }
 
 public:
 	virtual bool feel_touch_on_contact(CObject*) { return TRUE; }
@@ -127,8 +203,8 @@ public:
 	virtual void shedule_Update(u32 dt);
 	virtual bool shedule_Needed();
 
-	virtual void renderable_Render();
-	virtual void RenderAttachments();
+	virtual void renderable_Render(IDSGraphManager* DM);
+	virtual void RenderAttachments(IDSGraphManager* DM);
 	virtual void OnEvent(NET_Packet& P, u16 type);
 
 	virtual void Hit(SHit* pHDS)

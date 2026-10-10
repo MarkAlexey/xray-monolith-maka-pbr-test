@@ -366,7 +366,7 @@ void CHW::CreateDevice(HWND m_hWnd, bool move_window)
 			"Please try to restart the game.\n"
 			"Can not find matching format for back buffer."
 		);
-		FlushLog();
+		xrLogger::FlushLog();
 		MessageBox(NULL, "Failed to initialize graphics hardware.\nPlease try to restart the game.", "Error!",
 		           MB_OK | MB_ICONERROR);
 		TerminateProcess(GetCurrentProcess(), 0);
@@ -437,7 +437,7 @@ void CHW::CreateDevice(HWND m_hWnd, bool move_window)
 		Msg("Failed to initialize graphics hardware.\n"
 		    "Please try to restart the game.\n"
 		    "CreateDevice returned 0x%08x(D3DERR_DEVICELOST)", R);
-		FlushLog();
+		xrLogger::FlushLog();
 		MessageBox(NULL, "Failed to initialize graphics hardware.\nPlease try to restart the game.", "Error!",
 		           MB_OK | MB_ICONERROR);
 		TerminateProcess(GetCurrentProcess(), 0);
@@ -563,7 +563,7 @@ u32 CHW::selectGPU()
 
 u32 CHW::selectRefresh(u32 dwWidth, u32 dwHeight, D3DFORMAT fmt)
 {
-	if (psDeviceFlags.is(rsRefresh60hz) || strstr(Core.Params, "-60hz"))
+	if (psDeviceFlags.is(rsRefresh60hz) || Core.ParamsData.test(ECoreParams::_60hz))
 	{
 		refresh_rate = 1.f / 60.f;
 		return D3DPRESENT_RATE_DEFAULT;
@@ -596,13 +596,6 @@ BOOL CHW::support(D3DFORMAT fmt, DWORD type, DWORD usage)
 
 void CHW::updateWindowProps(HWND m_hWnd)
 {
-	//	BOOL	bWindowed				= strstr(Core.Params,"-dedicated") ? TRUE : !psDeviceFlags.is	(rsFullscreen);
-	//#ifndef DEDICATED_SERVER
-	//	BOOL	bWindowed				= !psDeviceFlags.is	(rsFullscreen);
-	//#else
-	//	BOOL	bWindowed				= TRUE;
-	//#endif
-
 	BOOL bWindowed = TRUE;
 #ifndef _EDITOR
 	if (!g_dedicated_server)
@@ -622,7 +615,7 @@ void CHW::updateWindowProps(HWND m_hWnd)
 			else
 			{
 				dwWindowStyle |= WS_BORDER | WS_OVERLAPPEDWINDOW;
-				if (!strstr(Core.Params, "-no_dialog_header"))
+				if (!Core.ParamsData.test(ECoreParams::no_dialog_header))
 					dwWindowStyle |= WS_DLGFRAME | WS_SYSMENU | WS_MINIMIZEBOX;
 			}
 

@@ -18,4 +18,6 @@ public:
 	virtual void Draw();
 	void Init(Frect const& rect);
 	void SetNoise(float Pos);
+
+	virtual CUIWindow* ui_cast_window() { return this; }
 };

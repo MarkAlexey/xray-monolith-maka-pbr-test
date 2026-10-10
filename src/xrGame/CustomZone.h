@@ -83,7 +83,9 @@ public:
 	//абсолютный размер
 	float Power(float dist, float nearest_shape_radius);
 
-	virtual CCustomZone* cast_custom_zone() { return this; }
+	virtual CCustomZone* cast_custom_zone() {return this;}
+	virtual CSpaceRestrictor* cast_restrictor() {return this;}
+	virtual CGameObject* cast_game_object() { return this; }
 
 	//различные состояния в которых может находиться зона
 	typedef enum
@@ -262,7 +264,7 @@ protected:
 	ref_sound m_entrance_sound;
 
 	//объект партиклов обычного состояния зоны
-	CParticlesObject* m_pIdleParticles;
+	intrusive_ptr<CParticlesObject>		m_pIdleParticles;
 
 	//////////////////////////////
 	//подсветка аномалии

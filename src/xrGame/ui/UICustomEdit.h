@@ -42,6 +42,9 @@ public:
 
 	void SetPasswordMode(bool mode = true);
 
+	virtual CUIWindow* ui_cast_window() { return this; }
+	virtual CUIStatic* ui_cast_static() { return this; }
+
 protected:
 	void Register_callbacks();
 
@@ -51,7 +54,7 @@ protected:
 	void xr_stdcall press_tab();
 
 protected:
-	typedef fastdelegate::FastDelegate0<void> Callback;
+	typedef xr_delegate<void()> Callback;
 
 	enum { EDIT_BUF_SIZE = 256 };
 

@@ -41,6 +41,7 @@ enum
 	rsR2 = (1ul << 19ul),
 	rsR3 = (1ul << 20ul),
 	rsR4 = (1ul << 21ul),
+	rsDrawPortals                   = (1ul<<22ul),
 	// 22-32 bit - reserved to Editor
 };
 
@@ -66,6 +67,7 @@ enum
 	rsAimSway = (1 << 10),
 	rsAlwaysActive = (1 << 11),
 	rsBlendMoveAnims = (1 << 12),
+	rsClearAllResources = (1 << 13),
 };
 
 // game path definition

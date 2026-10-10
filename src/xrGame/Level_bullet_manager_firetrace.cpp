@@ -241,7 +241,7 @@ void CBulletManager::FireShotmark(SBullet* bullet, const Fvector& vDir, const Fv
 		if (ps_name && ShowMark)
 		{
 			//отыграть партиклы попадания в материал
-			CParticlesObject* ps = CParticlesObject::Create(ps_name,TRUE);
+			intrusive_ptr<CParticlesObject> ps = Particles::Details::Create(ps_name,TRUE);
 
 			ps->UpdateParent(pos, zero_vel);
 			GamePersistent().ps_needtoplay.push_back(ps);

@@ -193,7 +193,7 @@ void xrDebug::gather_info(const char* expression, const char* description, const
 			if (shared_str_initialized)
 			{
 				Msg("%s", assertion_info);
-				FlushLog();
+				xrLogger::FlushLog();
 			}
 			buffer = assertion_info;
 			endline = "\r\n";
@@ -230,7 +230,7 @@ void xrDebug::gather_info(const char* expression, const char* description, const
 		//        }
 
 		if (shared_str_initialized)
-			FlushLog();
+			xrLogger::FlushLog();
 
 		os_clipboard::copy_to_clipboard(assertion_info);
 	}
@@ -238,7 +238,7 @@ void xrDebug::gather_info(const char* expression, const char* description, const
 
 void xrDebug::do_exit(const std::string& message)
 {
-	FlushLog();
+	xrLogger::FlushLog();
 	MessageBox(NULL, message.c_str(), "Error", MB_OK | MB_ICONERROR | MB_SYSTEMMODAL);
 	TerminateProcess(GetCurrentProcess(), 1);
 }
@@ -272,7 +272,7 @@ void xrDebug::backend(const char* expression, const char* description, const cha
 	if (handler)
 		handler();
 
-	FlushLog();
+	xrLogger::FlushLog();
 
     if (IsDebuggerPresent())
         DebugBreak();
@@ -498,7 +498,7 @@ void __cdecl xrDebug::fatal(const char* file, int line, const char* function, co
 	backend(nullptr, "fatal error", buffer, 0, file, line, function, ignore_always);
 }
 
-typedef void (*full_memory_stats_callback_type)();
+typedef void (*full_memory_stats_callback_type)(bool);
 XRCORE_API full_memory_stats_callback_type g_full_memory_stats_callback = 0;
 
 int out_of_memory_handler(size_t size)
@@ -506,16 +506,17 @@ int out_of_memory_handler(size_t size)
 	Msg("* [x-ray]: OOM requesting %lld bytes", size);
 
 	if (g_full_memory_stats_callback)
-		g_full_memory_stats_callback();
+		g_full_memory_stats_callback(true);
 	else
 	{
 		Memory.mem_compact();
 		size_t process_heap = Memory.mem_usage();
         u32 eco_strings_count = 0;
-		int eco_strings = (int)g_pStringContainer->stat_economy(eco_strings_count);
+        u32 eco_strings_unique_count = 0;
+		int eco_strings = (int)g_pStringContainer->stat_economy(eco_strings_count, eco_strings_unique_count);
 		int eco_smem = (int)g_pSharedMemoryContainer->stat_economy();
 		Msg("* [x-ray]: process heap[%llu K]", process_heap / 1024);
-		Msg("* [x-ray]: strings: memory[%ld K], count[%lu]", eco_strings / 1024, eco_strings_count);
+		Msg("* [x-ray]: strings: memory[%ld K], count[%lu], unique[%lu]", eco_strings / 1024, eco_strings_count, eco_strings_unique_count);
 		Msg("* [x-ray]: shared: memory[%ld K]", eco_smem);
 	}
 
@@ -801,6 +802,7 @@ void format_message(LPSTR buffer, const u32& buffer_size)
 //AVO: simplify function
 LONG WINAPI UnhandledFilter(_EXCEPTION_POINTERS* pExceptionInfo)
 {
+    xrLogger::SetImmediateMode(true);
 	string256 error_message;
 	format_message(error_message, sizeof(error_message));
 
@@ -851,7 +853,7 @@ LONG WINAPI UnhandledFilter(_EXCEPTION_POINTERS* pExceptionInfo)
 	}
 	//return EXCEPTION_CONTINUE_EXECUTION;
 
-	FlushLog();
+    xrLogger::FlushLog();
 
 # ifdef USE_OWN_MINI_DUMP
 	save_mini_dump(pExceptionInfo);

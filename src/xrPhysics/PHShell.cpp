@@ -208,7 +208,7 @@ float CPHShell::getMass()
 
 void CPHShell::get_spatial_params()
 {
-	spatialParsFromDGeom((dGeomID)m_space, spatial.sphere.P, AABB, spatial.sphere.R);
+	spatialParsFromDGeom((dGeomID)m_space, SpatialComponent->spatial.sphere.P, AABB, SpatialComponent->spatial.sphere.R);
 }
 
 float CPHShell::getVolume()
@@ -1819,10 +1819,10 @@ void CPHShell::SetAnimated(bool v)
 }
 
 
-void CPHShell::AnimatorOnFrame()
+void CPHShell::AnimatorOnFrame(bool calculate_bones)
 {
 	VERIFY(PPhysicsShellAnimator());
-	PPhysicsShellAnimator()->OnFrame();
+	PPhysicsShellAnimator()->OnFrame(calculate_bones);
 }
 
 void CPHShell::SetScale(float scale)

@@ -26,6 +26,8 @@ public:
 	void SetVisibleMagnifier(bool f);
 	virtual void OnDeviceReset();
 
+	virtual CUIWindow* ui_cast_window() { return this; }
+
 	enum enum_page_id
 	{
 		epi_main = 0x00,

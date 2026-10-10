@@ -357,6 +357,7 @@ const u32 FORGET_KILLER_TIME = 180000;
 
 void CEntity::shedule_Update(u32 dt)
 {
+	PROF_EVENT();
 	inherited::shedule_Update(dt);
 	if (!getDestroy() && !g_Alive() && (m_killer_id != u16(-1)))
 	{

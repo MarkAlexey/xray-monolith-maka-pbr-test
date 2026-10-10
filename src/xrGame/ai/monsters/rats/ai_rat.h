@@ -397,7 +397,7 @@ public:
 
 	/////////////////////////////////////
 	//rat as eatable item
-	virtual void OnHUDDraw(CCustomHUD* hud) { inherited::OnHUDDraw(hud); }
+	virtual void OnHUDDraw(CCustomHUD* hud, IDSGraphManager* DM) { inherited::OnHUDDraw(hud, DM); }
 	virtual void OnH_B_Chield();
 	virtual void OnH_B_Independent();
 	virtual void OnH_A_Independent();

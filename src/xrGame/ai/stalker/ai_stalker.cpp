@@ -833,20 +833,6 @@ void CAI_Stalker::net_Destroy()
 	CInventoryOwner::net_Destroy();
 	m_pPhysics_support->in_NetDestroy();
 
-	Device.remove_from_seq_parallel(
-		fastdelegate::FastDelegate0<>(
-			this,
-			&CAI_Stalker::update_object_handler
-		)
-	);
-
-#ifdef DEBUG
-	fastdelegate::FastDelegate0<>	f = fastdelegate::FastDelegate0<>(this,&CAI_Stalker::update_object_handler);
-	xr_vector<fastdelegate::FastDelegate0<> >::const_iterator	I;
-	I	= std::find(Device.seqParallel.begin(),Device.seqParallel.end(),f);
-	VERIFY							(I == Device.seqParallel.end());
-#endif // DEBUG
-
 	xr_delete(m_ce_close);
 	xr_delete(m_ce_far);
 	xr_delete(m_ce_best);
@@ -965,6 +951,7 @@ void CAI_Stalker::net_Import(NET_Packet& P)
 
 void CAI_Stalker::update_object_handler()
 {
+	PROF_EVENT("AI: [Stalker] Update Handler");
 	if (!g_Alive())
 		return;
 
@@ -1023,29 +1010,16 @@ void CAI_Stalker::destroy_anim_mov_ctrl()
 
 void CAI_Stalker::UpdateCL()
 {
+	PROF_EVENT("CAI_Stalker::UpdateCL");
 	START_PROFILE("stalker")
 		START_PROFILE("stalker/client_update")
 			VERIFY2(PPhysicsShell()||getEnabled(), *cName());
 
 			if (g_Alive())
 			{
-				if (g_mt_config.test(mtObjectHandler) && CObjectHandler::planner().initialized())
+				if (CObjectHandler::planner().initialized())
 				{
-					fastdelegate::FastDelegate0<> f = fastdelegate::FastDelegate0<>(
-						this, &CAI_Stalker::update_object_handler);
-#ifdef DEBUG
-			xr_vector<fastdelegate::FastDelegate0<> >::const_iterator	I;
-			I	= std::find(Device.seqParallel.begin(),Device.seqParallel.end(),f);
-			VERIFY							(I == Device.seqParallel.end());
-#endif
-					Device.seqParallel.push_back(
-						fastdelegate::FastDelegate0<>(this, &CAI_Stalker::update_object_handler));
-				}
-				else
-				{
-					START_PROFILE("stalker/client_update/object_handler")
-						update_object_handler();
-					STOP_PROFILE
+					update_object_handler();
 				}
 
 				if (
@@ -1128,6 +1102,7 @@ BOOL NPCsLookAtActor = TRUE;
 float NPCsLookAtActorMinDistance = 3.5f;
 void CAI_Stalker::shedule_Update(u32 DT)
 {
+	PROF_EVENT("CAI_Stalker::shedule_Update");
 	// Optimization update
 //	if (Device.dwFrame % 2) return;
 
@@ -1154,6 +1129,8 @@ void CAI_Stalker::shedule_Update(u32 DT)
 			// *** general stuff
 			float dt = float(DT) / 1000.f;
 
+            CScriptEntity::process_sound_callbacks();
+
 			if (g_Alive())
 			{
 				animation().play_delayed_callbacks();
@@ -1174,14 +1151,9 @@ void CAI_Stalker::shedule_Update(u32 DT)
 #if 0//def DEBUG
 		memory().visual().check_visibles();
 #endif
-				if (false && g_mt_config.test(mtAiVision))
-					Device.seqParallel.push_back(fastdelegate::FastDelegate0<>(this, &CCustomMonster::Exec_Visibility));
-				else
-				{
-					START_PROFILE("stalker/schedule_update/vision")
-						Exec_Visibility();
-					STOP_PROFILE
-				}
+				START_PROFILE("stalker/schedule_update/vision")
+					Exec_Visibility();
+				STOP_PROFILE
 
 				START_PROFILE("stalker/schedule_update/memory")
 					START_PROFILE("stalker/schedule_update/memory/process")
@@ -1295,32 +1267,22 @@ void CAI_Stalker::Think()
 		u32 update_delta = Device.dwTimeGlobal - m_dwLastUpdateTime;
 
 		START_PROFILE("stalker/schedule_update/think/brain")
-			//	try {
-			//		try {
-			brain().update(update_delta);
-			//		}
-#ifdef DEBUG
-			//		catch (::luabind::cast_failed &message) {
-			//			Msg						("! Expression \"%s\" from ::luabind::object to %s",message.what(),message.info()->name());
-			//throw;
-			//		}
-#endif
-			//		catch (std::exception &message) {
-			//			Msg						("! Expression \"%s\"",message.what());
-			//			throw;
-			//		}
-			//		catch (...) {
-			//			Msg						("! unknown exception occured");
-			//			throw;
-			//		}
-			//	}
-			//	catch(...) {
-#ifdef DEBUG
-			//		Msg						("! Last action being executed : %s",brain().current_action().m_action_name);
-#endif
-			//		brain().setup			(this);
-			//		brain().update			(update_delta);
-			//	}
+			try
+			{
+				brain().update(update_delta);
+			}
+			/*catch (::luabind::cast_failed &message) 
+			{
+				Msg						("! Expression \"%s\" from ::luabind::object to %s", message.what(), message.info()->name());
+			}
+			catch (std::exception &message) 
+			{
+				Msg						("! Expression \"%s\"",message.what());
+			}*/
+			catch (...) 
+			{
+				//Msg						("! unknown exception occured");
+			}
 		STOP_PROFILE
 
 		START_PROFILE("stalker/schedule_update/think/movement")
@@ -1378,8 +1340,14 @@ void CAI_Stalker::net_Relcase(CObject* O)
 	sight().remove_links(O);
 	movement().remove_links(O);
 
+    if (O == m_throw_ignore_object)
+        m_throw_ignore_object = nullptr;
+
+    if (m_best_item_to_kill && m_best_item_to_kill->object_id() == O->ID())
+        m_best_item_to_kill = nullptr;
+
 	if (!g_Alive())
-		return;
+		return;    
 
 	agent_manager().remove_links(O);
 	m_pPhysics_support->in_NetRelcase(O);
@@ -1536,25 +1504,17 @@ shared_str const& CAI_Stalker::aim_bone_id() const
 	return (m_aim_bone_id);
 }
 
-void aim_target(shared_str const& aim_bone_id, Fvector& result, const CGameObject* object)
-{
-	IKinematics* kinematics = smart_cast<IKinematics*>(object->Visual());
-	VERIFY(kinematics);
-
-	u16 bone_id = kinematics->LL_BoneID(aim_bone_id);
-	VERIFY2(bone_id != BI_NONE, make_string("Cannot find bone %s",bone_id));
-
-	Fmatrix const& bone_matrix = kinematics->LL_GetTransform(bone_id);
-	Fmatrix final;
-	final.mul_43(object->XFORM(), bone_matrix);
-	result = final.c;
-}
-
 void CAI_Stalker::aim_target(Fvector& result, const CGameObject* object)
 {
 	VERIFY(m_aim_bone_id.size());
 
-	::aim_target(m_aim_bone_id, result, object);
+	IKinematics* kinematics = PKinematics(object->Visual());
+	VERIFY(kinematics);
+
+	u16 bone_id = kinematics->LL_BoneID(*m_aim_bone_id);
+	VERIFY2(bone_id != BI_NONE, make_string("Cannot find bone %s", bone_id));
+
+	kinematics->LL_GetBoneWorldPosition(bone_id, object->XFORM(), result);
 }
 
 BOOL CAI_Stalker::AlwaysTheCrow()

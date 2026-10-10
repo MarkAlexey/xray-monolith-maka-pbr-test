@@ -572,6 +572,7 @@ bool RayCollider::Collide(const Ray& world_ray, const AABBTree* tree, Container&
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void RayCollider::_Stab(const AABBCollisionNode* node)
 {
+    PROF_EVENT("RayCollider::_Stab AABBCollisionNode");
 	// Perform Segment-AABB overlap test
 	if (!SegmentAABBOverlap(node->mAABB.mCenter, node->mAABB.mExtents)) return;
 
@@ -597,6 +598,7 @@ void RayCollider::_Stab(const AABBCollisionNode* node)
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void RayCollider::_Stab(const AABBQuantizedNode* node)
 {
+    PROF_EVENT("RayCollider::_Stab AABBQuantizedNode");
 	// Dequantize box
 	const QuantizedAABB* Box = &node->mAABB;
 	const Point Center(float(Box->mCenter[0]) * mCenterCoeff.x, float(Box->mCenter[1]) * mCenterCoeff.y,
@@ -629,6 +631,7 @@ void RayCollider::_Stab(const AABBQuantizedNode* node)
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void RayCollider::_Stab(const AABBNoLeafNode* node)
 {
+    PROF_EVENT("RayCollider::_Stab AABBNoLeafNode");
 	// Perform Segment-AABB overlap test
 	if (!SegmentAABBOverlap(node->mAABB.mCenter, node->mAABB.mExtents)) return;
 
@@ -655,6 +658,7 @@ void RayCollider::_Stab(const AABBNoLeafNode* node)
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void RayCollider::_Stab(const AABBQuantizedNoLeafNode* node)
 {
+    PROF_EVENT("RayCollider::_Stab AABBQuantizedNoLeafNode");
 	// Dequantize box
 	const QuantizedAABB* Box = &node->mAABB;
 	const Point Center(float(Box->mCenter[0]) * mCenterCoeff.x, float(Box->mCenter[1]) * mCenterCoeff.y,
@@ -689,6 +693,7 @@ void RayCollider::_Stab(const AABBQuantizedNoLeafNode* node)
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void RayCollider::_Stab(const AABBTreeNode* node, Container& box_indices)
 {
+    PROF_EVENT("RayCollider::_Stab AABBTreeNode");
 	// Test the box against the segment
 	Point Center, Extents;
 	node->GetAABB()->GetCenter(Center);

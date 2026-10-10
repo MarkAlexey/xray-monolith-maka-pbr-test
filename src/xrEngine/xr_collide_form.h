@@ -157,6 +157,8 @@ private:
 	u32 dwFrame; // The model itself
 	u32 dwFrameTL; // Top level
 
+	xrSRWLock build_lock;
+
 	void BuildState();
 	void BuildTopLevel();
 public:

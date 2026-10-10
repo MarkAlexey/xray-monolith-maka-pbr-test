@@ -4,7 +4,6 @@
 #include "SoundRender_Core.h"
 #include "SoundRender_Source.h"
 #include "../xrCore/ScopeLock.hpp"
-#include <tbb/parallel_for_each.h>
 
 CSoundRender_Source* CSoundRender_Core::i_create_source(LPCSTR name)
 {
@@ -67,7 +66,7 @@ void CSoundRender_Core::i_create_all_sources()
 		lock.Leave();
 	};
 
-	tbb::parallel_for_each(flist, processFile);
+	xr_parallel_foreach(flist.begin(), flist.end(), processFile);
 
 	Msg("Finished creating %d sound sources. Duration: %d ms", s_sources.size() - sizeBefore, T.GetElapsed_ms());
 }

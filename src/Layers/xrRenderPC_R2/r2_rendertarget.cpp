@@ -470,15 +470,14 @@ CRenderTarget::CRenderTarget()
 		t_LUM_dest.create(r2_RT_luminance_cur);
 
 		// create pool
-		for (u32 it = 0; it < HW.Caps.iGPUNum * 2; it++)
+		for (u32 it = 0; it < 2; it++)
 		{
-			string256 name;
-			xr_sprintf(name, "%s_%d", r2_RT_luminance_pool, it);
-			rt_LUM_pool[it].create(name, 1, 1, D3DFMT_R32F);
+			shared_str name; name.printf("%s_%d", r2_RT_luminance_pool, it);
+			rt_LUM_pool[it].create(name.c_str(), 1, 1, D3DFMT_R32F);
 			u_setrt(rt_LUM_pool[it], 0, 0, 0);
-			CHK_DX(HW.pDevice->Clear( 0L, NULL, D3DCLEAR_TARGET, 0x7f7f7f7f, 1.0f, 0L));
+			CHK_DX(HW.pDevice->Clear(0L, nullptr, D3DCLEAR_TARGET, 0x7f7f7f7f, 1.0f, 0L));
 		}
-		u_setrt(Device.dwWidth, Device.dwHeight, HW.pBaseRT,NULL,NULL, HW.pBaseZB);
+		u_setrt(Device.dwWidth, Device.dwHeight, HW.pBaseRT, nullptr, nullptr, HW.pBaseZB);
 	}
 
 	// COMBINE

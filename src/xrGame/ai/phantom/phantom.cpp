@@ -27,12 +27,8 @@ void CPhantom::Load(LPCSTR section)
 {
 	inherited::Load(section);
 	//////////////////////////////////////////////////////////////////////////
-	ISpatial* self = smart_cast<ISpatial*>(this);
-	if (self)
-	{
-		self->spatial.type &= ~STYPE_VISIBLEFORAI;
-		self->spatial.type &= ~STYPE_REACTTOSOUND;
-	}
+	SpatialComponent->spatial.type &= ~STYPE_VISIBLEFORAI;
+	SpatialComponent->spatial.type &= ~STYPE_REACTTOSOUND;
 	//////////////////////////////////////////////////////////////////////////
 	fSpeed = pSettings->r_float(section, "speed");
 	fASpeed = pSettings->r_float(section, "angular_speed");
@@ -123,7 +119,7 @@ void CPhantom::net_Destroy()
 	// stop looped
 	SStateData& sdata = m_state_data[stFly];
 	sdata.sound.stop();
-	CParticlesObject::Destroy(m_fly_particles);
+	Particles::Details::Destroy(m_fly_particles);
 }
 
 //---------------------------------------------------------------------
@@ -222,7 +218,7 @@ void CPhantom::SwitchToState_internal(EState new_state)
 				UpdateEvent.bind(this, &CPhantom::OnIdleState);
 				SStateData& sdata = m_state_data[m_CurState];
 				sdata.sound.stop();
-				CParticlesObject::Destroy(m_fly_particles);
+				Particles::Details::Destroy(m_fly_particles);
 			}
 			break;
 		}
@@ -283,7 +279,7 @@ void CPhantom::UpdateFlyMedia()
 
 void CPhantom::shedule_Update(u32 DT)
 {
-	spatial.type &= ~STYPE_VISIBLEFORAI;
+	SpatialComponent->spatial.type &= ~STYPE_VISIBLEFORAI;
 
 	inherited::shedule_Update(DT);
 
@@ -323,7 +319,7 @@ Fmatrix CPhantom::XFORM_center()
 
 CParticlesObject* CPhantom::PlayParticles(const shared_str& name, BOOL bAutoRemove, const Fmatrix& xform)
 {
-	CParticlesObject* ps = CParticlesObject::Create(name.c_str(), bAutoRemove);
+	CParticlesObject* ps = Particles::Details::Create(name.c_str(), bAutoRemove).get();
 	ps->UpdateParent(xform, zero_vel);
 	ps->Play(false);
 	return bAutoRemove ? 0 : ps;

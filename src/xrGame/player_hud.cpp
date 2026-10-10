@@ -314,6 +314,10 @@ void attachable_hud_item::setup_firedeps(firedeps& fd)
 
 	if (m_measures.m_prop_flags.test(hud_item_measures::e_shell_point))
 	{
+		if (m_measures.m_shell_bone == BI_NONE)
+		{
+			return;
+		}
 		Fmatrix& fire_mat = m_model->LL_GetTransform(m_measures.m_shell_bone);
 		fire_mat.transform_tiny(fd.vLastSP, m_parent->m_adjust_mode ? m_parent->m_adjust_firepoint_shell[1][1] : m_measures.m_shell_point_offset);
 		m_item_transform.transform_tiny(fd.vLastSP);
@@ -326,11 +330,9 @@ bool attachable_hud_item::need_renderable()
 	return m_parent_hud_item->need_renderable();
 }
 
-void attachable_hud_item::render()
+void attachable_hud_item::render(IDSGraphManager* DM)
 {
-	::Render->set_Transform(&m_item_transform);
-	::Render->add_Visual(m_model->dcast_RenderVisual());
-
+	DM->add_Dynamic(m_model->dcast_RenderVisual(), &m_item_transform);
 	m_parent_hud_item->render_hud_mode();
 
 	if (m_parent_hud_item->has_object() && m_parent_hud_item->object().GetAttachments()->size())
@@ -338,7 +340,7 @@ void attachable_hud_item::render()
 		for (auto& pair : *m_parent_hud_item->object().GetAttachments())
 		{
 			if (pair.second->GetType() == eSA_HUD)
-				pair.second->Render(m_model, &m_item_transform);
+				pair.second->Render(m_model, &m_item_transform, DM);
 		}
 	}
 }
@@ -595,6 +597,12 @@ void attachable_hud_item::load(const shared_str& sect_name)
 	::Render->hud_loading = false;
 	R_ASSERT2(visual, make_string("could not create model %s, section %s", visual_name, sect_name.c_str()));
 	m_model = smart_cast<IKinematics*>(visual);
+    if (m_model)
+    {
+        IRenderVisual* pVisual = m_model->dcast_RenderVisual();
+        if (pVisual)
+            pVisual->MarkIgnoreOptimization(TRUE);
+    }    
 
 	m_attach_place_idx = pSettings->r_u16(sect_name, "attach_place_idx");
 	m_measures.load(sect_name, m_model);
@@ -837,6 +845,20 @@ void player_hud::load(const shared_str& player_hud_sect, bool force)
 	::Render->hud_loading = true;
 	m_model = smart_cast<IKinematicsAnimated*>(::Render->model_Create(model_name.c_str()));
 	m_model_2 = smart_cast<IKinematicsAnimated*>(::Render->model_Create(pSettings->line_exist(player_hud_sect, "visual_2") ? pSettings->r_string(player_hud_sect, "visual_2") : model_name.c_str()));
+
+    if (m_model)
+    {
+        IRenderVisual* pVisual = m_model->dcast_RenderVisual();
+        if (pVisual)
+            pVisual->MarkIgnoreOptimization(TRUE);
+    }
+    if (m_model_2)
+    {
+        IRenderVisual* pVisual = m_model_2->dcast_RenderVisual();
+        if (pVisual)
+            pVisual->MarkIgnoreOptimization(TRUE);
+    }
+
 	bool b_reload = (m_attached_items[0] != nullptr || m_attached_items[1] != nullptr);
 
 	::Render->hud_loading = false;
@@ -944,31 +966,28 @@ void player_hud::render_item_ui()
 	}
 }
 
-void player_hud::render_hud()
+void player_hud::render_hud(IDSGraphManager* DM)
 {
 	bool b_r0 = ((m_attached_items[0] && m_attached_items[0]->need_renderable()) || script_anim_part == 0 || script_anim_part == 2);
 	bool b_r1 = ((m_attached_items[1] && m_attached_items[1]->need_renderable()) || script_anim_part == 1 || script_anim_part == 2);
 
 	if (!b_r0 && !b_r1) return;
 
-	::Render->set_Transform(&m_transform);
-	::Render->add_Visual(m_model->dcast_RenderVisual());
-	::Render->set_Transform(&m_transform_2);
-	::Render->add_Visual(m_model_2->dcast_RenderVisual());
+	DM->add_Dynamic(m_model->dcast_RenderVisual(), &m_transform);
+	DM->add_Dynamic(m_model_2->dcast_RenderVisual(), &m_transform_2);
 
 	if (m_attached_items[0])
-		m_attached_items[0]->render();
+		m_attached_items[0]->render(DM);
 
 	if (m_attached_items[1])
-		m_attached_items[1]->render();
+		m_attached_items[1]->render(DM);
 
 	if (m_attached_items[SCOPE_ATTACH_IDX])
-		m_attached_items[SCOPE_ATTACH_IDX]->render();
+		m_attached_items[SCOPE_ATTACH_IDX]->render(DM);
 
 	if (script_anim_item_model)
 	{
-		::Render->set_Transform(&m_item_pos);
-		::Render->add_Visual(script_anim_item_model->dcast_RenderVisual());
+		DM->add_Dynamic(script_anim_item_model->dcast_RenderVisual(), &m_item_pos);
 	}
 
 	if (g_actor->GetAttachments()->size())
@@ -981,11 +1000,11 @@ void player_hud::render_hud()
 			{
 				// Left arm
 				if (att->GetParentBone() < 21)
-					att->Render(m_model_2->dcast_PKinematics(), &m_transform_2);
+					att->Render(m_model_2->dcast_PKinematics(), &m_transform_2, DM);
 
 				// Right arm
 				else
-					att->Render(m_model->dcast_PKinematics(), &m_transform);
+					att->Render(m_model->dcast_PKinematics(), &m_transform, DM);
 			}
 		}
 	}
@@ -1034,7 +1053,7 @@ u32 player_hud::motion_length(const MotionID& M, const CMotionDef*& md, float sp
 {
 	md = m_model->LL_GetMotionDef(M);
 	VERIFY(md);
-	if (md->flags & esmStopAtEnd)
+	if (md != nullptr && md->flags & esmStopAtEnd)
 	{
 		CMotion* motion = m_model->LL_GetRootMotion(M);
 		return iFloor(0.5f + 1000.f * motion->GetLength() / (md->Dequantize(md->speed) * speed));

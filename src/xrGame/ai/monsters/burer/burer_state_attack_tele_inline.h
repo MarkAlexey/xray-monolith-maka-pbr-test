@@ -350,6 +350,12 @@ void CStateBurerAttackTele<Object>::ExecuteTeleContinue()
 template <typename Object>
 void CStateBurerAttackTele<Object>::ExecuteTeleFire()
 {
+    if (!selected_object || (selected_object && selected_object->getDestroy()))
+    {
+        selected_object = nullptr;
+        return;
+    }
+
     CEntityAlive* const enemy = const_cast<CEntityAlive*>(object->EnemyMan.get_enemy());
 	const Fvector enemy_pos = get_head_position(enemy);
 

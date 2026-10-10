@@ -13,6 +13,7 @@
 #pragma warning(default:4995)
 #include "../xrRender/HW.h"
 #include "../../xrEngine/XR_IOConsole.h"
+#include "../../xrEngine/renderdoc_integration.h"
 #include "../../Include/xrAPI/xrAPI.h"
 #include "../xrRender/xrRender_console.h"
 
@@ -40,8 +41,6 @@ CHW HW;
 IDirect3DStateBlock9*	dwDebugSB = 0;
 #endif
 */
-
-LPCSTR dxgiOld = "--dxgi-old";
 
 CHW::CHW() :
     //	hD3D(NULL),
@@ -436,7 +435,7 @@ void CHW::CreateDevice(HWND hwnd, bool move_window)
 
     if ((D3DFMT_UNKNOWN==fTarget) || (D3DFMT_UNKNOWN==fTarget))	{
 		Msg					("Failed to initialize graphics hardware.\nPlease try to restart the game.");
-		FlushLog			();
+		xrLogger::FlushLog();
 		MessageBox			(NULL,"Failed to initialize graphics hardware.\nPlease try to restart the game.","Error!",MB_OK|MB_ICONERROR);
 		TerminateProcess	(GetCurrentProcess(),0);
     }
@@ -555,7 +554,7 @@ void CHW::CreateDevice(HWND hwnd, bool move_window)
     };
 
     UINT create_device_flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
-    if (strstr(Core.Params, "--dxgi-dbg")) {
+    if (Core.ParamsData.test(ECoreParams::dxgi_dbg)) {
         // enables d3d11 debug layer validation and output
         // viewable in VS debugger `Output > Debug` view or using a tool like Sysinternals DebugView
         create_device_flags |= D3D11_CREATE_DEVICE_DEBUG;
@@ -592,6 +591,8 @@ void CHW::CreateDevice(HWND hwnd, bool move_window)
     _RELEASE(swapchain3);
 
     R_CHK(pContext->QueryInterface(__uuidof(ID3DUserDefinedAnnotation), (void**)&pAnnotation));
+
+    renderdoc_set_active_window(pDevice, m_hWnd);
 
 #else
 	R = D3DX10CreateDeviceAndSwapChain(m_pAdapter,
@@ -630,7 +631,7 @@ void CHW::CreateDevice(HWND hwnd, bool move_window)
             "Please try to restart the game.\n"
 		    "CreateDevice returned 0x%08x", R
 		);
-        FlushLog();
+        xrLogger::FlushLog();
 		MessageBox(NULL, "Failed to initialize graphics hardware.\nPlease try to restart the game.", "Error!",
             MB_OK | MB_ICONERROR);
         TerminateProcess(GetCurrentProcess(), 0);
@@ -667,8 +668,8 @@ void CHW::CreateDevice(HWND hwnd, bool move_window)
     // probably the sequence ResizeTarget, ResizeBuffers, and UpdateViews is important
     
     // u32	memory									= pDevice->GetAvailableTextureMem	();
-    if (strstr(Core.Params, dxgiOld)) {
-        Msg("* %s enabled", dxgiOld);
+    if (Core.ParamsData.test(ECoreParams::dxgi_old)) {
+        Msg("* %s enabled", "dxgi-old");
         UpdateViews();
         size_t memory = Desc.DedicatedVideoMemory;
         Msg("*     Texture memory: %d M", memory / (1024 * 1024));
@@ -720,7 +721,7 @@ void CHW::DestroyDevice()
     if (!is_windowed) {
         m_pSwapChain->SetFullscreenState(FALSE, NULL);
 
-        if (strstr(Core.Params, dxgiOld)) {
+        if (Core.ParamsData.test(ECoreParams::dxgi_old)) {
 #ifdef USE_DX11
             const auto& cd = m_ChainDesc;
             CHK_DX(m_pSwapChain->ResizeBuffers(
@@ -1013,7 +1014,7 @@ DXGI_RATIONAL CHW::selectRefresh(u32 dwWidth, u32 dwHeight, DXGI_FORMAT fmt)
 
     float CurrentFreq = 60.0f;
 
-	if (psDeviceFlags.is(rsRefresh60hz) || strstr(Core.Params, "-60hz"))
+	if (psDeviceFlags.is(rsRefresh60hz) || Core.ParamsData.test(ECoreParams::_60hz))
 	{
         refresh_rate = 1.f / 60.f;
         return res;
@@ -1075,7 +1076,7 @@ void CHW::OnAppActivate()
         m_pSwapChain->SetFullscreenState(TRUE, m_pOutput);
 
 #ifdef USE_DX11
-        if (!strstr(Core.Params, dxgiOld)) {
+        if (!Core.ParamsData.test(ECoreParams::dxgi_old)) {
             _SHOW_REF("refCount:pBaseZB", pBaseZB);
             _RELEASE(pBaseZB);
 
@@ -1121,7 +1122,7 @@ void CHW::OnAppDeactivate()
         m_pSwapChain->SetFullscreenState(FALSE, NULL);
 
 #ifdef USE_DX11
-        if (!strstr(Core.Params, dxgiOld)) {
+        if (!Core.ParamsData.test(ECoreParams::dxgi_old)) {
             _SHOW_REF("refCount:pBaseZB", pBaseZB);
             _RELEASE(pBaseZB);
 
@@ -1165,7 +1166,6 @@ BOOL CHW::support(D3DFORMAT fmt, DWORD type, DWORD usage)
 
 void CHW::updateWindowProps(HWND m_hWnd)
 {
-	//	BOOL	bWindowed				= strstr(Core.Params,"-dedicated") ? TRUE : !psDeviceFlags.is	(rsFullscreen);
     BOOL bWindowed = (g_screenmode != 2);
 
     // Set window properties depending on what mode were in.
@@ -1181,7 +1181,7 @@ void CHW::updateWindowProps(HWND m_hWnd)
 		    else
 		    {
 		        dwWindowStyle |= WS_BORDER | WS_OVERLAPPEDWINDOW;
-		        if (!strstr(Core.Params, "-no_dialog_header"))
+		        if (!Core.ParamsData.test(ECoreParams::no_dialog_header))
 		            dwWindowStyle |= WS_DLGFRAME | WS_SYSMENU | WS_MINIMIZEBOX;
 		    }
 

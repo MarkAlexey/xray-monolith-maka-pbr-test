@@ -33,7 +33,7 @@ void Touch::feel_touch_update(Fvector& C, float R)
 	{
 		if (feel_touch_disable[dit].Expire < dwT)
 		{
-			feel_touch_disable.erase(feel_touch_disable.begin() + dit);
+			feel_touch_disable.erase_fast(feel_touch_disable.begin() + dit);
 			dit--;
 		}
 	}
@@ -82,7 +82,7 @@ void Touch::feel_touch_update(Fvector& C, float R)
 			// Don't touch candidates for destroy
 		{
 			// _delete_
-			feel_touch.erase(feel_touch.begin() + d);
+			feel_touch.erase_fast(feel_touch.begin() + d);
 			feel_touch_delete(O);
 			d--;
 		}
@@ -96,13 +96,13 @@ void Touch::feel_touch_relcase(CObject* O)
 	xr_vector<CObject*>::iterator I = std::find(feel_touch.begin(), feel_touch.end(), O);
 	if (I != feel_touch.end())
 	{
-		feel_touch.erase(I);
+		feel_touch.erase_fast(I);
 		feel_touch_delete(O);
 	}
 	xr_vector<DenyTouch>::iterator Id = feel_touch_disable.begin(), IdE = feel_touch_disable.end();
 	for (; Id != IdE; ++Id) if ((*Id).O == O)
 	{
-		feel_touch_disable.erase(Id);
+		feel_touch_disable.erase_fast(Id);
 		break;
 	}
 }

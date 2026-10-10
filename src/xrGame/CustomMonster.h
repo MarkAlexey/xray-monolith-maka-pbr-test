@@ -169,7 +169,7 @@ public:
 	// debug
 #ifdef DEBUG
 	virtual void		OnRender				( );
-	virtual void		OnHUDDraw				(CCustomHUD* hud);
+	virtual void		OnHUDDraw				(CCustomHUD* hud, IDSGraphManager* DM);
 #endif
 
 	virtual bool bfExecMovement() { return (false); };
@@ -228,6 +228,7 @@ public:
 	bool is_special_killer(CObject* obj);
 
 	IC CMemoryManager& memory() const;
+    IC CMemoryManager* memoryPtr() const { return m_memory_manager; }
 	virtual float feel_vision_mtl_transp(CObject* O, u32 element);
 	virtual void feel_sound_new(CObject* who, int type, CSound_UserDataPtr user_data, const Fvector& Position,
 	                            float power);

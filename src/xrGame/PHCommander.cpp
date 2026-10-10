@@ -27,7 +27,10 @@ bool CPHCall::obsolete()
 
 void CPHCall::check()
 {
-	if (m_condition && m_condition->is_true() && m_action) m_action->run();
+	if(!m_condition) return;
+	if(!m_condition->is_true()) return;
+	if(!m_action) return;
+	m_action->run();
 }
 
 bool CPHCall::equal(CPHReqComparerV* cmp_condition, CPHReqComparerV* cmp_action)
@@ -60,6 +63,7 @@ CPHCommander::~CPHCommander()
 
 void CPHCommander::clear()
 {
+	xrCriticalSectionGuard guard(&lock);
 	while (m_calls.size())
 	{
 		remove_call(m_calls.end() - 1);
@@ -76,6 +80,8 @@ void CPHCommander::clear()
 
 void CPHCommander::update()
 {
+	xrCriticalSectionGuard guard(&lock);
+	PROF_EVENT("CPHCommander::update");
 	for (u32 i = 0; i < m_calls.size(); i++)
 	{
 		try
@@ -98,22 +104,12 @@ void CPHCommander::update()
 	}
 }
 
-void CPHCommander::update_threadsafety()
-{
-	lock.Enter();
-	update();
-	lock.Leave();
-}
 
-void CPHCommander::add_call_threadsafety(CPHCondition* condition, CPHAction* action)
-{
-	lock.Enter();
-	add_call(condition, action);
-	lock.Leave();
-}
+
 
 void CPHCommander::add_call(CPHCondition* condition, CPHAction* action, PHCALL_STORAGE& cs)
 {
+	xrCriticalSectionGuard guard(&lock);
 	cs.push_back(xr_new<CPHCall>(condition, action));
 }
 
@@ -124,6 +120,7 @@ void CPHCommander::add_call(CPHCondition* condition, CPHAction* action)
 
 void CPHCommander::remove_call(PHCALL_I i, PHCALL_STORAGE& cs)
 {
+	xrCriticalSectionGuard guard(&lock);
 #ifdef DEBUG
 	const CPHCallOnStepCondition	* esc  = smart_cast<const CPHCallOnStepCondition*>((*i)->condition());
 	const CPHConstForceAction		* cfa = smart_cast<const CPHConstForceAction*>((*i)->action());
@@ -185,6 +182,7 @@ struct SFRemovePred2
 
 PHCALL_I CPHCommander::find_call(CPHReqComparerV* cmp_condition, CPHReqComparerV* cmp_action, PHCALL_STORAGE& cs)
 {
+	xrCriticalSectionGuard guard(&lock);
 	return std::find_if(cs.begin(), cs.end(), SFEqualPred(cmp_condition, cmp_action));
 }
 
@@ -200,6 +198,7 @@ bool CPHCommander::has_call(CPHReqComparerV* cmp_condition, CPHReqComparerV* cmp
 
 void CPHCommander::remove_call(CPHReqComparerV* cmp_condition, CPHReqComparerV* cmp_action, PHCALL_STORAGE& cs)
 {
+	xrCriticalSectionGuard guard(&lock);
 	cs.erase(
 		std::remove_if(
 			cs.begin(),
@@ -258,6 +257,7 @@ struct SRemoveRped
 
 void CPHCommander::remove_calls(CPHReqComparerV* cmp_object, PHCALL_STORAGE& cs)
 {
+	xrCriticalSectionGuard guard(&lock);
 	cs.erase(
 		std::remove_if(
 			cs.begin(),
@@ -268,12 +268,6 @@ void CPHCommander::remove_calls(CPHReqComparerV* cmp_object, PHCALL_STORAGE& cs)
 	);
 }
 
-void CPHCommander::remove_calls_threadsafety(CPHReqComparerV* cmp_object)
-{
-	lock.Enter();
-	remove_calls(cmp_object);
-	lock.Leave();
-}
 
 void CPHCommander::remove_calls(CPHReqComparerV* cmp_object)
 {
@@ -314,5 +308,5 @@ void CPHCommander::update_as()
 void CPHCommander::phys_shell_relcase(CPhysicsShell* sh)
 {
 	CPHReqComparerHasShell c(sh);
-	remove_calls_threadsafety(&c);
+	remove_calls(&c);
 }

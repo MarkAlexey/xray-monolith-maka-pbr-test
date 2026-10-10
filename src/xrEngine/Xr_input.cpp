@@ -720,6 +720,7 @@ void CInput::DeactivateSoft()
 
 void CInput::OnFrame(void)
 {
+	PROF_EVENT("CInput::OnFrame");
 	RDEVICE.Statistic->Input.Begin();
 	dwCurTime = RDEVICE.TimerAsync_MMT();
 	if (pKeyboard) KeyUpdate();

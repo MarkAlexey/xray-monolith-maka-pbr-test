@@ -17,6 +17,9 @@ public:
 	void OnRender();
 	void Draw_() { m_enabledOnFrame = true; };
 	void SetHintText(CUIWindow* w, LPCSTR text);
+
+	virtual CUIWindow* ui_cast_window() { return this; }
+
 };
 
 extern CUIButtonHint* g_btnHint;

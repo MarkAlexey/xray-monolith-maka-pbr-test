@@ -128,7 +128,7 @@ bool CScriptGameObject::Alive() const
 	if (!entity)
 	{
 		ai().script_engine().script_log(ScriptStorage::eLuaMessageTypeError,
-		                                "CSciptEntity : cannot access class member Alive!");
+		                                make_string("CSciptEntity [%s]: cannot access class member Alive!", object().cNameSect().c_str()).c_str());
 		return (false);
 	}
 	return (!!entity->g_Alive());
@@ -163,7 +163,7 @@ IC T* CScriptGameObject::action_planner()
 	if (!manager)
 	{
 		ai().script_engine().script_log(ScriptStorage::eLuaMessageTypeError,
-		                                "CAI_Stalker : cannot access class member action_planner!");
+		                                make_string("CAI_Stalker [%s]: cannot access class member action_planner!", object().cNameSect().c_str()).c_str());
 		return (0);
 	}
 	return (&manager->brain());
@@ -180,7 +180,7 @@ void CScriptGameObject::set_enemy_callback(const ::luabind::functor<bool>& funct
 	if (!monster)
 	{
 		ai().script_engine().script_log(ScriptStorage::eLuaMessageTypeError,
-		                                "CCustomMonster : cannot access class member set_enemy_callback!");
+		                                make_string("CCustomMonster [%s]: cannot access class member set_enemy_callback!", object().cNameSect().c_str()).c_str());
 		return;
 	}
 	monster->memory().enemy().useful_callback().set(functor);
@@ -192,7 +192,7 @@ void CScriptGameObject::set_enemy_callback(const ::luabind::functor<bool>& funct
 	if (!monster)
 	{
 		ai().script_engine().script_log(ScriptStorage::eLuaMessageTypeError,
-		                                "CCustomMonster : cannot access class member set_enemy_callback!");
+		                                make_string("CCustomMonster [%s]: cannot access class member set_enemy_callback!", this->object().cNameSect().c_str()).c_str());
 		return;
 	}
 	monster->memory().enemy().useful_callback().set(functor, object);
@@ -204,7 +204,7 @@ void CScriptGameObject::set_enemy_callback()
 	if (!monster)
 	{
 		ai().script_engine().script_log(ScriptStorage::eLuaMessageTypeError,
-		                                "CCustomMonster : cannot access class member set_enemy_callback!");
+		                                make_string("CCustomMonster [%s]: cannot access class member set_enemy_callback!", object().cNameSect().c_str()).c_str());
 		return;
 	}
 	monster->memory().enemy().useful_callback().clear();
@@ -262,5 +262,5 @@ void CScriptGameObject::set_const_force(const Fvector& dir, float value, u32 tim
 	CPHExpireOnStepCondition* cn = xr_new<CPHExpireOnStepCondition>();
 	cn->set_time_interval(time_interval);
 	//ph_world->AddCall(cn,a);
-	Level().ph_commander_physics_worldstep().add_call_threadsafety(cn, a);
+	Level().ph_commander_physics_worldstep().add_call(cn, a);
 }

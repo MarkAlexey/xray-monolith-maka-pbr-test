@@ -282,8 +282,10 @@ void dxRenderDeviceRender::ResourcesPrefetchCreateTexture(LPCSTR name)
 	Resources->_CreateTexture(name);
 }
 
+xrCriticalSection resources_lock;
 void dxRenderDeviceRender::ResourcesGetMemoryUsage(u32& m_base, u32& c_base, u32& m_lmaps, u32& c_lmaps)
 {
+    xrCriticalSectionGuard g(resources_lock);
 	if (Resources)
 		Resources->_GetMemoryUsage(m_base, c_base, m_lmaps, c_lmaps);
 }
@@ -348,6 +350,7 @@ void dxRenderDeviceRender::Begin()
 #if !defined(USE_DX10) && !defined(USE_DX11)
 	CHK_DX(HW.pDevice->BeginScene());
 #endif	//	USE_DX10
+
 	RCache.OnFrameBegin();
 	RCache.set_CullMode(CULL_CW);
 	RCache.set_CullMode(CULL_CCW);
@@ -386,7 +389,10 @@ void dxRenderDeviceRender::End()
 	RCache.OnFrameEnd();
 	Memory.dbg_check();
 
-	DoAsyncScreenshot();
+	{
+		PROF_EVENT("Async Screenshot");
+		DoAsyncScreenshot();
+	}
 
 #if defined(USE_DX10) || defined(USE_DX11)
     UINT present_flags = 0;

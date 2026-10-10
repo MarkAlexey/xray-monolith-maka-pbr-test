@@ -61,6 +61,8 @@ public:
 	void SetTradeMode();
 	void UpdateButtonsLayout(bool b_disable_break, bool trade_enabled);
 
+	virtual CUIWindow* ui_cast_window() { return this; }
+
 private:
 	CUIScrollView* UIQuestionsList;
 	CUIScrollView* UIAnswersList;
@@ -91,6 +93,8 @@ public:
 
 	virtual void SendMessage(CUIWindow* pWnd, s16 msg, void* pData = NULL);
 	void __stdcall OnTextClicked(CUIWindow* w, void*);
+
+	virtual CUIWindow* ui_cast_window() { return this; }
 };
 
 class CUIAnswerItem : public CUIWindow
@@ -104,6 +108,8 @@ class CUIAnswerItem : public CUIWindow
 public:
 	CUIAnswerItem(CUIXml* xml_doc, LPCSTR path);
 	void Init(LPCSTR text, LPCSTR name);
+
+	virtual CUIWindow* ui_cast_window() { return this; }
 };
 
 class CUIAnswerItemIconed : public CUIAnswerItem

@@ -60,17 +60,17 @@ public:
 	void dbg_unregister(void* _p);
 	void dbg_check();
 
-	size_t mem_usage();
+	size_t mem_usage(bool assert = true);
 	void mem_compact();
 	void mem_counter_set(u32 _val) { stat_counter = _val; }
 	u32 mem_counter_get() { return stat_counter; }
 
 #ifdef DEBUG_MEMORY_NAME
     void mem_statistic(LPCSTR fn);
-    void* mem_alloc(size_t size, const char* _name);
+    void* mem_alloc(size_t size, const char* _name, bool zeroMemory = true);
     void* mem_realloc(void* p, size_t size, const char* _name);
 #else // DEBUG_MEMORY_NAME
-	void* mem_alloc(size_t size);
+	void* mem_alloc(size_t size, bool zeroMemory = true);
 	void* mem_realloc(void* p, size_t size);
 #endif // DEBUG_MEMORY_NAME
 	void mem_free(void* p);

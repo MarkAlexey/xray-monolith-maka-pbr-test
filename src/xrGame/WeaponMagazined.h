@@ -7,6 +7,12 @@
 class ENGINE_API CMotionDef;
 class CAnonHudItem;
 
+class CWeaponBinoculars;
+class CWeaponMagazinedWGrenade;
+class CWeaponBM16;
+class CWeaponRPG7;
+class CWeaponRG6;
+
 //размер очереди считается бесконечность
 //заканчиваем стрельбу, только, если кончились патроны
 #define WEAPON_ININITE_QUEUE -1
@@ -91,10 +97,12 @@ public:
 	void LoadSilencerKoeffs();
 	void LoadScopeKoeffs();
 
-	virtual CWeaponMagazined* cast_weapon_magazined()
-	{
-		return this;
-	}
+	virtual CWeaponBinoculars* cast_weapon_binoculars() { return nullptr; }
+	virtual CWeaponMagazined* cast_weapon_magazined() { return this; }
+	virtual CWeaponMagazinedWGrenade* cast_weapon_magazined_w_grenade() { return nullptr; }
+	virtual CWeaponBM16* cast_weapon_bm16() { return nullptr; }
+	virtual CWeaponRPG7* cast_weapon_rpg7() { return nullptr; }
+	virtual CWeaponRG6* cast_weapon_rg6() { return nullptr; }
 
 	virtual void SetDefaults();
 	virtual void FireStart();

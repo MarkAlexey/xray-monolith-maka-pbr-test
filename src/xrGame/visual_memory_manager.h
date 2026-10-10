@@ -80,7 +80,6 @@ public:
 public:
 	u32 visible_object_time_last_seen(const CObject* object) const;
 
-protected:
 	void add_not_yet_visible_object(const CNotYetVisibleObject& not_yet_visible_object);
 	CNotYetVisibleObject* not_yet_visible_object(const CGameObject* game_object);
 
@@ -136,6 +135,7 @@ public:
 
 public:
 	IC const VISIBLES& objects() const;
+	IC const VISIBLES* objectsPtr() const;
 	IC const RAW_VISIBLES& raw_objects() const;
 	IC const NOT_YET_VISIBLES& not_yet_visible_objects() const;
 	IC const CVisionParameters& current_state() const;

@@ -13,6 +13,7 @@
 #include "inventory.h"
 #include "../xrEngine/xr_input.h"
 #include "ui_base.h"
+#include "../Include/xrRender/RenderVisual.h"
 
 #ifdef DEBUG
 	CAttachableItem*	CAttachableItem::m_dbgItem = NULL;
@@ -65,10 +66,10 @@ void CAttachableItem::OnH_A_Chield()
 		object().setVisible(true);
 }
 
-void CAttachableItem::renderable_Render()
+void CAttachableItem::renderable_Render(IDSGraphManager* DM)
 {
-	::Render->set_Transform(&object().XFORM());
-	::Render->add_Visual(object().Visual());
+	DM->add_Dynamic(object().Visual(), &object().XFORM());
+	object().Visual()->getVisData().hom_frame = Device.dwFrame;
 }
 
 void CAttachableItem::OnH_A_Independent()

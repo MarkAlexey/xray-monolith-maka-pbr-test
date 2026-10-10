@@ -33,7 +33,7 @@ public:
 	}
 };
 
-typedef fastdelegate::FastDelegate0<float> GET_KOEFF_FUNC;
+typedef xr_delegate<float()> GET_KOEFF_FUNC;
 
 void AddEffector(CActor* A, int type, const shared_str& sect_name);
 void AddEffector(CActor* A, int type, const shared_str& sect_name, float factor);

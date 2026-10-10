@@ -154,10 +154,10 @@ void CLightR_Manager::render_point(u32 _priority)
 	for (xr_vector<light*>::iterator it = selected_point.begin(); it != selected_point.end(); it++)
 	{
 		light* L = *it;
-		VERIFY(L->spatial.sector && _valid(L->range));
+		VERIFY(L->SpatialComponent->spatial.sector && _valid(L->range));
 
 		//		0. Dimm & Clip
-		float lc_dist = lc_COP.distance_to(L->spatial.sphere.P) - L->spatial.sphere.R;
+		float lc_dist = lc_COP.distance_to(L->SpatialComponent->spatial.sphere.P) - L->SpatialComponent->spatial.sphere.R;
 		float lc_scale = 1 - lc_dist / lc_limit;
 		if (lc_scale < EPS) continue;
 		if (L->range < 0.01f) continue;
@@ -198,32 +198,32 @@ void CLightR_Manager::render_point(u32 _priority)
 		RImplementation.r1_dlight_tcgen = L_texgen;
 
 		//		3. Calculate visibility for light + build soring tree
-		VERIFY(L->spatial.sector);
-		if (_priority == 1)
-			RImplementation.r_pmask(false, true);
+		VERIFY(L->SpatialComponent->spatial.sector);
+		//if( _priority == 1)
+		//	RImplementation.r_pmask						(false,true);
 
-		RImplementation.r_dsgraph_render_subspace(
-			L->spatial.sector,
-			L_combine,
-			L_pos,
-			true,
-			true
-		);
-
-		if (_priority == 1)
-			RImplementation.r_pmask(true, true);
-
-		//		4. Analyze if HUD intersects light volume
-		BOOL bHUD = FALSE;
 		CFrustum F;
-		F.CreateFromMatrix(L_combine,FRUSTUM_P_ALL);
-		bHUD = F.testSphere_dirty(Device.vCameraPosition, 2.f);
+		F.CreateFromMatrix(L_combine, FRUSTUM_P_LRTB | FRUSTUM_P_FAR);
+
+		L->GMLight.traverse((CSector*)L->SpatialComponent->spatial.sector, F, L_pos, L_combine);
+		L->GMLight.r_dsgraph_capture(false,true);
+
+		//if( _priority == 1)
+		//	RImplementation.r_pmask						(true,true);
+		F.CreateFromMatrix(L_combine, FRUSTUM_P_ALL);
+		//		4. Analyze if HUD intersects light volume
+		BOOL bHUD	= FALSE;
+		bHUD = F.testSphere_dirty(Device.vCameraPosition,2.f);
 
 		//		5. Dump sorting tree
 		RCache.set_Constants((R_constant_table*)0);
-		if (bHUD && _priority == 0) g_hud->Render_Last();
-		RImplementation.r_dsgraph_render_graph(_priority);
-		if (bHUD && _priority == 0) RImplementation.r_dsgraph_render_hud();
+		if (bHUD&&_priority == 0)
+			g_hud->Render_Last(&L->GMLight);
+
+		L->GMLight.r_dsgraph_render_graph(_priority);
+
+		if (bHUD&&_priority == 0)
+			L->GMLight.r_dsgraph_render_hud();
 	}
 	//		??? grass ???
 }
@@ -240,7 +240,7 @@ void CLightR_Manager::render_spot(u32 _priority)
 		light* L = *it;
 
 		//		0. Dimm & Clip
-		float lc_dist = lc_COP.distance_to(L->spatial.sphere.P) - L->spatial.sphere.R;
+		float lc_dist = lc_COP.distance_to(L->SpatialComponent->spatial.sphere.P) - L->SpatialComponent->spatial.sphere.R;
 		float lc_scale = 1 - lc_dist / lc_limit;
 		if (lc_scale < EPS) continue;
 
@@ -280,35 +280,35 @@ void CLightR_Manager::render_spot(u32 _priority)
 		RImplementation.r1_dlight_tcgen = L_texgen;
 
 		//		3. Calculate visibility for light + build soring tree
-		VERIFY(L->spatial.sector);
+		VERIFY(L->SpatialComponent->spatial.sector);
 		// RImplementation.marker					++;
-		if (_priority == 1)
-			RImplementation.r_pmask(false, true);
+		//if( _priority == 1)
+		//	RImplementation.r_pmask						(false,true);
 
-		RImplementation.r_dsgraph_render_subspace(
-			L->spatial.sector,
-			L_combine,
-			L_pos,
-			TRUE,
-			TRUE // precise portals
-		);
-
-		if (_priority == 1)
-			RImplementation.r_pmask(true, true);
-
-		//		4. Analyze if HUD intersects light volume
-		BOOL bHUD = FALSE;
 		CFrustum F;
-		F.CreateFromMatrix(L_combine,FRUSTUM_P_ALL);
-		bHUD = F.testSphere_dirty(Device.vCameraPosition, 2.f);
+		F.CreateFromMatrix(L_combine, FRUSTUM_P_LRTB | FRUSTUM_P_FAR);
+		L->GMLight.traverse((CSector*)L->SpatialComponent->spatial.sector, F, L_pos, L_combine);
+		L->GMLight.r_dsgraph_capture(false, true);
+
+		//if( _priority == 1)
+		//	RImplementation.r_pmask						(true,true);
+		F.CreateFromMatrix(L_combine, FRUSTUM_P_ALL);
+		//		4. Analyze if HUD intersects light volume
+		BOOL bHUD	= FALSE;
+		bHUD = F.testSphere_dirty(Device.vCameraPosition,2.f);
 		// if (bHUD)		Msg	("HUD");
 
 		//		4. Dump sorting tree
 		//	RCache.set_ClipPlanes					(true,	&L_combine);
 		RCache.set_Constants((R_constant_table*)0);
-		if (bHUD && _priority == 0) g_hud->Render_Last();
-		RImplementation.r_dsgraph_render_graph(_priority);
-		if (bHUD && _priority == 0) RImplementation.r_dsgraph_render_hud();
+
+		if (bHUD&&_priority == 0)
+			g_hud->Render_Last(&L->GMLight);
+
+		L->GMLight.r_dsgraph_render_graph(_priority);
+
+		if (bHUD&&_priority == 0)
+			L->GMLight.r_dsgraph_render_hud();
 		//	RCache.set_ClipPlanes					(false,	&L_combine);
 	}
 	//		??? grass ???l
@@ -369,7 +369,7 @@ void CLightR_Manager::render(u32 _priority)
 void CLightR_Manager::add(light* L)
 {
 	if (L->range < 0.1f) return;
-	if (0 == L->spatial.sector) return;
+	if (0 == L->SpatialComponent->spatial.sector) return;
 	if (IRender_Light::POINT == L->flags.type)
 	{
 		// PPA
@@ -380,7 +380,7 @@ void CLightR_Manager::add(light* L)
 		// spot/flash
 		selected_spot.push_back(L);
 	}
-	VERIFY(L->spatial.sector);
+	VERIFY(L->SpatialComponent->spatial.sector);
 }
 
 CLightR_Manager::CLightR_Manager()

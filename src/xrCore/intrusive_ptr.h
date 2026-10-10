@@ -48,7 +48,7 @@ public:
     {
         if constexpr (Counter == CounterPolicy::Atomic)
         {
-            u32 t = __ref_count.fetch_sub(1, std::memory_order_acq_rel)
+            u32 t = __ref_count.fetch_sub(1, std::memory_order_acq_rel);
             return t - 1;
         }
         else
@@ -58,17 +58,13 @@ public:
 protected:
     IC bool intrusive_ref_sub_and_check()
     {
-        if constexpr (Counter == CounterPolicy::Atomic)
+        if (intrusive_ref_sub() == 0)
         {
-            if (__ref_count.fetch_sub(1, std::memory_order_acq_rel) == 1)
-            {
-                std::atomic_thread_fence(std::memory_order_acquire);
-                return true;
-            }
-            return false;
+            if constexpr (Counter == CounterPolicy::Atomic) std::atomic_thread_fence(std::memory_order_acquire);
+            return true;
         }
         else
-            return (--__ref_count == 0);
+            return false;
     }
 
 public:

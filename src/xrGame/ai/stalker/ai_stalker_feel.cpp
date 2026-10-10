@@ -32,12 +32,12 @@ bool CAI_Stalker::feel_vision_isRelevant(CObject* O)
 	return (true);
 }
 
-void CAI_Stalker::renderable_Render()
+void CAI_Stalker::renderable_Render(IDSGraphManager* DM)
 {
-	inherited::renderable_Render();
+	inherited::renderable_Render(DM);
 
 	if (!already_dead())
-		CInventoryOwner::renderable_Render();
+		CInventoryOwner::renderable_Render(DM);
 
 #ifdef DEBUG
 	if (g_Alive()) {
@@ -77,7 +77,7 @@ bool CAI_Stalker::feel_touch_contact(CObject* O)
 	// when 0 - disable pathfinding around anomaly
 	if (!(g_ai_die_in_anomaly || m_enable_anomalies_pathfinding)) {
 		CCustomZone* sr = smart_cast<CCustomZone*>(O);
-		if (sr && (sr->spatial.type & STYPE_VISIBLEFORAI)) {
+		if (sr && (sr->SpatialComponent->spatial.type & STYPE_VISIBLEFORAI)) {
 			return false;
 		}
 	}
@@ -89,7 +89,7 @@ bool CAI_Stalker::feel_touch_on_contact(CObject* O)
 {
 	VERIFY(O != this);
 
-	if ((O->spatial.type | STYPE_VISIBLEFORAI) != O->spatial.type)
+	if ((O->SpatialComponent->spatial.type | STYPE_VISIBLEFORAI) != O->SpatialComponent->spatial.type)
 		return (false);
 
 	// demonized: add g_ai_die_in_anomaly == 0 and m_enable_anomalies_damage check
@@ -111,5 +111,5 @@ void CAI_Stalker::feel_touch_delete(CObject* O)
 	if (i == m_ignored_touched_objects.end())
 		return;
 
-	m_ignored_touched_objects.erase(i);
+	m_ignored_touched_objects.erase_fast(i);
 }

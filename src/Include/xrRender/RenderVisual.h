@@ -9,7 +9,7 @@ struct vis_data;
 
 enum IRenderVisualFlags
 {
-	eIgnoreOptimization = (1 << 0),
+	eIgnoreOptimization = (1 << 0), // Used for geometry culling optimization
 	eNoShadow = (1 << 1),
 };
 
@@ -28,7 +28,7 @@ public:
 	Flags16 flags;
 
 #ifdef DEBUG
-	virtual shared_str	_BCL	getDebugName() = 0;
+	virtual shared_str getDebugName() = 0;
 #endif
 	virtual u32 _BCL getID() { return 1; }
 	virtual LPCSTR _BCL getDebugShader() { return nullptr; }
@@ -42,6 +42,21 @@ public:
 
 	virtual void SetShaderTexture(LPCSTR shader, LPCSTR texture) {};
 	virtual void ResetShaderTexture() {};
+    virtual void MarkIgnoreOptimization(BOOL value)
+    {
+        flags.set(IRenderVisualFlags::eIgnoreOptimization, value);
+        xr_vector<IRenderVisual*>* children = get_children();
+        if (children)
+        {
+            for (auto it = children->begin(); it != children->end(); it++)
+            {
+                IRenderVisual* v = *it;
+                if (v)
+                    v->MarkIgnoreOptimization(value);
+            }
+        }
+    }
+
 	virtual IRenderVisual* _BCL dcast_RenderVisual() { return this; }
 	virtual IKinematics* _BCL dcast_PKinematics() { return 0; }
 	virtual IKinematicsAnimated* dcast_PKinematicsAnimated() { return 0; }

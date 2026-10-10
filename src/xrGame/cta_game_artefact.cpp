@@ -90,7 +90,7 @@ void CtaGameArtefact::OnAnimationEnd(u32 state)
 void CtaGameArtefact::UpdateCLChild()
 {
 	inherited::UpdateCLChild();
-	if (H_Parent())
+	if (H_Parent() && IsHidden())
 		XFORM().set(H_Parent()->XFORM());
 
 	if (!m_artefact_rpoint)
@@ -139,7 +139,7 @@ void CtaGameArtefact::CreateArtefactActivation()
 		CGameObject::u_EventGen(P, GE_OWNERSHIP_REJECT, H_Parent()->ID());
 		P.w_u16(ID());
 		P.w_u8(0);
-		P.w_vec3(*m_artefact_rpoint);
+		P.w_vec3(m_artefact_rpoint ? *m_artefact_rpoint : Position());
 		CGameObject::u_EventSend(P);
 		MoveTo(*m_artefact_rpoint); //for server net_Import
 	}

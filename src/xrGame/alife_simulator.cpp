@@ -27,7 +27,8 @@ extern void destroy_lua_wpn_params();
 
 void restart_all()
 {
-	if (strstr(Core.Params, "-keep_lua"))
+	PROF_EVENT("restart_all");
+	if (Core.ParamsData.test(ECoreParams::keep_lua))
 		return;
 
 	destroy_lua_wpn_params();
@@ -45,6 +46,7 @@ CALifeSimulator::CALifeSimulator(xrServer* server, shared_str* command_line) :
 	CALifeInteractionManager(server, alife_section),
 	CALifeSimulatorBase(server, alife_section)
 {
+	PROF_EVENT("CALifeSimulator::CALifeSimulator");
 	restart_all();
 
 	ai().set_alife(this);

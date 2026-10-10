@@ -105,6 +105,7 @@ struct eq_fname_check
 };
 
 XRCORE_API xr_vector<_open_file> g_open_files;
+static xrCriticalSection g_open_files_lock;
 
 void _check_open_file(const shared_str& _fname)
 {
@@ -140,8 +141,7 @@ void setup_reader(IReader* _r, _open_file& _of)
 template <typename T>
 void _register_open_file(T* _r, LPCSTR _fname)
 {
-	xrCriticalSection _lock;
-	_lock.Enter();
+	g_open_files_lock.Enter();
 
 	shared_str f = _fname;
 	_check_open_file(f);
@@ -150,20 +150,19 @@ void _register_open_file(T* _r, LPCSTR _fname)
 	setup_reader(_r, _of);
 	_of._used += 1;
 
-	_lock.Leave();
+	g_open_files_lock.Leave();
 }
 
 template <typename T>
 void _unregister_open_file(T* _r)
 {
-	xrCriticalSection _lock;
-	_lock.Enter();
+	g_open_files_lock.Enter();
 
 	xr_vector<_open_file>::iterator it = std::find_if(g_open_files.begin(), g_open_files.end(), eq_pointer<T>(_r));
 	VERIFY(it != g_open_files.end());
 	_open_file& _of = *it;
 	_of._reader = NULL;
-	_lock.Leave();
+	g_open_files_lock.Leave();
 }
 
 XRCORE_API void _dump_open_files(int mode)
@@ -491,7 +490,7 @@ void CLocatorAPI::ProcessArchive(LPCSTR _path)
 	}
 	// g_temporary_stuff = g_temporary_stuff_subst;
 
-	if (bProcessArchiveLoading || strstr(Core.Params, "-auto_load_arch"))
+	if (bProcessArchiveLoading || Core.ParamsData.test(ECoreParams::auto_load_arch))
 		LoadArchive(A);
 	else
 		A.close();
@@ -822,7 +821,7 @@ void CLocatorAPI::_initialize(u32 flags, LPCSTR target_folder, LPCSTR fs_name)
 				//Old good fsltx
 				//replace root with predefined path
 				//xr_strcpy(root, fsRoot.generic_string().c_str());
-				FS_Path* P = new FS_Path(xr_strdup(fsRoot.generic_string().c_str()), nullptr, nullptr, nullptr, 0);
+				FS_Path* P = new FS_Path(fsRoot.generic_string().c_str(), nullptr, nullptr, nullptr, 0);
 				pathes.insert(std::make_pair(xr_strdup("$fs_root$"), P));
 				p_it = pathes.find(root);
 			}
@@ -850,7 +849,7 @@ void CLocatorAPI::_initialize(u32 flags, LPCSTR target_folder, LPCSTR fs_name)
 
 	Msg("Init FileSystem %f sec", t.GetElapsed_sec());
 	//-----------------------------------------------------------
-	if (strstr(Core.Params, "-overlaypath"))
+	if (Core.ParamsData.test(ECoreParams::overlaypath))
 	{
 		string1024 c_newAppPathRoot;
 		sscanf(strstr(Core.Params, "-overlaypath ") + 13, "%[^ ] ", c_newAppPathRoot);
@@ -869,12 +868,15 @@ void CLocatorAPI::_initialize(u32 flags, LPCSTR target_folder, LPCSTR fs_name)
 	rec_files.clear();
 	//-----------------------------------------------------------
 
-	CreateLog(0 != strstr(Core.Params, "-nolog"));
+	if (!Core.ParamsData.test(ECoreParams::nolog))
+	{
+		xrLogger::OpenLogFile();
+	}
 }
 
 void CLocatorAPI::_destroy()
 {
-	CloseLog();
+	xrLogger::CloseLog();
 
 	for (files_it I = m_files.begin(); I != m_files.end(); I++)
 	{
@@ -1344,6 +1346,7 @@ bool CLocatorAPI::check_for_file(LPCSTR path, LPCSTR _fname, string_path& fname,
 template <typename T>
 T* CLocatorAPI::r_open_impl(LPCSTR path, LPCSTR _fname)
 {
+	PROF_EVENT("r_open_impl");
 	T* R = 0;
 	string_path fname;
 	const file* desc = 0;

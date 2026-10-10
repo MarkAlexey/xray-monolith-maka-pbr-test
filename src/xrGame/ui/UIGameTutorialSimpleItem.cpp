@@ -37,6 +37,8 @@ bool CUISequenceSimpleItem::IsPlaying()
 
 CUIWindow* find_child_window(CUIWindow* parent, const shared_str& _name)
 {
+	xrCriticalSectionGuard guard(parent->csUi);
+
 	CUIWindow::WINDOW_LIST& wl = parent->GetChildWndList();
 	CUIWindow::WINDOW_LIST_it _I = wl.begin();
 	CUIWindow::WINDOW_LIST_it _E = wl.end();
@@ -55,7 +57,7 @@ void CUISequenceSimpleItem::Load(CUIXml* xml, int idx)
 	if (m_snd_name && m_snd_name[0])
 	{
 		m_sound.create(m_snd_name, st_Effect, sg_Undefined);
-		VERIFY(m_sound._handle() || strstr(Core.Params,"-nosound"));
+		VERIFY(m_sound._handle() || Core.ParamsData.test(ECoreParams::nosound));
 	}
 	m_time_length = xml->ReadFlt("length_sec", 0, 0);
 	m_desired_cursor_pos.x = xml->ReadAttribFlt("cursor_pos", 0, "x", 0);

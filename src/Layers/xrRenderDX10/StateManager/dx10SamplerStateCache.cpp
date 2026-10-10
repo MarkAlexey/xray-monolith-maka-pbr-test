@@ -184,6 +184,9 @@ void dx10SamplerStateCache::SetMaxAnisotropy(u32 uiMaxAniso)
 		StateRecord& rec = m_StateArray[i];
 		StateDecs desc;
 
+		if (!rec.m_pState)
+			continue;
+
 		rec.m_pState->GetDesc(&desc);
 
 		//	MaxAnisitropy is reset by ValidateState if not aplicable

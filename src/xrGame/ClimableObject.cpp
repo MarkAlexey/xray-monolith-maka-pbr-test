@@ -75,7 +75,7 @@ BOOL CClimableObject::net_Spawn(CSE_Abstract* DC)
 	//m_box.m_halfsize.set(1.f,1.f,1.f);
 	BOOL ret = inherited::net_Spawn(DC);
 
-	spatial.type &= ~STYPE_VISIBLEFORAI;
+	SpatialComponent->spatial.type &= ~STYPE_VISIBLEFORAI;
 
 	const float f_min_width = 0.2f;
 	Fvector shift;
@@ -363,8 +363,10 @@ void CClimableObject::ObjectContactCallback(bool& do_colide, bool bo1, dContact&
 	VERIFY(ch);
 	VERIFY(usr_data_lad);
 	this_object = static_cast<CClimableObject*>(usr_data_lad->ph_ref_object);
-	VERIFY(this_object);
-	if (!this_object->BeforeLadder(ch, -0.1f)) do_colide = false;
+    if (this_object)
+    {
+        if (!this_object->BeforeLadder(ch, -0.1f)) do_colide = false;
+    }    
 }
 #ifdef DEBUG
 extern	Flags32	dbg_net_Draw_Flags;

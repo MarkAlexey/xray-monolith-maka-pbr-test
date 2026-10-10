@@ -7,8 +7,6 @@
 #include "BastArtifact.h"
 #include "../xrphysics/PhysicsShell.h"
 #include "../xrphysics/extendedgeom.h"
-#include "ParticlesObject.h"
-
 
 CBastArtefact::CBastArtefact(void)
 {
@@ -187,8 +185,7 @@ void CBastArtefact::UpdateCLChild()
 
 		if (m_fEnergy > 0 && ::Random.randF(0.f, 1.0f) < (m_fEnergy / (m_fStrikeImpulse * 100.f)))
 		{
-			CParticlesObject* pStaticPG;
-			pStaticPG = CParticlesObject::Create(*m_sParticleName,TRUE);
+			intrusive_ptr<CParticlesObject> pStaticPG = Particles::Details::Create(*m_sParticleName,TRUE);
 			Fmatrix pos;
 			pos.set(XFORM());
 			Fvector vel;
@@ -199,7 +196,7 @@ void CBastArtefact::UpdateCLChild()
 			pStaticPG->Play(false);
 		}
 	}
-	else if (H_Parent()) XFORM().set(H_Parent()->XFORM());
+	else if (H_Parent() && IsHidden()) XFORM().set(H_Parent()->XFORM());
 }
 
 

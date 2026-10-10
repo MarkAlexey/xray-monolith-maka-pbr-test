@@ -998,9 +998,7 @@ void game_cl_Deathmatch::PlayParticleEffect(LPCSTR EffName, Fvector& pos)
 	//	CParticlesPlayer::MakeXFORM(pObj,0,Fvector().set(0.f,1.f,0.f),Fvector().set(0.f,0.f,0.f),pos);
 
 	// установить particles
-	CParticlesObject* ps = NULL;
-
-	ps = CParticlesObject::Create(EffName,TRUE);
+	intrusive_ptr<CParticlesObject> ps = Particles::Details::Create(EffName,TRUE);
 
 	ps->UpdateParent(M, Fvector().set(0.f, 0.f, 0.f));
 	GamePersistent().ps_needtoplay.push_back(ps);

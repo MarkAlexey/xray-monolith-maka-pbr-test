@@ -30,6 +30,7 @@ void CLevel::net_StartPlayDemo()
 
 bool CLevel::net_Start(const char* op_server, const char* op_client)
 {
+	PROF_EVENT("CLevel::net_Start");
 	net_start_result_total = TRUE;
 
 	pApp->LoadBegin();
@@ -106,6 +107,7 @@ shared_str level_name(const shared_str& server_options);
 
 bool CLevel::net_start1()
 {
+	PROF_EVENT("CLevel::net_start1");
 	// Start client and server if need it
 	if (m_caServerOptions.size())
 	{
@@ -152,6 +154,7 @@ bool CLevel::net_start1()
 
 bool CLevel::net_start2()
 {
+	PROF_EVENT("CLevel::net_start2");
 	if (net_start_result_total && m_caServerOptions.size())
 	{
 		GameDescriptionData game_descr;
@@ -171,6 +174,7 @@ bool CLevel::net_start2()
 
 bool CLevel::net_start3()
 {
+	PROF_EVENT("CLevel::net_start3");
 	if (!net_start_result_total) return true;
 	//add server port if don't have one in options
 	if (!strstr(m_caClientOptions.c_str(), "port=") && Server)
@@ -216,6 +220,7 @@ bool CLevel::net_start3()
 
 bool CLevel::net_start4()
 {
+	PROF_EVENT("CLevel::net_start4");
 	if (!net_start_result_total) return true;
 
 	g_loading_events.pop_front();
@@ -232,6 +237,7 @@ bool CLevel::net_start4()
 
 bool CLevel::net_start5()
 {
+	PROF_EVENT("CLevel::net_start5");
 	if (net_start_result_total)
 	{
 		NET_Packet NP;
@@ -249,6 +255,7 @@ bool CLevel::net_start5()
 
 bool CLevel::net_start6()
 {
+	PROF_EVENT("CLevel::net_start6");
 	//init bullet manager
 	BulletManager().Clear();
 	BulletManager().Load();
@@ -339,6 +346,7 @@ bool CLevel::net_start6()
 
 void CLevel::InitializeClientGame(NET_Packet& P)
 {
+	PROF_EVENT("CLevel::InitializeClientGame");
 	string256 game_type_name;
 	P.r_stringZ(game_type_name);
 	if (game && !xr_strcmp(game_type_name, game->type_name()))

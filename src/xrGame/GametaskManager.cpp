@@ -133,6 +133,7 @@ CGameTask* CGameTaskManager::GiveGameTaskToActor(CGameTask* t, u32 timeToComplet
 
 void CGameTaskManager::SetTaskState(CGameTask* t, ETaskState state)
 {
+	PROF_EVENT("CGameTaskManager::SetTaskState");
 	m_flags.set(eChanged, TRUE);
 
 	t->SetTaskState(state);
@@ -160,6 +161,7 @@ void CGameTaskManager::SetTaskState(const shared_str& id, ETaskState state)
 
 void CGameTaskManager::UpdateTasks()
 {
+	PROF_EVENT("CGameTaskManager::UpdateTasks");
 	if (Device.Paused()) return;
 
 	Level().MapManager().DisableAllPointers();

@@ -3,6 +3,9 @@
 #include "../Include/xrRender/FactoryPtr.h"
 #include "../Include/xrRender/UIRender.h"
 #include "../Include/xrRender/UIShader.h"
+
+#include "../xrCore/_thread_types.h"
+
 typedef FactoryPtr<IUIShader> ui_shader;
 
 #define UI_BASE_WIDTH	1024.0f
@@ -85,4 +88,4 @@ public:
 	u32 ClipBudget(u32 src_verts) const { return 3 * (src_verts + (u32)planes.size() - 2); }
 };
 
-extern ENGINE_API BOOL g_bRendering;
+extern ENGINE_API xr_atomic_bool g_bRendering;

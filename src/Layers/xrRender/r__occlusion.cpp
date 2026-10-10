@@ -3,6 +3,8 @@
 
 #include "QueryHelper.h"
 
+extern ECORE_API BOOL occq_debug;
+
 R_occlusion::R_occlusion(void)
 {
 	enabled = TRUE;
@@ -15,7 +17,7 @@ R_occlusion::~R_occlusion(void)
 
 void R_occlusion::occq_create(u32 limit)
 {
-	enabled = strstr(Core.Params, "-no_occq") ? FALSE : TRUE;
+	enabled = !Core.ParamsData.test(ECoreParams::no_occq);
 	pool.reserve(limit);
 	used.reserve(limit);
 	fids.reserve(limit);
@@ -46,16 +48,51 @@ void R_occlusion::occq_destroy()
 	fids.clear();
 }
 
+void R_occlusion::occq_refresh()
+{
+	if (!enabled) return;
+	
+	PROF_EVENT("R_occlusion::occq_refresh");
+	if (!used.empty())
+	{
+		while	(!used.empty())	{
+			_RELEASE(used.back().Q);
+			used.pop_back	();
+		}
+		used.clear	();
+	}
+	if (!fids.empty())
+		fids.clear	();
+}
+
+void R_occlusion::occq_stats()
+{
+	if (occq_debug)
+		Msg("R_occlusion::occq_stats: pool: %d fids: %d used: %d", pool.size(), fids.size(), used.size());
+}
+
 u32 R_occlusion::occq_begin(u32& ID)
 {
+	PROF_EVENT("R_occlusion::occq_begin");
 	if (!enabled) return 0;
 
 	//	Igor: prevent release crash if we issue too many queries
 	if (pool.empty())
 	{
-		//		if ((Device.dwFrame % 40) == 0)
-		//			Msg(" RENDER [Warning]: Too many occlusion queries were issued(>1536)!!!");
+		if (occq_debug && Device.dwFrame % 40 == 0)
+			Msg(" RENDER [Warning]: Too many occlusion queries were issued(>1536)!!!");
 		ID = iInvalidHandle;
+
+		//HACK: recreate HWOCC
+		occq_destroy();
+		occq_create(occq_size);
+
+		if (pool.empty()) //error in recreating stage :(
+		{
+			occq_destroy();
+			enabled = FALSE;
+		}
+
 		return 0;
 	}
 
@@ -84,6 +121,7 @@ u32 R_occlusion::occq_begin(u32& ID)
 
 void R_occlusion::occq_end(u32& ID)
 {
+	PROF_EVENT("R_occlusion::occq_end");
 	if (!enabled) return;
 
 	//	Igor: prevent release crash if we issue too many queries
@@ -96,6 +134,7 @@ void R_occlusion::occq_end(u32& ID)
 
 R_occlusion::occq_result R_occlusion::occq_get(u32& ID)
 {
+	PROF_EVENT("R_occlusion::occq_get");
 	if (!enabled) return 0xffffffff;
 
 	//	Igor: prevent release crash if we issue too many queries
@@ -112,6 +151,7 @@ R_occlusion::occq_result R_occlusion::occq_get(u32& ID)
 	VERIFY2(ID<used.size(), make_string("_Pos = %d, size() = %d ", ID, used.size()));
 	while ((hr = GetData(used[ID].Q, &fragments, sizeof(fragments))) == S_FALSE)
 	{
+		PROF_EVENT("GPU::GetData");
 		if (!SwitchToThread())
 			Sleep(ps_r2_wait_sleep);
 

@@ -1,5 +1,3 @@
-﻿#ifndef xr_device
-#define xr_device
 #pragma once
 
 // Note:
@@ -10,6 +8,7 @@
 //class ENGINE_API CGammaControl;
 
 #include "pure.h"
+#include "../xrCore/xrSyncronize.h"
 //#include "hw.h"
 #include "../xrcore/ftimer.h"
 #include "stats.h"
@@ -24,7 +23,7 @@
 #define DEVICE_RESET_PRECACHE_FRAME_COUNT 10
 
 // demonized: toggle bone optimization
-#define OPTIMIZE_CALCULATE_BONES
+//#define OPTIMIZE_CALCULATE_BONES
 
 #include "../Include/xrRender/FactoryPtr.h"
 #include "../Include/xrRender/RenderDeviceRender.h"
@@ -35,8 +34,6 @@
 #endif // #ifdef INGAME_EDITOR
 
 class engine_impl;
-
-#pragma pack(push,4)
 
 class IRenderDevice
 {
@@ -74,11 +71,16 @@ public:
 	Fvector vCameraTop;
 	Fvector vCameraRight;
 
+	// demonized: Cam has fixed 83 fov, Hud is psHUD_FOV * 83.f
 	Fmatrix mView;
+	Fmatrix mViewHud;
+	Fmatrix mViewCam;
 	Fmatrix mProject;
 	Fmatrix mProjectHud;
+	Fmatrix mProjectCam;
 	Fmatrix mFullTransform;
 	Fmatrix mFullTransformHud;
+	Fmatrix mFullTransformCam;
 
 	// Copies of corresponding members. Used for synchronization.
 	Fvector vCameraPosition_saved;
@@ -122,7 +124,6 @@ class ENGINE_API CRenderDeviceBase :
 public:
 };
 
-#pragma pack(pop)
 // refs
 class ENGINE_API CRenderDevice : public CRenderDeviceBase
 {
@@ -212,15 +213,28 @@ public:
 	//CRegistrator <pureFrame > seqFrame;
 	CRegistrator<pureFrame> seqFrameMT;
 	CRegistrator<pureDeviceReset> seqDeviceReset;
-	xr_vector<fastdelegate::FastDelegate0<>> seqParallel;
+	xr_vector<xr_delegate<void()>> seqParallel;
+
+	// ForserX: Pre-Render sequence
+	xr_vector<xr_delegate<void()>> seqParallelRender;
+	xr_vector<xr_delegate<void()>> seqParallelBeforRender;
+
+	// seqParallelBeforRender is filled from the particle worker thread
+	// (CParticleGroup::SItem::OnFrame) and drained on the main thread in
+	// CRenderDevice::on_idle(). Guard every access with this section.
+	// Same pattern as CEventAPI::CS and CEffect_Rain::rainCS.
+	xrCriticalSection seqParallelBeforRenderCS;
+
+	xr_delegate<void()> ParticleWorkerCallback;
+	xr_delegate<void()> ModelDefferClear;
 
 	bool isRendering;
 
 	// LuaGC
 	int LuaGCCount;
 	bool LuaGCDone;
-	fastdelegate::FastDelegate0<int> LuaGC;
-	fastdelegate::FastDelegate0<void> LuaGCDebug;
+    xr_delegate<int()> LuaGC;
+    xr_delegate<void()> LuaGCDebug;
 
 	// Dependent classes
 	//CResourceManager* Resources;
@@ -265,8 +279,7 @@ public:
         m_engine(0)
 #endif // #ifdef INGAME_EDITOR
 #ifdef PROFILE_CRITICAL_SECTIONS
-        ,mt_csEnter(MUTEX_PROFILE_ID(CRenderDevice::mt_csEnter))
-        ,mt_csLeave(MUTEX_PROFILE_ID(CRenderDevice::mt_csLeave))
+        
 #endif // #ifdef PROFILE_CRITICAL_SECTIONS
 	{
 		m_hWnd = NULL;
@@ -278,7 +291,7 @@ public:
 		
 		m_SecondViewport.SetSVPActive(false);
 		m_SecondViewport.SetSVPFrameDelay(2);
-		m_SecondViewport.isCamReady = false;			
+		m_SecondViewport.isCamReady = false;
 	};
 
 	void Pause(BOOL bOn, BOOL bTimer, BOOL bSound, LPCSTR reason);
@@ -424,13 +437,11 @@ public:
 	}
 
 	// Multi-threading
-	xrCriticalSection mt_csEnter;
-	xrCriticalSection mt_csLeave;
-	volatile BOOL mt_bMustExit;
+	xr_task_group secondary_tasks;
 
-	ICF void remove_from_seq_parallel(const fastdelegate::FastDelegate0<>& delegate)
+	ICF void remove_from_seq_parallel(const xr_delegate<void()>& delegate)
 	{
-		xr_vector<fastdelegate::FastDelegate0<>>::iterator I = std::find(
+		xr_vector<xr_delegate<void()>>::iterator I = std::find(
 			seqParallel.begin(),
 			seqParallel.end(),
 			delegate
@@ -501,6 +512,7 @@ private:
 };
 
 extern ENGINE_API CRenderDevice Device;
+extern ENGINE_API CRenderDevice* DevicePtr;
 
 #ifndef _EDITOR
 #define RDEVICE Device
@@ -514,7 +526,7 @@ extern ENGINE_API float refresh_rate;
 
 extern ENGINE_API bool g_bBenchmark;
 
-typedef fastdelegate::FastDelegate0<bool> LOADING_EVENT;
+typedef xr_delegate<bool()> LOADING_EVENT;
 extern ENGINE_API xr_list<LOADING_EVENT> g_loading_events;
 
 class ENGINE_API CLoadScreenRenderer : public pureRender
@@ -527,7 +539,10 @@ public:
 
 	bool b_registered;
 	bool b_need_user_input;
+
+	bool IsActive() const {
+		return b_registered;
+	}
 };
 
 extern ENGINE_API CLoadScreenRenderer load_screen_renderer;
-#endif

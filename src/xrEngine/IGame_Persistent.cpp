@@ -139,9 +139,8 @@ void IGame_Persistent::Start(LPCSTR op)
 		DEL_INSTANCE(g_hud);
 #endif
 	}
-	else UpdateGameType();
-
-	VERIFY(ps_destroy.empty());
+	else 
+		UpdateGameType();
 }
 
 void IGame_Persistent::Disconnect()
@@ -161,11 +160,12 @@ void IGame_Persistent::OnGameStart()
 #ifndef _EDITOR
 	// LoadTitle("st_prefetching_objects");
 	LoadTitle();
-	if (!strstr(Core.Params, "-noprefetch"))
+	if (!Core.ParamsData.test(ECoreParams::noprefetch))
 		Prefetch();
 #endif
 }
 
+xr_task_group prefetch_task;
 #ifndef _EDITOR
 void IGame_Persistent::Prefetch()
 {
@@ -174,66 +174,82 @@ void IGame_Persistent::Prefetch()
 	float p_time = 1000.f * Device.GetTimerGlobal()->GetElapsed_sec();
 	size_t mem_0 = Memory.mem_usage();
 
-	Log("Loading objects...");
-	ObjectPool.prefetch();
-	Log("Loading models...");
-	Render->models_Prefetch();
-	Log("Loading textures...");
-	
-	const auto loadFileFolder = [&](LPCSTR _folder)
+	PROF_EVENT("Prefetch");
+	static DWORD this_thread_id = 0;
+	this_thread_id = GetCurrentThreadId();
+	prefetch_task.run([this]()
 	{
-		string_path folder;
-		strconcat(sizeof(folder), folder, _folder, "\\*.dds");
-
-		FS_FileSet fset;
-		FS.file_list(fset, "$game_textures$", FS_ListFiles, folder);
-
-		for (FS_FileSet::iterator it = fset.begin(); it != fset.end(); it++)
-			Device.m_pRender->ResourcesPrefetchCreateTexture(it->name.c_str());
-	};
-
-	if (m_textures_prefetch_config->section_exist("prefetch_folders"))
-	{
-		CInifile::Sect const& sect_f = m_textures_prefetch_config->r_section("prefetch_folders");
-		for (CInifile::SectCIt I = sect_f.Data.begin(); I != sect_f.Data.end(); I++)
 		{
-			if (I->second.size() && !xr_strcmp(*I->second, "*"))
+			PROF_EVENT("Prefetch Loading models");
+			Log("Loading models...");
+			Render->models_Prefetch();
+		}
+		{
+			PROF_EVENT("Loading textures");
+			Log("Loading textures...");
+
+			const auto loadFileFolder = [&](LPCSTR _folder)
+				{
+					string_path folder;
+					strconcat(sizeof(folder), folder, _folder, "\\*.dds");
+
+					FS_FileSet fset;
+					FS.file_list(fset, "$game_textures$", FS_ListFiles, folder);
+
+					for (FS_FileSet::iterator it = fset.begin(); it != fset.end(); it++)
+						Device.m_pRender->ResourcesPrefetchCreateTexture(it->name.c_str());
+				};
+
+			if (m_textures_prefetch_config->section_exist("prefetch_folders"))
 			{
-				string_path folder;
-				FS.update_path(folder, "$game_textures$", *I->first);
-				xr_strcat(folder, sizeof(folder), "\\");
-
-				xr_vector<LPSTR> *subfolders = FS.file_list_open(folder, FS_ListFolders);
-
-				if (subfolders == nullptr)
+				CInifile::Sect const& sect_f = m_textures_prefetch_config->r_section("prefetch_folders");
+				for (CInifile::SectCIt I = sect_f.Data.begin(); I != sect_f.Data.end(); I++)
 				{
-					FS.file_list_close(subfolders);
-					continue;
+					if (I->second.size() && !xr_strcmp(*I->second, "*"))
+					{
+						string_path folder;
+						FS.update_path(folder, "$game_textures$", *I->first);
+						xr_strcat(folder, sizeof(folder), "\\");
+
+						xr_vector<LPSTR>* subfolders = FS.file_list_open(folder, FS_ListFolders);
+
+						if (subfolders == nullptr)
+						{
+							FS.file_list_close(subfolders);
+							continue;
+						}
+
+						for (LPSTR subfolder : *subfolders)
+						{
+							string_path path;
+							strconcat(sizeof(path), path, folder, subfolder);
+
+							loadFileFolder(path);
+						}
+
+						FS.file_list_close(subfolders);
+					}
+
+					loadFileFolder(*I->first);
 				}
-
-				for (LPSTR subfolder : *subfolders)
-				{
-					string_path path;
-					strconcat(sizeof(path), path, folder, subfolder);
-
-					loadFileFolder(path);
-				}
-
-				FS.file_list_close(subfolders);
 			}
 
-			loadFileFolder(*I->first);
+			if (m_textures_prefetch_config->section_exist("prefetch_textures"))
+			{
+				CInifile::Sect const& sect = m_textures_prefetch_config->r_section("prefetch_textures");
+				for (CInifile::SectCIt I = sect.Data.begin(); I != sect.Data.end(); I++)
+					Device.m_pRender->ResourcesPrefetchCreateTexture(I->first.c_str());
+			}
+
+			Device.m_pRender->ResourcesDeferredUpload();
 		}
-	}
-
-	if (m_textures_prefetch_config->section_exist("prefetch_textures"))
+	});
 	{
-		CInifile::Sect const& sect = m_textures_prefetch_config->r_section("prefetch_textures");
-		for (CInifile::SectCIt I = sect.Data.begin(); I != sect.Data.end(); I++)
-			Device.m_pRender->ResourcesPrefetchCreateTexture(I->first.c_str());
+		// prefetch game objects & models
+		PROF_EVENT("Loading objects");
+		Log("Loading objects...");
+		ObjectPool.prefetch();
 	}
-
-	Device.m_pRender->ResourcesDeferredUpload();
 
 	Msg("* [x-ray]: Prefetched Data");
 	p_time = 1000.f * Device.GetTimerGlobal()->GetElapsed_sec() - p_time;
@@ -259,76 +275,55 @@ void IGame_Persistent::OnFrame()
 
 	if (!Device.Paused() || Device.dwPrecacheFrame)
 		Environment().OnFrame();
-
-
-	Device.Statistic->Particles_starting = ps_needtoplay.size();
-	Device.Statistic->Particles_active = ps_active.size();
-	Device.Statistic->Particles_destroy = ps_destroy.size();
-
-	// Play req particle systems
-	while (ps_needtoplay.size())
-	{
-		CPS_Instance* psi = ps_needtoplay.back();
-		ps_needtoplay.pop_back();
-		psi->Play(false);
-	}
-	// Destroy inactive particle systems
-	while (ps_destroy.size())
-	{
-		// u32 cnt = ps_destroy.size();
-		CPS_Instance* psi = ps_destroy.back();
-		VERIFY(psi);
-		if (psi->Locked())
-		{
-			Log("--locked");
-			break;
-		}
-		ps_destroy.pop_back();
-		psi->PSI_internal_delete();
-	}
 #endif
 }
 
-void IGame_Persistent::destroy_particles(const bool& all_particles)
+void IGame_Persistent::UpdateParticles()
+{
+	// Play req particle systems
+	while (!ps_needtoplay.empty())
+	{
+		intrusive_ptr<CPS_Instance> pInstance = std::move(ps_needtoplay.back());
+		ps_needtoplay.pop_back();
+		pInstance->Play(false);
+	}
+
+    ps_active.insert(
+        ps_active.end(),
+        std::make_move_iterator(ps_active_deffer.begin()),
+        std::make_move_iterator(ps_active_deffer.end())
+    );
+	ps_active_deffer.clear();
+
+	static auto eraseFunc = [](const intrusive_ptr<CPS_Instance>& Obj)
+	{
+		return Obj->m_NeedDestroy;
+	};
+
+	ps_active.erase(std::remove_if(ps_active.begin(), ps_active.end(), eraseFunc), ps_active.end());
+}
+
+void IGame_Persistent::destroy_particles(bool all_particles)
 {
 #ifndef _EDITOR
 	ps_needtoplay.clear();
 
-	while (ps_destroy.size())
-	{
-		CPS_Instance* psi = ps_destroy.back();
-		VERIFY(psi);
-		VERIFY(!psi->Locked());
-		ps_destroy.pop_back();
-		psi->PSI_internal_delete();
-	}
-
 	// delete active particles
 	if (all_particles)
 	{
-		for (; !ps_active.empty();)
-			(*ps_active.begin())->PSI_internal_delete();
+		ps_active.clear();
 	}
 	else
 	{
-		u32 active_size = ps_active.size();
-		CPS_Instance** I = (CPS_Instance**)_alloca(active_size * sizeof(CPS_Instance*));
-		std::copy(ps_active.begin(), ps_active.end(), I);
-
-		struct destroy_on_game_load
+		static auto eraseFunc = [](const intrusive_ptr<CPS_Instance>& Obj)
 		{
-			static IC bool predicate(CPS_Instance* const& object)
-			{
-				return (!object->destroy_on_game_load());
-			}
+			return Obj->destroy_on_game_load();
 		};
 
-		CPS_Instance** E = std::remove_if(I, I + active_size, &destroy_on_game_load::predicate);
-		for (; I != E; ++I)
-			(*I)->PSI_internal_delete();
+		ps_active.erase(std::remove_if(ps_active.begin(), ps_active.end(), eraseFunc), ps_active.end());
 	}
 
-	VERIFY(ps_needtoplay.empty() && ps_destroy.empty() && (!all_particles || ps_active.empty()));
+	VERIFY(ps_needtoplay.empty() && (!all_particles || ps_active.empty()));
 #endif
 }
 

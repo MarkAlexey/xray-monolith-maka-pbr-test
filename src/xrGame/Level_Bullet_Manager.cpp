@@ -160,15 +160,15 @@ void populateBulletTable (
 }
 
 
-CBulletManager::CBulletManager()
+CBulletManager::CBulletManager() : pure_relcase(&CBulletManager::net_Relcase)
 #if 0//def PROFILE_CRITICAL_SECTIONS
-	: m_Lock(MUTEX_PROFILE_ID(CBulletManager))
+	,m_Lock(MUTEX_PROFILE_ID(CBulletManager))
 #	ifdef DEBUG
 		,m_thread_id(GetCurrentThreadId())
 #	endif // #ifdef DEBUG
 #else // #ifdef PROFILE_CRITICAL_SECTIONS
 #	ifdef DEBUG
-		: m_thread_id(GetCurrentThreadId())
+		,m_thread_id(GetCurrentThreadId())
 #	endif // #ifdef DEBUG
 #endif // #ifdef PROFILE_CRITICAL_SECTIONS
 {
@@ -230,7 +230,7 @@ void CBulletManager::PlayExplodePS(const Fmatrix& xf)
 		return;
 
 	shared_str const& ps_name = m_ExplodeParticles[Random.randI(0, m_ExplodeParticles.size())];
-	CParticlesObject* const ps = CParticlesObject::Create(*ps_name,TRUE);
+	intrusive_ptr<CParticlesObject> const ps = Particles::Details::Create(*ps_name,TRUE);
 	ps->UpdateParent(xf, zero_vel);
 	GamePersistent().ps_needtoplay.push_back(ps);
 }
@@ -247,6 +247,7 @@ void CBulletManager::PlayWhineSound(SBullet* bullet, CObject* object, const Fvec
 
 void CBulletManager::Clear()
 {
+	xrCriticalSectionGuard guard(&m_Lock);
 	m_Bullets.clear();
 	m_Events.clear();
 }
@@ -267,15 +268,11 @@ void CBulletManager::AddBullet(const Fvector& position,
                                bool AimBullet,
                                int iShotNum)
 {
-#ifdef DEBUG
-	VERIFY(m_thread_id == GetCurrentThreadId());
-#endif
-
 	VERIFY(u16(-1)!=cartridge.bullet_material_idx);
 	//	u32 CurID					= Level().CurrentControlEntity()->ID();
 	//	u32 OwnerID					= sender_id;
-	m_Bullets.push_back(SBullet());
-	SBullet& bullet = m_Bullets.back();
+	xrCriticalSectionGuard guard(&m_Lock);
+	SBullet& bullet = m_Bullets.emplace_back();
 	bullet.Init(position, direction, starting_speed, power, /*power_critical,*/ impulse, sender_id, sendersweapon_id,
 	            e_hit_type, maximum_distance, cartridge, air_resistance_factor, SendHit, iShotNum);
 	//	bullet.frame_num			= Device.dwFrame;
@@ -315,8 +312,10 @@ void CBulletManager::AddBullet(const Fvector& position,
 
 void CBulletManager::UpdateWorkload()
 {
+	PROF_EVENT("CBulletManager::UpdateWorkload");
 	//	VERIFY						( m_thread_id == GetCurrentThreadId() );
 
+	xrCriticalSectionGuard guard(&m_Lock);
 	rq_storage.r_clear();
 
 	u32 const time_delta = Device.dwTimeDelta;
@@ -1113,6 +1112,7 @@ float SqrDistancePointToSegment(const Fvector& pt, const Fvector& orig, const Fv
 BOOL g_render_short_tracers = 1;
 void CBulletManager::Render()
 {
+	PROF_EVENT("CBulletManager::Render");
 #ifdef DEBUG
 	if (g_bDrawBulletHit && !m_bullet_points.empty()) {
 		VERIFY							(!(m_bullet_points.size() % 2));
@@ -1152,29 +1152,26 @@ void CBulletManager::Render()
 	}
 #endif
 
-	if (m_BulletsRendered.empty()) return;
+	if (m_Bullets.empty()) return;
+	xrCriticalSectionGuard guard(&m_Lock);
+	u32 bullet_num = m_Bullets.size();
 
-	//u32	vOffset			=	0	;
-	u32 bullet_num = m_BulletsRendered.size();
+	UIRender->StartPrimitive(bullet_num * 12, IUIRender::ptTriList, IUIRender::pttLIT);
 
-	UIRender->StartPrimitive((u32)bullet_num * 12, IUIRender::ptTriList, IUIRender::pttLIT);
-
-	for (BulletVecIt it = m_BulletsRendered.begin(); it != m_BulletsRendered.end(); it++)
+	for (SBullet& bullet : m_Bullets)
 	{
-		SBullet* bullet = &(*it);
-		if (!bullet->flags.allow_tracer)
+		if (!bullet.flags.allow_tracer)
 			continue;
+
 		if (!psActorFlags.test(AF_USE_TRACERS))
 			continue;
 
-		if (!bullet->CanBeRenderedNow())
+		if (!bullet.CanBeRenderedNow())
 			continue;
 
-		Fvector const tracer = Fvector().sub(bullet->bullet_pos, bullet->tracer_start_position);
+		Fvector const tracer = Fvector().sub(bullet.bullet_pos, bullet.tracer_start_position);
 		float length = tracer.magnitude();
-		Fvector const tracer_direction = length >= EPS_L
-			                                 ? Fvector(tracer).mul(1.f / length)
-			                                 : Fvector().set(0.f, 0.f, 1.f);
+		Fvector const tracer_direction = length >= EPS_L ? Fvector(tracer).mul(1.f / length) : Fvector().set(0.f, 0.f, 1.f);
 
 		if (length < m_fTracerLengthMin)
 		{
@@ -1189,7 +1186,7 @@ void CBulletManager::Render()
 			length = m_fTracerLengthMax;
 
 		float width = m_fTracerWidth;
-		float dist2segSqr = SqrDistancePointToSegment(Device.vCameraPosition, bullet->bullet_pos, tracer);
+		float dist2segSqr = SqrDistancePointToSegment(Device.vCameraPosition, bullet.bullet_pos, tracer);
 		//---------------------------------------------
 		float MaxDistSqr = 1.0f;
 		float MinDistSqr = 0.09f;
@@ -1199,20 +1196,19 @@ void CBulletManager::Render()
 
 			width *= _sqrt(dist2segSqr / MaxDistSqr);
 		}
-		if (Device.vCameraPosition.distance_to_sqr(bullet->bullet_pos) < (length * length))
+		if (Device.vCameraPosition.distance_to_sqr(bullet.bullet_pos) < (length * length))
 		{
-			length = Device.vCameraPosition.distance_to(bullet->bullet_pos) - 0.3f;
+			length = Device.vCameraPosition.distance_to(bullet.bullet_pos) - 0.3f;
 		}
 
 		Fvector center;
-		center.mad(bullet->bullet_pos, tracer_direction, -length * .5f);
+		center.mad(bullet.bullet_pos, tracer_direction, -length * .5f);
 		bool bActor = false;
 		if (Level().CurrentViewEntity())
 		{
-			bActor = (bullet->parent_id == Level().CurrentViewEntity()->ID());
+			bActor = (bullet.parent_id == Level().CurrentViewEntity()->ID());
 		}
-		tracers.Render(bullet->bullet_pos, center, tracer_direction, length, width, bullet->m_u8ColorID, bullet->speed,
-		               bActor);
+		tracers.Render(bullet.bullet_pos, center, tracer_direction, length, width, bullet.m_u8ColorID, bullet.speed, bActor);
 	}
 
 	UIRender->CacheSetCullMode(IUIRender::cmNONE);
@@ -1222,21 +1218,26 @@ void CBulletManager::Render()
 	UIRender->CacheSetCullMode(IUIRender::cmCCW);
 }
 
-void CBulletManager::CommitRenderSet() // @ the end of frame
+// demonized: net_Relcase for mt_scheduler 1
+void __stdcall CBulletManager::net_Relcase(CObject* object)
 {
-	m_BulletsRendered = m_Bullets;
-	if (g_mt_config.test(mtBullets))
-	{
-		Device.seqParallel.push_back(fastdelegate::FastDelegate0<>(this, &CBulletManager::UpdateWorkload));
-	}
-	else
-	{
-		UpdateWorkload();
-	}
+    // Clean up pending events
+    m_Events.erase(
+        std::remove_if(
+            m_Events.begin(),
+            m_Events.end(),
+            [object](const _event& E)
+            {
+                return (E.dynamic && E.R.O == object);
+            }
+        ),
+        m_Events.end()
+    );
 }
 
 void CBulletManager::CommitEvents() // @ the start of frame
 {
+	PROF_EVENT("CBulletManager::CommitEvents");
 	if (m_Events.size() > 1000)
 		Msg("! too many bullets during single frame: %d", m_Events.size());
 
@@ -1251,25 +1252,28 @@ void CBulletManager::CommitEvents() // @ the start of frame
 		case EVENT_HIT:
 			{
 				// demonized: bullet on impact callback
-				::luabind::functor<void> funct;
-				if (ai().script_engine().functor("_G.CBulletOnImpact", funct)) {
-					::luabind::object table = ::luabind::newtable(ai().script_engine().lua());
-					populateBulletTable(
-						table,
-						!fis_zero(end_point.x) && !fis_zero(end_point.y) && !fis_zero(end_point.z) ? end_point : bullet->bullet_pos,
-						bullet->dir,
-						bullet->speed,
-						bullet->fly_dist + E.R.range,
-						bullet->catridgeSection,
-						bullet->bulletId,
-						bullet->weapon_id,
-						bullet->parent_id,
-						E.dynamic && E.R.O ? E.R.O->ID() : 65535,
-						mt ? mt->m_Name.c_str() : NULL,
-						bullet->life_time,
-						E.R.element
-					);
-					funct(table);
+				{
+					xrCriticalSectionGuard guard(&m_Lock);
+					::luabind::functor<void> funct;
+					if (ai().script_engine().functor("_G.CBulletOnImpact", funct)) {
+						::luabind::object table = ::luabind::newtable(ai().script_engine().lua());
+						populateBulletTable(
+							table,
+							!fis_zero(end_point.x) && !fis_zero(end_point.y) && !fis_zero(end_point.z) ? end_point : bullet->bullet_pos,
+							bullet->dir,
+							bullet->speed,
+							bullet->fly_dist + E.R.range,
+							bullet->catridgeSection,
+							bullet->bulletId,
+							bullet->weapon_id,
+							bullet->parent_id,
+							E.dynamic && E.R.O ? E.R.O->ID() : 65535,
+							mt ? mt->m_Name.c_str() : NULL,
+							bullet->life_time,
+							E.R.element
+						);
+						funct(table);
+					}
 				}
 
 				if (E.dynamic) DynamicObjectHit(E);
@@ -1280,6 +1284,7 @@ void CBulletManager::CommitEvents() // @ the start of frame
 		case EVENT_REMOVE:
 			{
 				// demonized: bullet on remove callback
+				xrCriticalSectionGuard guard(&m_Lock);
 				::luabind::functor<void> funct;
 				if (ai().script_engine().functor("_G.CBulletOnRemove", funct)) {
 					::luabind::object table = ::luabind::newtable(ai().script_engine().lua());
@@ -1310,6 +1315,14 @@ void CBulletManager::CommitEvents() // @ the start of frame
 		}
 	}
 	m_Events.clear_and_reserve();
+
+	if (g_mt_config.test(mtBullets)) {
+		Device.seqParallel.push_back(xr_make_delegate(this, &CBulletManager::UpdateWorkload));
+	}
+	else 
+	{
+		UpdateWorkload();
+	}
 }
 
 void CBulletManager::RegisterEvent(EventType Type, BOOL _dynamic, SBullet* bullet, const Fvector& end_point,

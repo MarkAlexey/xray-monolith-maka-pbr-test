@@ -167,6 +167,7 @@ extern void GetMonitorPosition(int& x, int& y);
 
 PROTECT_API void CRenderDevice::Create()
 {
+	PROF_EVENT("CRenderDevice::Create");
 	//SECUROM_MARKER_SECURITY_ON(4)
 
 	if (b_is_Ready) return; // prevent double call

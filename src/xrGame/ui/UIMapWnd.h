@@ -120,6 +120,8 @@ private:
 	// replayed at click time to rebuild their per-spot dispatch state (see SendMessage).
 	CUIPropertiesBox* m_UIScratchBox;
 
+	virtual CUIWindow* ui_cast_window() { return this; }
+
 public:
 	CUICustomMap* m_tgtMap;
 	Fvector2 m_tgtCenter;

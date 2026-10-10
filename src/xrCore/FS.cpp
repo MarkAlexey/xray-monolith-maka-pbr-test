@@ -22,9 +22,12 @@ XRCORE_API u32 g_file_mapped_memory = 0;
 u32 g_file_mapped_count = 0;
 typedef xr_map<u32, std::pair<u32, shared_str> > FILE_MAPPINGS;
 FILE_MAPPINGS g_file_mappings;
+static xrCriticalSection CSFileMapping;
 
 void register_file_mapping(void* address, const u32& size, LPCSTR file_name)
 {
+    xrCriticalSectionGuard guard(CSFileMapping);
+
     FILE_MAPPINGS::const_iterator I = g_file_mappings.find(*(u32*)&address);
     VERIFY(I == g_file_mappings.end());
     g_file_mappings.insert(std::make_pair(*(u32*)&address, std::make_pair(size, shared_str(file_name))));
@@ -43,6 +46,8 @@ void register_file_mapping(void* address, const u32& size, LPCSTR file_name)
 
 void unregister_file_mapping(void* address, const u32& size)
 {
+    xrCriticalSectionGuard guard(CSFileMapping);
+
     FILE_MAPPINGS::iterator I = g_file_mappings.find(*(u32*)&address);
     VERIFY(I != g_file_mappings.end());
     // VERIFY2 ((*I).second.first == size,make_string("file mapping sizes are different: %d -> %d",(*I).second.first,size));

@@ -4,9 +4,6 @@
 #include "particle_actions_collection.h"
 #include "particle_effect.h"
 
-#include <tbb/parallel_for.h>
-#include <tbb/blocked_range.h>
-
 using namespace PAPI;
 
 void PAPI::PAAvoid::Execute(ParticleEffect* effect, const float dt, float& tm_max)

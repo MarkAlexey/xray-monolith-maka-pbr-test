@@ -324,7 +324,7 @@ struct attachable_hud_item
 	void load(const shared_str& sect_name);
 	void update(bool bForce);
 	void setup_firedeps(firedeps& fd);
-	void render();
+	void render(IDSGraphManager* DM);
 	void render_item_ui();
 	bool render_item_ui_query();
 	bool need_renderable();
@@ -373,7 +373,7 @@ public:
 	void StopBlendAnm(LPCSTR name, bool bForce = false);
 	void StopAllBlendAnms(bool bForce);
 	float SetBlendAnmTime(LPCSTR name, float time);
-	void render_hud();
+	void render_hud(IDSGraphManager* DM);
 	void render_item_ui();
 	bool render_item_ui_query();
 	u32 anim_play(u16 part, const MotionID& M, BOOL bMixIn, const CMotionDef*& md, float speed, u16 override_part = u16(-1));

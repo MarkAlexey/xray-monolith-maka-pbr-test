@@ -22,6 +22,7 @@ void CBlendInstance::construct()
 
 void CBlendInstance::blend_add(CBlend* H)
 {
+	xrSRWLockGuard guard(&blend_lock, false);
 	if (Blend.size() == MAX_BLENDED)
 	{
 		if (H->fall_at_end)
@@ -37,6 +38,7 @@ void CBlendInstance::blend_add(CBlend* H)
 
 void CBlendInstance::blend_remove(CBlend* H)
 {
+	xrSRWLockGuard guard(&blend_lock, false);
 	CBlend** I = std::find(Blend.begin(), Blend.end(), H);
 	if (I != Blend.end()) Blend.erase(I);
 }
@@ -215,7 +217,7 @@ MotionID CKinematicsAnimated::ID_Cycle_Safe(LPCSTR N)
 MotionID CKinematicsAnimated::ID_Cycle(shared_str N)
 {
 	MotionID motion_ID = ID_Cycle_Safe(N);
-	R_ASSERT3(motion_ID.valid(), "! MODEL: can't find cycle: ", N.c_str());
+	R_ASSERT2(motion_ID.valid(), make_string("! MODEL [%s]: can't find cycle: [%s]", dbg_name.c_str(), N.c_str()).c_str());
 	return motion_ID;
 }
 
@@ -238,7 +240,7 @@ MotionID CKinematicsAnimated::ID_Cycle_Safe(shared_str N)
 MotionID CKinematicsAnimated::ID_Cycle(LPCSTR N)
 {
 	MotionID motion_ID = ID_Cycle_Safe(N);
-	R_ASSERT3(motion_ID.valid(), "! MODEL: can't find cycle: ", N);
+	R_ASSERT2(motion_ID.valid(), make_string("! MODEL [%s]: can't find cycle: [%s]", dbg_name.c_str(), N).c_str());
 	return motion_ID;
 }
 
@@ -431,7 +433,7 @@ CBlend* CKinematicsAnimated::PlayCycle(LPCSTR N, BOOL bMixIn, PlayCallback Callb
 	if (motion_ID.valid()) return PlayCycle(motion_ID, bMixIn, Callback, CallbackParam, channel);
 	else
 	{
-		Debug.fatal(DEBUG_INFO, "! MODEL: can't find cycle: %s", N);
+		Debug.fatal(DEBUG_INFO, "! MODEL [%s]: can't find cycle: [%s]", dbg_name.c_str(), N);
 		return 0;
 	}
 }
@@ -440,6 +442,8 @@ CBlend* CKinematicsAnimated::PlayCycle(MotionID motion_ID, BOOL bMixIn, PlayCall
                                        u8 channel /*= 0*/)
 {
 	VERIFY(motion_ID.valid());
+	if (!motion_ID.valid()) return NULL;
+
 	CMotionDef* m_def = m_Motions[motion_ID.slot].motions.motion_def(motion_ID.idx);
 	VERIFY(m_def);
 	if (!m_def) return NULL;
@@ -928,12 +932,13 @@ void CKinematicsAnimated::LL_BuldBoneMatrixDequatize(const CBoneData* bd, u8 cha
 {
 	u16 SelfID = bd->GetSelfID();
 	CBlendInstance& BLEND_INST = LL_GetBlendInstance(SelfID);
+	xrSRWLockGuard guard(&BLEND_INST.blend_lock, true);
 	const CBlendInstance::BlendSVec& Blend = BLEND_INST.blend_vector();
 	CKey BK[MAX_CHANNELS][MAX_BLENDED]; //base keys
 	BlendSVecCIt BI;
-	for (BI = Blend.begin(); BI != Blend.end(); BI++)
+	for (CBlend* BI : Blend)
 	{
-		CBlend* B = *BI;
+		CBlend* B = BI;
 		int& b_count = keys.chanel_blend_conts[B->channel];
 		CKey* D = &keys.keys[B->channel][b_count];
 		if (!(channel_mask & (1 << B->channel)))
@@ -1126,3 +1131,11 @@ MotionID CKinematicsAnimated::ID_Motion(LPCSTR  N, u16 slot)
     return motion_ID;
 }
 #endif
+
+CBlend* CKinematicsAnimated::PlayFX_Safe(LPCSTR N, float power_scale)
+{
+	MotionID motion_ID = ID_FX_Safe(N);
+	if (motion_ID.valid())
+		return PlayFX(motion_ID, power_scale);
+	return nullptr;
+}

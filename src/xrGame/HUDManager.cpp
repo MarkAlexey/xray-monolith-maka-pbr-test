@@ -23,6 +23,8 @@
 #include "player_hud.h"
 #include "script_attachment_manager.h"
 
+#include "GametaskManager.h"
+
 extern CUIGameCustom* CurrentGameUI()
 {
 	return g_hud ? HUD().GetGameUI() : nullptr;
@@ -125,24 +127,53 @@ CHUDManager::~CHUDManager()
 }
 
 //--------------------------------------------------------------------
+BOOL mt_ui = FALSE;
 void CHUDManager::OnFrame()
 {
+	PROF_EVENT("CHUDManager::OnFrame");
 	if (!psHUD_Flags.is(HUD_DRAW_RT2))
 		return;
 
 	if (!b_online)
 		return;
 
-	if (pUIGame)
-		pUIGame->OnFrame();
+    if (!mt_ui)
+    {
+        if (pUIGame)
+            pUIGame->OnFrame();
+    }
 
 	PP.CameraPick();
 	g_player_hud->OnFrame();
 	DoPick(PP);
 }
 
+xrCriticalSection ui_lock;
+extern BOOL mt_TaskManager;
+void CHUDManager::OnFrameMT()
+{
+    if (!b_online)
+        return;
+
+	PROF_EVENT("CHUDManager::OnFrameMT");
+
+	if (mt_TaskManager && Device.dwPrecacheFrame == 0)
+		Level().GameTaskManager().UpdateTasks();
+
+    if (!psHUD_Flags.is(HUD_DRAW_RT2))
+        return;
+
+    if (mt_ui)
+    {
+        xrCriticalSectionGuard guard(&ui_lock);
+        if (pUIGame)
+            pUIGame->OnFrame();
+    }
+}
+
 //--------------------------------------------------------------------
-void CHUDManager::Render_First()
+//R1 Actor Shadow
+void CHUDManager::Render_First(IDSGraphManager* DM)
 {
 	if (!psHUD_Flags.is(HUD_WEAPON | HUD_WEAPON_RT | HUD_WEAPON_RT2 | HUD_DRAW_RT2))return;
 	if (0 == pUIGame) return;
@@ -153,10 +184,12 @@ void CHUDManager::Render_First()
 	if (A && !A->HUDview()) return;
 
 	// only shadow
-	::Render->set_Invisible(TRUE);
-	::Render->set_Object(O->H_Root());
-	O->renderable_Render();
-	::Render->set_Invisible(FALSE);
+	DM->set_Invisible(true);
+	DM->set_Object(O->H_Root());
+
+	O->renderable_Render(DM);
+
+	DM->set_Invisible();
 }
 
 bool need_render_hud()
@@ -175,19 +208,19 @@ bool need_render_hud()
 	return true;
 }
 
-void CHUDManager::Render_Last()
+void CHUDManager::Render_Last(IDSGraphManager* DM)
 {
 	if (0 == pUIGame) return;
-	if (g_actor) g_actor->RenderCamAttached();
+	if (g_actor) g_actor->RenderCamAttached(DM);
 	if (!psHUD_Flags.is(HUD_WEAPON | HUD_WEAPON_RT | HUD_WEAPON_RT2 | HUD_DRAW_RT2))return;
 	if (!need_render_hud()) return;
 
 	CObject* O = g_pGameLevel->CurrentViewEntity();
 	// hud itself
-	::Render->set_HUD(TRUE);
-	::Render->set_Object(O->H_Root());
-	O->OnHUDDraw(this);
-	::Render->set_HUD(FALSE);
+	DM->set_HUD(true);
+	DM->set_Object(O->H_Root());
+	O->OnHUDDraw(this, DM);
+	DM->set_HUD();
 }
 
 void CHUDManager::Render_R1_Attachment_UI()
@@ -246,6 +279,7 @@ extern ENGINE_API BOOL bShowPauseString;
 //отрисовка элементов интерфейса
 void CHUDManager::RenderUI()
 {
+	PROF_EVENT("CHUDManager::RenderUI");
 	if (!psHUD_Flags.is(HUD_DRAW_RT2))
 		return;
 
@@ -255,7 +289,10 @@ void CHUDManager::RenderUI()
 	{
 		HitMarker.Render();
 		if (pUIGame)
+		{
+			xrCriticalSectionGuard guard(&ui_lock);
 			pUIGame->Render();
+		}
 
 		UI().RenderFont();
 	}
@@ -454,19 +491,22 @@ void CHUDManager::OnScreenResolutionChanged()
 		funct();
 }
 
+BOOL hud_frequent_updates = TRUE;
 void CHUDManager::OnDisconnected()
 {
 	b_online = false;
-	if (pUIGame)
-		Device.seqFrame.Remove(pUIGame);
+	if (hud_frequent_updates)
+		if (pUIGame)
+			Device.seqFrame.Remove(pUIGame);
 }
 
 void CHUDManager::OnConnected()
 {
 	if (b_online) return;
 	b_online = true;
-	if (pUIGame)
-		Device.seqFrame.Add(pUIGame, REG_PRIORITY_LOW - 1000);
+	if (hud_frequent_updates)
+		if (pUIGame)
+			Device.seqFrame.Add(pUIGame, REG_PRIORITY_LOW - 1000);
 }
 
 void CHUDManager::net_Relcase(CObject* obj)
@@ -476,8 +516,8 @@ void CHUDManager::net_Relcase(CObject* obj)
 
 	HitMarker.net_Relcase(obj);
 
-	VERIFY(g_player_hud);
-	g_player_hud->net_Relcase(obj);
+    if (g_player_hud)
+	    g_player_hud->net_Relcase(obj);
 
 #ifdef	DEBUG
     DBG_PH_NetRelcase( obj );

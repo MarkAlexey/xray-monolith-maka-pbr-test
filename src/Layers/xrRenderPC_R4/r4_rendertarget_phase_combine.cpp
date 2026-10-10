@@ -39,7 +39,8 @@ float hclip(float v, float dim) { return 2.f * v / dim - 1.f; }
 
 void CRenderTarget::phase_combine()
 {
-	PIX_EVENT(phase_combine);
+	PIX_EVENT_C(phase_combine, dx10_marker_combine);
+    PROF_EVENT("phase_combine");
 	
 	//	TODO: DX10: Remove half poxel offset
 	bool _menu_pp = g_pGamePersistent ? g_pGamePersistent->OnRenderPPUI_query() : false;
@@ -48,21 +49,26 @@ void CRenderTarget::phase_combine()
 	Fvector2 p0, p1;
 
 	//*** exposure-pipeline
-	u32			gpu_id = Device.dwFrame % HW.Caps.iGPUNum;
-	if (Device.m_SecondViewport.IsSVPActive()) //--#SM+#-- +SecondVP+
+	if (Device.m_SecondViewport.IsSVPActive())	//--#SM+#-- +SecondVP+ Fix for screen flickering
 	{
-		// clang-format off
-		gpu_id = (Device.dwFrame - 1) % HW.Caps.iGPUNum;
+		if (t_LUM_src != rt_LUM_pool[0]->pTexture)
+			t_LUM_src->surface_set(rt_LUM_pool[0]->pSurface);
+		if (t_LUM_dest != rt_LUM_pool[1]->pTexture)
+			t_LUM_dest->surface_set(rt_LUM_pool[1]->pSurface);
 	}
+	else
 	{
-		t_LUM_src->surface_set(rt_LUM_pool[gpu_id * 2 + 0]->pSurface);
-		t_LUM_dest->surface_set(rt_LUM_pool[gpu_id * 2 + 1]->pSurface);
+		if (t_LUM_src != rt_LUM_pool[0]->pTexture)
+			t_LUM_src->surface_set(rt_LUM_pool[0]->pSurface);
+		if (t_LUM_dest != rt_LUM_pool[1]->pTexture)
+			t_LUM_dest->surface_set(rt_LUM_pool[1]->pSurface);
 	}
 
 	if (RImplementation.o.ssao_hdao && RImplementation.o.ssao_ultra)
 	{
 		if (ps_r_ssao > 0)
 		{
+			PROF_EVENT("PHASE_AMBIENT_OCCLUSION");
 			phase_hdao();
 		}
 	}
@@ -141,7 +147,7 @@ void CRenderTarget::phase_combine()
 	// Draw full-screen quad textured with our scene image
 	if (!_menu_pp)
 	{
-		PIX_EVENT(combine_1);
+		PIX_EVENT_C(combine_1, dx10_marker_combine);
 		// Compute params
 		CEnvDescriptorMixer& envdesc = *g_pGamePersistent->Environment().CurrentEnv;
 		const float minamb = 0.001f;
@@ -326,11 +332,13 @@ void CRenderTarget::phase_combine()
 	// Distortion filter
 	BOOL bDistort = RImplementation.o.distortion_enabled; // This can be modified
 	{
-		u32 count = RImplementation.mapDistort.size() + RImplementation.mapHUDDistort.size();
-		if ((count < 1 && !_menu_pp))
-		{
+		if ((
+			0 == RImplementation.GMBase.RGraph.mapStaticSorted.Distort.size() &&
+			0 == RImplementation.GMBase.RGraph.mapDynamicSorted.Distort.size() &&
+			0 == RImplementation.GMBase.RGraph.mapHUDSorted.Distort.size()
+			) && !_menu_pp
+		)		
 			bDistort = FALSE;
-		}
 		if (bDistort)
 		{
 			PIX_EVENT(render_distort_objects);
@@ -350,7 +358,7 @@ void CRenderTarget::phase_combine()
 			RCache.set_Stencil(FALSE);
 			RCache.set_ColorWriteEnable();
 			//CHK_DX(HW.pDevice->Clear	( 0L, NULL, D3DCLEAR_TARGET, color_rgba(127,127,0,127), 1.0f, 0L));
-			RImplementation.r_dsgraph_render_distort();
+			RImplementation.GMBase.r_dsgraph_render_distort();
 			if (g_pGamePersistent) g_pGamePersistent->OnRenderPPUI_PP(); // PP-UI
 		}
 	}
@@ -371,7 +379,10 @@ void CRenderTarget::phase_combine()
 	if (!_menu_pp)
 	{
 		if (ps_sunshafts_mode == R2SS_SCREEN_SPACE || ps_sunshafts_mode == R2SS_COMBINE_SUNSHAFTS)
+		{
+			PIX_EVENT(phase_sunshafts);
 			phase_sunshafts();
+		}
 	}
 
 	if (scope_3D_fake_enabled)
@@ -380,17 +391,24 @@ void CRenderTarget::phase_combine()
 	}
 
 	//Compute blur textures
-	phase_blur();
+	{
+		PIX_EVENT(phase_blur);
+		phase_blur();
+	}
 
 	//Compute bloom (new)
 	phase_pp_bloom();
 	
 	if (ps_r2_ls_flags.test(R2FLAG_DOF))
-	{	
+	{
+		PIX_EVENT(phase_dof);
 		phase_dof();
 	}
 
-	phase_lut();	
+	{
+		PIX_EVENT(phase_lut);
+		phase_lut();
+	}
 
 	if(ps_r2_mask_control.x > 0)
 	{
@@ -443,7 +461,7 @@ void CRenderTarget::phase_combine()
 
 	if (1)
 	{
-		PIX_EVENT(combine_2);
+		PIX_EVENT_C(combine_2, dx10_marker_combine);
 		// 
 		struct v_aa
 		{
@@ -556,7 +574,7 @@ void CRenderTarget::phase_combine()
 	//	PP-if required
 	if (PP_Complex)
 	{
-		PIX_EVENT(phase_pp);
+		PIX_EVENT_C(phase_pp, dx10_marker_post);
 		phase_pp();
 	}
 
@@ -565,7 +583,7 @@ void CRenderTarget::phase_combine()
 
 	//*** exposure-pipeline-clear
 	{
-		std::swap(rt_LUM_pool[gpu_id * 2 + 0], rt_LUM_pool[gpu_id * 2 + 1]);
+		std::swap(rt_LUM_pool[0], rt_LUM_pool[1]);
 		t_LUM_src->surface_set(NULL);
 		t_LUM_dest->surface_set(NULL);
 	}

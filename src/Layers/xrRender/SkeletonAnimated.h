@@ -16,6 +16,7 @@ public:
 	typedef svector<CBlend*, MAX_BLENDED> BlendSVec;
 	typedef BlendSVec::iterator BlendSVecIt;
 	typedef BlendSVec::const_iterator BlendSVecCIt;
+	xrSRWLock blend_lock;
 private:
 	BlendSVec Blend;
 public:
@@ -28,9 +29,10 @@ public:
 
 	u32 mem_usage()
 	{
+		xrSRWLockGuard guard(&blend_lock, true);
 		u32 sz = sizeof(*this);
-		for (BlendSVecIt it = Blend.begin(); it != Blend.end(); it++)
-			sz += (*it)->mem_usage();
+		for (CBlend* B : Blend)
+			sz += B->mem_usage();
 		return sz;
 	}
 };
@@ -175,7 +177,8 @@ public:
 	MotionID ID_FX(LPCSTR N);
 	MotionID ID_FX_Safe(LPCSTR N);
 	CBlend* PlayFX(LPCSTR N, float power_scale);
-	CBlend* PlayFX(MotionID M, float power_scale);
+	CBlend* PlayFX(MotionID M, float power_scale) override;
+	CBlend* PlayFX_Safe (LPCSTR N, float power_scale) override;
 
 	const CPartition& partitions() const { return *m_Partition; };
 

@@ -52,7 +52,7 @@ static void update_visbox_attachment(IKinematics* k)
 #endif
 }
 
-script_attachment::script_attachment(LPCSTR name, LPCSTR model_name): ISpatial(g_SpatialSpace)
+script_attachment::script_attachment(LPCSTR name, LPCSTR model_name)
 {
 	m_name = name;
 	m_kinematics = nullptr;
@@ -85,7 +85,7 @@ script_attachment::script_attachment(LPCSTR name, LPCSTR model_name): ISpatial(g
 	m_current_motion = "idle";
 	m_model_name = "";
 	m_userdata = nullptr;
-	spatial.type |= STYPE_RENDERABLE;
+	SpatialComponent->spatial.type |= STYPE_RENDERABLE;
 	LoadModel(model_name);
 	PlayMotion("idle", false);
 }
@@ -107,27 +107,27 @@ void script_attachment::RemoveAttachment(script_attachment* child)
 
 void script_attachment::spatial_register()
 {
-	renderable.xform.transform_tiny(spatial.sphere.P, renderable.visual ? renderable.visual->getVisData().sphere.P : Fvector{ 0,0,0 });
+	renderable.xform.transform_tiny(SpatialComponent->spatial.sphere.P, renderable.visual ? renderable.visual->getVisData().sphere.P : Fvector{ 0,0,0 });
 	Fvector& scale = m_attachment_offset[2];
-	spatial.sphere.R = renderable.visual ? renderable.visual->getVisData().sphere.R * std::max(scale.x, std::max(scale.y, scale.z)) : 0.f;
-	ISpatial::spatial_register();
+	SpatialComponent->spatial.sphere.R = renderable.visual ? renderable.visual->getVisData().sphere.R * std::max(scale.x, std::max(scale.y, scale.z)) : 0.f;
+	ISpatialOwner::spatial_register();
 }
 
 void script_attachment::spatial_unregister()
 {
-	ISpatial::spatial_unregister();
+	ISpatialOwner::spatial_unregister();
 }
 
 void script_attachment::spatial_move()
 {
-	if (!spatial.node_ptr) return;
-	renderable.xform.transform_tiny(spatial.sphere.P, renderable.visual->getVisData().sphere.P);
+	if (!SpatialComponent->spatial.node_ptr) return;
+	renderable.xform.transform_tiny(SpatialComponent->spatial.sphere.P, renderable.visual->getVisData().sphere.P);
 	Fvector& scale = m_attachment_offset[2];
-	spatial.sphere.R = renderable.visual->getVisData().sphere.R * std::max(scale.x, std::max(scale.y, scale.z));
-	ISpatial::spatial_move();
+	SpatialComponent->spatial.sphere.R = renderable.visual->getVisData().sphere.R * std::max(scale.x, std::max(scale.y, scale.z));
+	ISpatialOwner::spatial_move();
 }
 
-void script_attachment::renderable_Render()
+void script_attachment::renderable_Render(IDSGraphManager* DM)
 {
 	if (GetType() != eSA_World) return;
 
@@ -154,19 +154,18 @@ void script_attachment::renderable_Render()
 	m_kinematics->CalculateBones_Invalidate();
 	m_kinematics->CalculateBones(TRUE);
 
-	::Render->set_Transform(&renderable.xform);
-	::Render->add_Visual(renderable.visual);
+	DM->add_Dynamic(renderable.visual, &renderable.xform);
 
 	if (m_children.size())
 	{
 		for (auto& pair : m_children)
 		{
-			pair.second->Render(m_kinematics, &renderable.xform);
+			pair.second->Render(m_kinematics, &renderable.xform, DM);
 		}
 	}
 }
 
-void script_attachment::Render(IKinematics* model, Fmatrix* mat)
+void script_attachment::Render(IKinematics* model, Fmatrix* mat, IDSGraphManager* DM)
 {
 	if (!model || (m_bone_callbacks[0] && m_bone_callbacks[0]->m_bone_id != BI_NONE))
 		renderable.xform = *mat;
@@ -196,14 +195,13 @@ void script_attachment::Render(IKinematics* model, Fmatrix* mat)
 		m_kinematics->CalculateBones(TRUE);
 	}
 
-	::Render->set_Transform(&renderable.xform);
-	::Render->add_Visual(renderable.visual);
+	DM->add_Dynamic(renderable.visual, &renderable.xform);
 
 	if (m_children.size())
 	{
 		for (auto& pair : m_children)
 		{
-			pair.second->Render(m_kinematics, &renderable.xform);
+			pair.second->Render(m_kinematics, &renderable.xform, DM);
 		}
 	}
 }
@@ -671,7 +669,7 @@ extern BOOL print_bone_warnings;
 Fmatrix script_attachment::bone_transform(u16 bone_id)
 {
 	if (bone_id == BI_NONE || bone_id >= m_kinematics->LL_BoneCount()) {
-		if (strstr(Core.Params, "-dbg") && print_bone_warnings) {
+		if (Core.isDebug() && print_bone_warnings) {
 			Msg("![bone_position] Incorrect bone_id provided for %s (%s), fallback to root bone", GetName(), GetModelScript());
 			ai().script_engine().print_stack();
 		}
@@ -721,6 +719,18 @@ LPCSTR script_attachment::bone_name(u16 bone_id)
 		result[bone.second] = bone.first.c_str();
 
 	return result;
+}
+
+void script_attachment::SetType(u16 type)
+{
+    type = type < eSA_undefined ? type : eSA_World;
+    if (m_type == type)
+        return;
+
+    m_type = type;
+    IRenderVisual* pVisual = renderable.visual->dcast_RenderVisual();
+    if (pVisual)
+        pVisual->MarkIgnoreOptimization(m_type == eSA_HUD || m_type == eSA_CamAttached);
 }
 
 void script_attachment::LoadModel(LPCSTR model_name, bool keep_bc)

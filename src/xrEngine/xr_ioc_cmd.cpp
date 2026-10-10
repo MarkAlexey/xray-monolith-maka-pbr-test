@@ -15,6 +15,7 @@
 
 #include "xr_object.h"
 #include "MonitorList.h"
+#include "renderdoc_integration.h"
 
 xr_token* vid_quality_token = NULL;
 
@@ -33,6 +34,10 @@ xr_token vid_bpp_token[] =
 	{"32", 32},
 	{0, 0}
 };
+
+extern float r_wallmarks_ssa_k;
+extern BOOL r_wallmarks_static;
+extern BOOL r_wallmarks_dynamic;
 //-----------------------------------------------------------------------
 
 void IConsole_Command::add_to_LRU(shared_str const& arg)
@@ -118,6 +123,61 @@ class CCC_DbgStrDump : public IConsole_Command
 public:
 	CCC_DbgStrDump(LPCSTR N) : IConsole_Command(N) { bEmptyArgsHandled = TRUE; };
 	virtual void Execute(LPCSTR args) { g_pStringContainer->dump(); }
+};
+
+class CCC_RenderDoc : public IConsole_Command
+{
+protected:
+	int Value(LPCSTR args, int fallback) { return (args && args[0]) ? atoi(args) : fallback; }
+
+public:
+	CCC_RenderDoc(LPCSTR N) : IConsole_Command(N) { bEmptyArgsHandled = TRUE; };
+};
+
+class CCC_RenderDocCapture : public CCC_RenderDoc
+{
+	enum { frames_max = 60 };
+
+public:
+	CCC_RenderDocCapture(LPCSTR N) : CCC_RenderDoc(N) {};
+
+	virtual void Execute(LPCSTR args)
+	{
+		int frames = Value(args, 1);
+		if (frames < 1 || frames > frames_max) InvalidSyntax();
+		else renderdoc_trigger_capture(u32(frames));
+	}
+
+	virtual void Info(TInfo& I) { xr_sprintf(I, sizeof(I), "frame count in range [1,%d], 1 when omitted", frames_max); }
+};
+
+class CCC_RenderDocOpen : public CCC_RenderDoc
+{
+public:
+	CCC_RenderDocOpen(LPCSTR N) : CCC_RenderDoc(N) {};
+
+	virtual void Execute(LPCSTR args) { renderdoc_open_replay_ui(); }
+};
+
+class CCC_RenderDocOverlay : public CCC_RenderDoc
+{
+public:
+	CCC_RenderDocOverlay(LPCSTR N) : CCC_RenderDoc(N) {};
+
+	virtual void Execute(LPCSTR args)
+	{
+		if (!args || !args[0])
+		{
+			Msg("* [RDC] overlay %s", renderdoc_overlay_enabled() ? "on" : "off");
+			return;
+		}
+
+		int visible = Value(args, 0);
+		if (visible < 0 || visible > 1) InvalidSyntax();
+		else renderdoc_set_overlay(visible != 0);
+	}
+
+	virtual void Info(TInfo& I) { xr_strcpy(I, "0 hides, 1 shows, empty prints the state"); }
 };
 
 //-----------------------------------------------------------------------
@@ -775,7 +835,7 @@ public:
 	{
 		//fill_render_mode_list ();
 		tokens = vid_quality_token;
-		if (!strstr(Core.Params, "-r2"))
+		if (!Core.ParamsData.test(ECoreParams::r2))
 		{
 			inherited::Save(F);
 		}
@@ -1025,6 +1085,8 @@ float scope_radius = 0.f;
 float scope_fog_radius = 1.25f;
 float scope_fog_sharp = 4.0f;
 int scope_2dtexactive = 0.0;
+BOOL dump_cvar_enable = TRUE;
+
 void CCC_Register()
 {
 	// General
@@ -1035,6 +1097,12 @@ void CCC_Register()
 	CMD1(CCC_SaveCFG, "cfg_save");
 	CMD1(CCC_LoadCFG, "cfg_load");
 	CMD1(CCC_DumpCVars, "dump_cvar");
+        CMD4(CCC_Integer, "dump_cvar_enable", &dump_cvar_enable, 0, 1);
+	CMD1(CCC_RenderDocCapture, "rdoc_capture");
+	CMD1(CCC_RenderDocOpen, "rdoc_open");
+	CMD1(CCC_RenderDocOverlay, "rdoc_overlay");
+
+	CMD3(CCC_Mask, "mt_particles", &psDeviceFlags, mtParticles);
 
 #ifdef DEBUG
     CMD1(CCC_MotionsStat, "stat_motions");
@@ -1047,7 +1115,6 @@ void CCC_Register()
 #endif // DEBUG_MEMORY_MANAGER
 
 #ifdef DEBUG
-    CMD3(CCC_Mask, "mt_particles", &psDeviceFlags, mtParticles);
 
     CMD1(CCC_DbgStrCheck, "dbg_str_check");
     CMD1(CCC_DbgStrDump, "dbg_str_dump");
@@ -1072,6 +1139,8 @@ void CCC_Register()
     CMD3(CCC_Mask, "rs_render_dynamics", &psDeviceFlags, rsDrawDynamic);
 #endif
 
+	CMD3(CCC_Mask, "rs_render_portals", &psDeviceFlags, rsDrawPortals);
+
 	// bone damage modifier
 	CMD4(CCC_Float, "g_hit_pwr_modif", &hit_modifier, .5f, 3.f);
 
@@ -1081,6 +1150,10 @@ void CCC_Register()
 
 	// Render device states
 	CMD4(CCC_Integer, "r__supersample", &ps_r__Supersample, 1, 4);
+
+    CMD4(CCC_Integer, "r_wallmarks_static", &r_wallmarks_static, 0, 1);
+    CMD4(CCC_Integer, "r_wallmarks_dynamic", &r_wallmarks_dynamic, 0, 1);
+    CMD4(CCC_Float, "r_wallmarks_ssa_k", &r_wallmarks_ssa_k, 0.25f, 10.f);
 
 	CMD4(CCC_Float, "r2_sunshafts_min", &ps_r2_sun_shafts_min, 0.0, 0.5);
 	CMD4(CCC_Float, "r2_sunshafts_value", &ps_r2_sun_shafts_value, 0.5, 2.0);
@@ -1226,7 +1299,7 @@ void CCC_Register()
 	CMD2(CCC_Color, "g_crosshair_color", &g_crosshair_color);
 	CMD4(CCC_Float, "mouse_sens_aim", &g_AimLookFactor, 0.01f, 5.0f);
 
-	if (strstr(Core.Params, "-dbgdev"))
+	if (Core.ParamsData.test(ECoreParams::dbgdev))
 		CMD4(CCC_Float, "g_freelook_z_offset_factor", &g_freelook_z_offset, -3.f, 3.f);
 
 	CMD4(CCC_Float, "g_ironsights_zoom_factor", &g_ironsights_factor, 1.f, 2.f);

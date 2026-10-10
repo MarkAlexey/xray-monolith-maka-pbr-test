@@ -3,7 +3,7 @@
 
 #include "net_shared.h"
 #include "NET_Common.h"
-#include <fastdelegate/fastdelegate.h>
+#include "../xrCore/xr_delegate.h"
 
 class IClient;
 
@@ -63,7 +63,7 @@ public:
 		csPlayers.Leave();
 	}
 
-	void ForEachClientDo(fastdelegate::FastDelegate1<IClient*, void>& fast_delegate)
+	void ForEachClientDo(xr_delegate<void(IClient*)>& fast_delegate)
 	{
 		//Msg("-S- Entering to csPlayers [%d]", GetCurrentThreadId());
 		csPlayers.Enter();

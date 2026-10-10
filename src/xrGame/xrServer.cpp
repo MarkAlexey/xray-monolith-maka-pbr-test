@@ -353,7 +353,7 @@ void xrServer::SendUpdatesToAll()
 
 
 	//sending game_update 
-	fastdelegate::FastDelegate1<IClient*, void> sendtofd;
+	xr_delegate<void(IClient*)> sendtofd;
 	sendtofd.bind(this, &xrServer::SendGameUpdateTo);
 	ForEachClientDoSender(sendtofd);
 
@@ -415,14 +415,14 @@ u32 xrServer::OnDelayedMessage(NET_Packet& P, ClientID sender) // Non-Zero means
 				string1024 buff;
 				P.r_stringZ(buff);
 				Msg("* Radmin [%s] is running command: %s", CL->ps->getName(), buff);
-				SetLogCB(console_log_cb);
+				xrLogger::AddLogCallback(console_log_cb);
 				_tmp_log.clear();
 				LPSTR result_command;
 				string64 tmp_number_str;
 				xr_sprintf(tmp_number_str, " raid:%u", CL->ID.value());
 				STRCONCAT(result_command, buff, tmp_number_str);
 				Console->Execute(result_command);
-				SetLogCB(NULL);
+				xrLogger::RemoveLogCallback(console_log_cb);	
 
 				NET_Packet P_answ;
 				for (u32 i = 0; i < _tmp_log.size(); ++i)
@@ -983,9 +983,8 @@ static	BOOL	_ve_use					= TRUE;
 
 bool xrServer::verify_entities				() const
 {
-	if (!_ve_initialized)	{
-		_ve_initialized					= TRUE;
-		if (strstr(Core.Params,"-~ve"))	_ve_use=FALSE;
+	if (!_ve_initialized) {
+		_ve_initialized = TRUE;
 	}
 	if (!_ve_use)						return true;
 

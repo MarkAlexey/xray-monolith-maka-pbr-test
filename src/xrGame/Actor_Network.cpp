@@ -699,7 +699,7 @@ BOOL CActor::net_Spawn(CSE_Abstract* DC)
 	}
 
 
-	spatial.type |= STYPE_REACTTOSOUND;
+	SpatialComponent->spatial.type |= STYPE_REACTTOSOUND;
 	psHUD_Flags.set(HUD_WEAPON_RT,TRUE);
 	psHUD_Flags.set(HUD_WEAPON_RT2,TRUE);
 
@@ -1229,6 +1229,7 @@ int actInterpType = 0;
 
 void CActor::make_Interpolation()
 {
+	PROF_EVENT();
 	m_dwILastUpdateTime = Level().timeServer();
 
 	if (g_Alive() && m_bInInterpolation)
@@ -1934,9 +1935,7 @@ void CActor::OnPlayHeadShotParticle(NET_Packet P)
 	Fmatrix pos;
 	CParticlesPlayer::MakeXFORM(this, element, HitDir, HitPos, pos);
 	//  particles
-	CParticlesObject* ps = NULL;
-
-	ps = CParticlesObject::Create(m_sHeadShotParticle.c_str(),TRUE);
+	intrusive_ptr<CParticlesObject> ps = Particles::Details::Create(m_sHeadShotParticle.c_str(),TRUE);
 
 	ps->UpdateParent(pos, Fvector().set(0.f, 0.f, 0.f));
 	GamePersistent().ps_needtoplay.push_back(ps);

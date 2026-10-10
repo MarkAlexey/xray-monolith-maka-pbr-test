@@ -67,7 +67,7 @@ void CalcGauss_wave(
 
 void CRenderTarget::phase_bloom()
 {
-	PIX_EVENT(phase_bloom);
+	PIX_EVENT_C(phase_bloom, dx10_marker_post);
 	u32 Offset;
 
 	// Targets

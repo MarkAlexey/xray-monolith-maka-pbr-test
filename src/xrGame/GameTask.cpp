@@ -20,11 +20,9 @@
 #include "ui/uitexturemaster.h"
 
 
-CGameTask::CGameTask()
+CGameTask::CGameTask() :
+	m_map_object_id(0), m_TimeToComplete(0), m_priority(0)
 {
-	m_map_object_id = 0;
-	m_TimeToComplete = 0;
-	m_priority = 0;
 	m_ReceiveTime = 0;
 	m_FinishTime = 0;
 	m_timer_finish = 0;
@@ -141,6 +139,7 @@ void CGameTask::ChangeStateCallback()
 
 ETaskState CGameTask::UpdateState()
 {
+	PROF_EVENT("CGameTask::UpdateState");
 	if ((m_ReceiveTime != m_TimeToComplete))
 	{
 		if (Level().GetGameTime() > m_TimeToComplete)
@@ -148,24 +147,26 @@ ETaskState CGameTask::UpdateState()
 			return eTaskStateFail;
 		}
 	}
-	//check fail infos
-	if (CheckInfo(m_failInfos))
-		return eTaskStateFail;
-
-	//check fail functor
-	if (CheckFunctions(m_fail_lua_functions))
-		return eTaskStateFail;
-
-	//check complete infos
-	if (CheckInfo(m_completeInfos))
-		return eTaskStateCompleted;
-
-
-	//check complete functor
-	if (CheckFunctions(m_complete_lua_functions))
-		return eTaskStateCompleted;
-
-
+	{
+		PROF_EVENT("check fail infos");
+		if (CheckInfo(m_failInfos))
+			return eTaskStateFail;
+	}
+	{
+		PROF_EVENT("check fail functor");
+		if (CheckFunctions(m_fail_lua_functions))
+			return eTaskStateFail;
+	}
+	{
+		PROF_EVENT("check complete infos");
+		if (CheckInfo(m_completeInfos))
+			return eTaskStateCompleted;
+	}
+	{
+		PROF_EVENT("check complete functor");
+		if (CheckFunctions(m_complete_lua_functions))
+			return eTaskStateCompleted;
+	}
 	return GetTaskState();
 }
 

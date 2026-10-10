@@ -36,22 +36,21 @@ static u32 init_counter = 0;
 extern int get_modded_exes_version();
 extern xr_string get_modded_exes_version_string();
 extern LPCSTR get_modded_exes_name();
-extern std::string timeInDMYHMSMMM();
+extern xr_string timeInDMYHMSMMM();
 
-void xrCore::_initialize(LPCSTR _ApplicationName, LogCallback cb, BOOL init_fs, LPCSTR fs_fname)
+void xrCore::_initialize(LPCSTR _ApplicationName, xrLogger::LogCallback cb, BOOL init_fs, LPCSTR fs_fname)
 {
+	PROF_EVENT("xrCore::_initialize");
 	xr_strcpy(ApplicationName, _ApplicationName);
 	if (0 == init_counter)
 	{
 #ifdef XRCORE_STATIC
-        _clear87();
-        _control87(_PC_53, MCW_PC);
-        _control87(_RC_CHOP, MCW_RC);
-        _control87(_RC_NEAR, MCW_RC);
-        _control87(_MCW_EM, MCW_EM);
+		_clear87();
+		_control87(_PC_53, MCW_PC);
+		_control87(_RC_CHOP, MCW_RC);
+		_control87(_RC_NEAR, MCW_RC);
+		_control87(_MCW_EM, MCW_EM);
 #endif
-		// Init COM so we can use CoCreateInstance
-		// HRESULT co_res =
 		Params = xr_strdup(GetCommandLine());
 		xr_strlwr(Params);
 		if (!strstr(Params, "-editor"))
@@ -63,20 +62,6 @@ void xrCore::_initialize(LPCSTR _ApplicationName, LogCallback cb, BOOL init_fs, 
 		GetModuleFileName(GetModuleHandle(MODULE_NAME), fn, sizeof(fn));
 		_splitpath(fn, dr, di, 0, 0);
 		strconcat(sizeof(ApplicationPath), ApplicationPath, dr, di);
-
-#ifndef _EDITOR
-		//        xr_strcpy(g_application_path, sizeof(g_application_path), ApplicationPath);
-#endif
-
-#ifdef _EDITOR
-        // working path
-        if (strstr(Params, "-wf"))
-        {
-            string_path c_name;
-            sscanf(strstr(Core.Params, "-wf ") + 4, "%[^ ] ", c_name);
-            SetCurrentDirectory(c_name);
-        }
-#endif
 
 		GetCurrentDirectory(sizeof(WorkingPath), WorkingPath);
 
@@ -90,14 +75,12 @@ void xrCore::_initialize(LPCSTR _ApplicationName, LogCallback cb, BOOL init_fs, 
 		// Mathematics & PSI detection
 		CPU::Detect();
 
-		Memory._initialize(strstr(Params, "-mem_debug") ? TRUE : FALSE);
+		Memory._initialize(Core.ParamsData.test(ECoreParams::mem_debug));
 
 		DUMP_PHASE;
 
-		InitLog();
+		xrLogger::InitLog();
 		_initialize_cpu();
-
-		// Debug._initialize ();
 
 		rtc_initialize();
 
@@ -140,26 +123,20 @@ void xrCore::_initialize(LPCSTR _ApplicationName, LogCallback cb, BOOL init_fs, 
 			Params = xr_strdup(temp);
 		}
 		cmdlineTxt.close();
+
+		xrParams::LoadParams();
 	}
 	if (init_fs)
 	{
 		u32 flags = 0;
-		if (0 != strstr(Params, "-build")) flags |= CLocatorAPI::flBuildCopy;
-		if (0 != strstr(Params, "-ebuild")) flags |= CLocatorAPI::flBuildCopy | CLocatorAPI::flEBuildCopy;
-#ifdef DEBUG
-        if (strstr(Params, "-cache")) flags |= CLocatorAPI::flCacheFiles;
-        else flags &= ~CLocatorAPI::flCacheFiles;
-#endif // DEBUG
+		if (Core.ParamsData.test(ECoreParams::build))
+			flags |= CLocatorAPI::flBuildCopy;
+		if (Core.ParamsData.test(ECoreParams::ebuild))
+			flags |= CLocatorAPI::flBuildCopy | CLocatorAPI::flEBuildCopy;
 #ifdef _EDITOR // for EDITORS - no cache
-        flags &= ~CLocatorAPI::flCacheFiles;
+		flags &= ~CLocatorAPI::flCacheFiles;
 #endif // _EDITOR
 		flags |= CLocatorAPI::flScanAppRoot;
-
-#ifndef _EDITOR
-#ifndef ELocatorAPIH
-		if (0 != strstr(Params, "-file_activity")) flags |= CLocatorAPI::flDumpFileActivity;
-#endif
-#endif
 		FS._initialize(flags, 0, fs_fname);
 		Msg("'%s' build %d, %s\n", "xrCore", build_id, build_date);
 
@@ -169,11 +146,11 @@ void xrCore::_initialize(LPCSTR _ApplicationName, LogCallback cb, BOOL init_fs, 
 		EFS._initialize();
 #ifdef DEBUG
 #ifndef _EDITOR
-        Msg("Process heap 0x%08x", GetProcessHeap());
+		Msg("Process heap 0x%08x", GetProcessHeap());
 #endif
 #endif // DEBUG
 	}
-	SetLogCB(cb);
+	xrLogger::AddLogCallback(cb);
 	init_counter++;
 }
 

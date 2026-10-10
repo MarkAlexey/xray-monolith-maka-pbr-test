@@ -73,6 +73,7 @@ BOOL reclaim(xr_vector<T*>& vec, const T* ptr)
 SState* CResourceManager::_CreateState(SimulatorStates& state_code)
 {
 	xrCriticalSectionGuard guard(creationGuard);
+
 	// Search equal state-code 
 	for (u32 it = 0; it < v_states.size(); it++)
 	{
@@ -143,13 +144,15 @@ void CResourceManager::_DeletePass(const SPass* P)
 SVS* CResourceManager::_CreateVS(LPCSTR _name)
 {
 	xrCriticalSectionGuard guard(creationGuard);
-	string_path name;
-	xr_strcpy(name, _name);
-	if (0 == ::Render->m_skinning) xr_strcat(name, "_0");
-	if (1 == ::Render->m_skinning) xr_strcat(name, "_1");
-	if (2 == ::Render->m_skinning) xr_strcat(name, "_2");
-	if (3 == ::Render->m_skinning) xr_strcat(name, "_3");
-	if (4 == ::Render->m_skinning) xr_strcat(name, "_4");
+	xr_string res_name = _name;
+
+	const int m_skinning = Engine.External.GetSkinningMode();
+	if (m_skinning > 0)
+	{
+		res_name += "_" + xr_string::ToString(m_skinning);
+	}
+
+	LPCSTR name = res_name.c_str();
 	LPSTR N = LPSTR(name);
 	map_VS::iterator I = m_vs.find(N);
 	if (I != m_vs.end()) return I->second;
@@ -488,13 +491,20 @@ void CResourceManager::_DeleteDecl(const SDeclaration* dcl)
 //--------------------------------------------------------------------------------------------------------------
 R_constant_table* CResourceManager::_CreateConstantTable(R_constant_table& C)
 {
+	if (C.empty())		return NULL;
+
 	xrCriticalSectionGuard guard(creationGuard);
-	if (C.empty()) return NULL;
 
 	for (u32 it = 0; it < v_constant_tables.size(); it++)
-		if (v_constant_tables[it]->equal(C)) return v_constant_tables[it];
-	v_constant_tables.push_back(xr_new<R_constant_table>(C));
-	v_constant_tables.back()->dwFlags |= xr_resource_flagged::RF_REGISTERED;
+		if (v_constant_tables[it]->equal(C))
+			return v_constant_tables[it];
+
+	auto NewElem = xr_new<R_constant_table>(C);
+	//NewElem->_copy(C);
+	NewElem->dwFlags |= xr_resource_flagged::RF_REGISTERED;
+	v_constant_tables.push_back(NewElem);
+	return NewElem;
+
 	return v_constant_tables.back();
 }
 
@@ -537,8 +547,8 @@ CRT* CResourceManager::_CreateRT(LPCSTR Name, u32 w, u32 h, D3DFORMAT f, u32 Sam
 void CResourceManager::_DeleteRT(const CRT* RT)
 {
 	if (0 == (RT->dwFlags & xr_resource_flagged::RF_REGISTERED)) return;
-	xrCriticalSectionGuard guard(creationGuard);
 	LPSTR N = LPSTR(*RT->cName);
+	xrCriticalSectionGuard guard(creationGuard);
 	map_RT::iterator I = m_rtargets.find(N);
 	if (I != m_rtargets.end())
 	{
@@ -548,37 +558,6 @@ void CResourceManager::_DeleteRT(const CRT* RT)
 	Msg("! ERROR: Failed to find render-target '%s'", *RT->cName);
 }
 
-/*	//	DX10 cut 
-//--------------------------------------------------------------------------------------------------------------
-CRTC*	CResourceManager::_CreateRTC		(LPCSTR Name, u32 size,	D3DFORMAT f)
-{
-	R_ASSERT(Name && Name[0] && size);
-
-	// ***** first pass - search already created RTC
-	LPSTR N = LPSTR(Name);
-	map_RTC::iterator I = m_rtargets_c.find	(N);
-	if (I!=m_rtargets_c.end())	return I->second;
-	else
-	{
-		CRTC *RT				=	xr_new<CRTC>();
-		RT->dwFlags				|=	xr_resource_flagged::RF_REGISTERED;
-		m_rtargets_c.insert		(mk_pair(RT->set_name(Name),RT));
-		if (Device.b_is_Ready)	RT->create	(Name,size,f);
-		return					RT;
-	}
-}
-void	CResourceManager::_DeleteRTC		(const CRTC* RT)
-{
-	if (0==(RT->dwFlags&xr_resource_flagged::RF_REGISTERED))	return;
-	LPSTR N				= LPSTR		(*RT->cName);
-	map_RTC::iterator I	= m_rtargets_c.find	(N);
-	if (I!=m_rtargets_c.end())	{
-		m_rtargets_c.erase(I);
-		return;
-	}
-	Msg	("! ERROR: Failed to find render-target '%s'",*RT->cName);
-}
-*/
 //--------------------------------------------------------------------------------------------------------------
 void CResourceManager::DBG_VerifyGeoms()
 {
@@ -624,8 +603,8 @@ SGeometry* CResourceManager::CreateGeom(D3DVERTEXELEMENT9* decl, ID3DVertexBuffe
 
 SGeometry* CResourceManager::CreateGeom(u32 FVF, ID3DVertexBuffer* vb, ID3DIndexBuffer* ib)
 {
-	xrCriticalSectionGuard guard(creationGuard);
 	D3DVERTEXELEMENT9 dcl [MAX_FVF_DECL_SIZE];
+	xrCriticalSectionGuard guard(creationGuard);
 	CHK_DX(D3DXDeclaratorFromFVF(FVF,dcl));
 	SGeometry* g = CreateGeom(dcl, vb, ib);
 	return g;
@@ -640,16 +619,18 @@ void CResourceManager::DeleteGeom(const SGeometry* Geom)
 }
 
 //--------------------------------------------------------------------------------------------------------------
+xr_task_group textures_load_tasks;
 CTexture* CResourceManager::_CreateTexture(LPCSTR _Name)
 {
+	PROF_EVENT("_CreateTexture");
 	// DBG_VerifyTextures	();
 	if (0 == xr_strcmp(_Name, "null")) return 0;
 	//Msg("texture %s", _Name);
 	R_ASSERT(_Name && _Name[0]);
 	string_path Name;
 	xr_strcpy(Name, _Name); //. andy if (strext(Name)) *strext(Name)=0;
-	fix_texture_name(Name);
 	xrCriticalSectionGuard guard(creationGuard);
+	fix_texture_name(Name);
 	// ***** first pass - search already loaded texture
 	LPSTR N = LPSTR(Name);
 	map_TextureIt I = m_textures.find(N);
@@ -660,7 +641,16 @@ CTexture* CResourceManager::_CreateTexture(LPCSTR _Name)
 		T->dwFlags |= xr_resource_flagged::RF_REGISTERED;
 		m_textures.insert(mk_pair(T->set_name(Name), T));
 		T->Preload();
-		if (Device.b_is_Ready && !bDeferredLoad) T->Load();
+		if (Device.b_is_Ready)
+		{
+			static DWORD this_thread_id = 0;
+			this_thread_id = GetCurrentThreadId();
+			textures_load_tasks.run([=]()
+			{
+				if (this_thread_id != GetCurrentThreadId()) { PROF_THREAD("X-Ray PPL Thread") }
+				T->Load();
+			});
+		}
 		return T;
 	}
 }
@@ -702,8 +692,8 @@ CMatrix* CResourceManager::_CreateMatrix(LPCSTR Name)
 	R_ASSERT(Name && Name[0]);
 	if (0 == stricmp(Name, "$null")) return NULL;
 
-	xrCriticalSectionGuard guard(creationGuard);
 	LPSTR N = LPSTR(Name);
+	xrCriticalSectionGuard guard(creationGuard);
 	map_Matrix::iterator I = m_matrices.find(N);
 	if (I != m_matrices.end()) return I->second;
 	else
@@ -730,20 +720,14 @@ void CResourceManager::_DeleteMatrix(const CMatrix* M)
 	Msg("! ERROR: Failed to find xform-def '%s'", *M->cName);
 }
 
-void CResourceManager::ED_UpdateMatrix(LPCSTR Name, CMatrix* data)
-{
-	CMatrix* M = _CreateMatrix(Name);
-	*M = *data;
-}
-
 //--------------------------------------------------------------------------------------------------------------
 CConstant* CResourceManager::_CreateConstant(LPCSTR Name)
 {
 	R_ASSERT(Name && Name[0]);
 	if (0 == stricmp(Name, "$null")) return NULL;
 
-	xrCriticalSectionGuard guard(creationGuard);
 	LPSTR N = LPSTR(Name);
+	xrCriticalSectionGuard guard(creationGuard);
 	map_Constant::iterator I = m_constants.find(N);
 	if (I != m_constants.end()) return I->second;
 	else
@@ -770,12 +754,6 @@ void CResourceManager::_DeleteConstant(const CConstant* C)
 	Msg("! ERROR: Failed to find R1-constant-def '%s'", *C->cName);
 }
 
-void CResourceManager::ED_UpdateConstant(LPCSTR Name, CConstant* data)
-{
-	CConstant* C = _CreateConstant(Name);
-	*C = *data;
-}
-
 //--------------------------------------------------------------------------------------------------------------
 bool cmp_tl(const std::pair<u32, ref_texture>& _1, const std::pair<u32, ref_texture>& _2)
 {
@@ -792,7 +770,9 @@ STextureList* CResourceManager::_CreateTextureList(STextureList& L)
 		if (L.equal(*base)) return base;
 	}
 	STextureList* lst = xr_new<STextureList>(L);
+	//lst->_copy(L);
 	lst->dwFlags |= xr_resource_flagged::RF_REGISTERED;
+
 	lst_textures.push_back(lst);
 	return lst;
 }
@@ -818,12 +798,15 @@ SMatrixList* CResourceManager::_CreateMatrixList(SMatrixList& L)
 	if (bEmpty) return NULL;
 
 	xrCriticalSectionGuard guard(creationGuard);
+
 	for (u32 it = 0; it < lst_matrices.size(); it++)
 	{
 		SMatrixList* base = lst_matrices[it];
 		if (L.equal(*base)) return base;
 	}
 	SMatrixList* lst = xr_new<SMatrixList>(L);
+	//lst->_copy(L);
+
 	lst->dwFlags |= xr_resource_flagged::RF_REGISTERED;
 	lst_matrices.push_back(lst);
 	return lst;
@@ -850,12 +833,15 @@ SConstantList* CResourceManager::_CreateConstantList(SConstantList& L)
 	if (bEmpty) return NULL;
 
 	xrCriticalSectionGuard guard(creationGuard);
+
 	for (u32 it = 0; it < lst_constants.size(); it++)
 	{
 		SConstantList* base = lst_constants[it];
 		if (L.equal(*base)) return base;
 	}
 	SConstantList* lst = xr_new<SConstantList>(L);
+	//lst->_copy(L);
+
 	lst->dwFlags |= xr_resource_flagged::RF_REGISTERED;
 	lst_constants.push_back(lst);
 	return lst;

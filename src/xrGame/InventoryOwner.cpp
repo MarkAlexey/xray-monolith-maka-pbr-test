@@ -27,6 +27,7 @@
 #include "CustomOutfit.h"
 #include "Bolt.h"
 #include "string_table.h"
+#include "map_manager.h"
 
 CInventoryOwner::CInventoryOwner()
 {
@@ -172,6 +173,8 @@ void CInventoryOwner::net_Destroy()
 
 	inventory().Clear();
 	inventory().SetActiveSlot(NO_ACTIVE_SLOT);
+
+	Level().MapManager().RemoveRelationLocation(this);
 }
 
 void CInventoryOwner::save(NET_Packet& output_packet)
@@ -323,12 +326,12 @@ bool CInventoryOwner::IsTrading()
 }
 
 //==============
-void CInventoryOwner::renderable_Render()
+void CInventoryOwner::renderable_Render		(IDSGraphManager* DM)
 {
 	if (inventory().ActiveItem())
-		inventory().ActiveItem()->renderable_Render();
+		inventory().ActiveItem()->renderable_Render(DM);
 
-	CAttachmentOwner::renderable_Render();
+	CAttachmentOwner::renderable_Render(DM);
 }
 
 void CInventoryOwner::OnItemTake(CInventoryItem* inventory_item)

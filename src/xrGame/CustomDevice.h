@@ -25,6 +25,8 @@ public:
 	virtual void shedule_Update(u32 dt);
 	virtual void UpdateCL();
 
+	virtual CCustomDevice* cast_custom_device() { return this; }
+
 	enum EDeviceStates
 	{
 		eIdleZoom = 5,

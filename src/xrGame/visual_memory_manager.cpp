@@ -331,7 +331,7 @@ float CVisualMemoryManager::get_object_velocity(const CGameObject* game_object,
                                                 const CNotYetVisibleObject& not_yet_visible_object) const
 {
 	//Alundaio: no need to check velocity on anything but stalkers, mutants and actor
-	if (!smart_cast<CEntityAlive const*>(game_object))
+	if (!const_cast<CGameObject*>(game_object)->cast_entity_alive())
 		return (0.f);
 	//-Alundaio
 
@@ -394,7 +394,13 @@ CNotYetVisibleObject* CVisualMemoryManager::not_yet_visible_object(const CGameOb
 
 void CVisualMemoryManager::add_not_yet_visible_object(const CNotYetVisibleObject& not_yet_visible_object)
 {
-	m_not_yet_visible_objects.push_back(not_yet_visible_object);
+    xr_vector<CNotYetVisibleObject>::iterator I = std::find_if(
+        m_not_yet_visible_objects.begin(),
+        m_not_yet_visible_objects.end(),
+        CNotYetVisibleObjectPredicate(not_yet_visible_object.m_object)
+    );
+    if (I == m_not_yet_visible_objects.end())
+        m_not_yet_visible_objects.push_back(not_yet_visible_object);
 }
 
 u32 CVisualMemoryManager::get_prev_time(const CGameObject* game_object) const
@@ -658,8 +664,8 @@ struct CVisibleObjectPredicateEx
 
 void CVisualMemoryManager::remove_links(CObject* object)
 {
+	if (m_objects)
 	{
-		VERIFY(m_objects);
 		VISIBLES::iterator I = std::find_if(m_objects->begin(), m_objects->end(), CVisibleObjectPredicateEx(object));
 		if (I != m_objects->end())
 			m_objects->erase(I);
@@ -674,6 +680,9 @@ void CVisualMemoryManager::remove_links(CObject* object)
 
 CVisibleObject* CVisualMemoryManager::visible_object(const CGameObject* game_object)
 {
+    if (!m_objects)
+        return nullptr;
+
 	VISIBLES::iterator I = std::find_if(m_objects->begin(), m_objects->end(), CVisibleObjectPredicateEx(game_object));
 	if (I == m_objects->end())
 		return (0);
@@ -698,8 +707,10 @@ void CVisualMemoryManager::update(float time_delta)
 
 		m_last_update_time = Device.dwTimeGlobal;
 
+        if (!m_objects)
+            return;
+
 		squad_mask_type mask = this->mask();
-		VERIFY(m_objects);
 		m_visible_objects.clear();
 
 		START_PROFILE("Memory Manager/visuals/update/feel_vision_get")

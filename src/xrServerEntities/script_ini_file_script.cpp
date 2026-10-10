@@ -27,7 +27,7 @@ CScriptIniFile* reload_system_ini()
 	pSettings->Destroy(const_cast<CInifile*>(pSettings));
 	string_path fname;
 	FS.update_path(fname, "$game_config$", "system.ltx");
-	CInifile::InvalidateCache(fname);
+	CInifile::InvalidateCache();
 	pSettings = xr_new<CInifile>(fname);
 	return ((CScriptIniFile*)pSettings);
 }
@@ -125,7 +125,7 @@ int get_modded_exes_version() {
 }
 
 LPCSTR get_modded_exes_name() {
-	shared_str result = "Modded Exes";
+	shared_str result = "Modded Exes MT-TEST";
 	return result.c_str();
 }
 

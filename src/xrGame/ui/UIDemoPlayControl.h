@@ -39,6 +39,9 @@ public:
 
 	void xr_stdcall OnRewindTypeSelected(CUIWindow* w, void* d);
 	void xr_stdcall OnRewindPlayerSelected(CUIWindow* w, void* d);
+
+	virtual CUIWindow* ui_cast_window() { return this; }
+
 private:
 	void StopRewind();
 	void UIStartRewind();

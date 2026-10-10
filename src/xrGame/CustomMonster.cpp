@@ -323,6 +323,7 @@ void CCustomMonster::net_Import(NET_Packet& P)
 
 void CCustomMonster::shedule_Update(u32 DT)
 {
+	PROF_EVENT("CCustomMonster::shedule_Update");
 	VERIFY(!g_Alive() || processing_enabled());
 	// Queue shrink
 	VERIFY(_valid(Position()));
@@ -331,22 +332,13 @@ void CCustomMonster::shedule_Update(u32 DT)
 	while ((NET.size() > 2) && (NET[1].dwTimeStamp < dwTimeCL)) NET.pop_front();
 
 	float dt = float(DT) / 1000.f;
+
+    CScriptEntity::process_sound_callbacks();
+
 	// *** general stuff
 	if (g_Alive())
 	{
-		if (false && g_mt_config.test(mtAiVision))
-#ifndef DEBUG
-			Device.seqParallel.push_back(fastdelegate::FastDelegate0<>(this, &CCustomMonster::Exec_Visibility));
-#else // DEBUG
-		{
-			if (!psAI_Flags.test(aiStalker) || !!smart_cast<CActor*>(Level().CurrentEntity()))
-				Device.seqParallel.push_back(fastdelegate::FastDelegate0<>(this,&CCustomMonster::Exec_Visibility));
-			else
-				Exec_Visibility				();
-		}
-#endif // DEBUG
-		else
-			Exec_Visibility();
+		Exec_Visibility();
 		memory().update(dt);
 	}
 	inherited::shedule_Update(DT);
@@ -430,6 +422,7 @@ void CCustomMonster::net_update::lerp(CCustomMonster::net_update& A, CCustomMons
 
 void CCustomMonster::update_sound_player()
 {
+	PROF_EVENT("AI: [Monsters] Update sounds");
 	sound().update(client_update_fdelta());
 }
 
@@ -453,8 +446,6 @@ void CCustomMonster::UpdateCL()
 				animation_movement()->DBG_verify_position_not_chaged();
 #endif
 
-		CScriptEntity::process_sound_callbacks();
-
 		/*	//. hack just to skip 'CalculateBones'
 		if (sound().need_bone_data()) {
 			// we do this because we know here would be virtual function call
@@ -465,7 +456,7 @@ void CCustomMonster::UpdateCL()
 		*/
 
 		if (g_mt_config.test(mtSoundPlayer))
-			Device.seqParallel.push_back(fastdelegate::FastDelegate0<>(this, &CCustomMonster::update_sound_player));
+			Device.seqParallel.push_back(xr_make_delegate(this, &CCustomMonster::update_sound_player));
 		else
 		{
 			START_PROFILE("CustomMonster/client_update/sound_player")
@@ -586,6 +577,8 @@ void CCustomMonster::UpdatePositionAnimation()
 		if (!bfScriptAnimation())
 			SelectAnimation(XFORM().k, movement().detail().direction(), movement().speed());
 	STOP_PROFILE
+
+	eye_pp_s0();
 }
 
 BOOL CCustomMonster::feel_visible_isRelevant(CObject* O)
@@ -600,7 +593,7 @@ void CCustomMonster::eye_pp_s0()
 {
 	// Eye matrix
 	IKinematics* V = smart_cast<IKinematics*>(Visual());
-	V->CalculateBones();
+	//V->CalculateBones();
 	Fmatrix& mEye = V->LL_GetTransform(u16(eye_bone));
 	Fmatrix X;
 	X.mul_43(XFORM(), mEye);
@@ -632,7 +625,8 @@ void CCustomMonster::update_range_fov(float& new_range, float& new_fov, float st
 
 	float current_fog_density = GamePersistent().Environment().CurrentEnv->fog_density;
 	// 0=no_fog, 1=full_fog, >1 = super-fog
-	float current_far_plane = GamePersistent().Environment().CurrentEnv->far_plane;
+#pragma todo("v2v3v4: Let's see, maybe it will stay like this because it's much cheaper and more logical.")
+	float current_far_plane = ai().get_alife() ? ai().alife().online_distance() : GamePersistent().Environment().CurrentEnv->far_plane;
 	// 300=standart, 50=super-fog
 
 #ifdef HOLDERCUSTOM_NEW
@@ -686,7 +680,7 @@ void CCustomMonster::eye_pp_s1()
 	VERIFY(_valid(eye_matrix));
 	mProject.build_projection(deg2rad(new_fov), 1, 0.1f, new_range);
 	mFull.mul(mProject, mView);
-	feel_vision_query(mFull, eye_matrix.c);
+	feel_vision_query(mFull);
 	Device.Statistic->AI_Vis_Query.End();
 }
 
@@ -697,20 +691,29 @@ void CCustomMonster::eye_pp_s2()
 	u32 dwTime = Level().timeServer();
 	u32 dwDT = dwTime - eye_pp_timestamp;
 	eye_pp_timestamp = dwTime;
-	feel_vision_update(this, eye_matrix.c, float(dwDT) / 1000.f, memory().visual().transparency_threshold());
+	static DWORD this_thread_id = 0;
+	this_thread_id = GetCurrentThreadId();
+	Device.secondary_tasks.run([=]()
+	{
+		if (this_thread_id != GetCurrentThreadId()) { PROF_THREAD("X-Ray PPL Thread") }
+		feel_vision_update(eye_matrix.c,float(dwDT)/1000.f,memory().visual().transparency_threshold());
+
+	});
 	Device.Statistic->AI_Vis_RayTests.End();
 }
 
 void CCustomMonster::Exec_Visibility()
 {
+	PROF_EVENT("AI: Exec_Visibility");
 	//if (0==Sector())				return;
 	if (!g_Alive()) return;
+
+	PROF_EVENT("stalker/schedule_update/vision/Exec_Visibility")
 
 	Device.Statistic->AI_Vis.Begin();
 	switch (eye_pp_stage % 2)
 	{
 	case 0:
-		eye_pp_s0();
 		eye_pp_s1();
 		break;
 	case 1: eye_pp_s2();
@@ -748,14 +751,9 @@ BOOL CCustomMonster::net_Spawn(CSE_Abstract* DC)
 	if (!movement().net_Spawn(DC) || !inherited::net_Spawn(DC) || !CScriptEntity::net_Spawn(DC))
 		return (FALSE);
 
-	ISpatial* self = smart_cast<ISpatial*>(this);
-	if (self)
-	{
-		self->spatial.type |= STYPE_VISIBLEFORAI;
-		// enable react to sound only if alive
-		if (g_Alive())
-			self->spatial.type |= STYPE_REACTTOSOUND;
-	}
+	SpatialComponent->spatial.type |= STYPE_VISIBLEFORAI;
+	if (g_Alive())
+		SpatialComponent->spatial.type |= STYPE_REACTTOSOUND;
 
 	CSE_Abstract* e = (CSE_Abstract*)(DC);
 	CSE_ALifeMonsterAbstract* E = smart_cast<CSE_ALifeMonsterAbstract*>(e);
@@ -836,7 +834,7 @@ BOOL CCustomMonster::net_Spawn(CSE_Abstract* DC)
 }
 
 #ifdef DEBUG
-void CCustomMonster::OnHUDDraw(CCustomHUD *hud)
+void CCustomMonster::OnHUDDraw(CCustomHUD *hud, IDSGraphManager* DM)
 {
 }
 #endif
@@ -865,18 +863,11 @@ void CCustomMonster::net_Destroy()
 	movement().net_Destroy();
 
 	Device.remove_from_seq_parallel(
-		fastdelegate::FastDelegate0<>(
+		xr_make_delegate(
 			this,
 			&CCustomMonster::update_sound_player
 		)
 	);
-	Device.remove_from_seq_parallel(
-		fastdelegate::FastDelegate0<>(
-			this,
-			&CCustomMonster::Exec_Visibility
-		)
-	);
-
 #ifdef DEBUG
 	DBG().on_destroy_object(this);
 #endif
@@ -1434,20 +1425,5 @@ void CCustomMonster::ForceTransform(const Fmatrix& m)
 
 Fvector CCustomMonster::spatial_sector_point()
 {
-	//if ( g_Alive() )
-	//	return						inherited::spatial_sector_point( );
-
-	//if ( !animation_movement() )
-	return inherited::spatial_sector_point().add(Fvector().set(0.f, Radius() * .5f, 0.f));
-
-	//IKinematics* const kinematics	= smart_cast<IKinematics*>(Visual());
-	//VERIFY							(kinematics);
-	//u16 const root_bone_id			= kinematics->LL_BoneID("bip01_spine");
-
-	//Fmatrix local;
-	//kinematics->Bone_GetAnimPos		( local, root_bone_id, u8(-1), false );
-
-	//Fmatrix result;
-	//result.mul_43					( XFORM(), local );
-	//return							result.c;
+	return ISpatialOwner::spatial_sector_point().add(Fvector().set(0.f, Radius() * .5f, 0.f));
 }

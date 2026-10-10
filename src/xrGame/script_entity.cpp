@@ -14,7 +14,6 @@
 #include "../Include/xrRender/Kinematics.h"
 #include "script_entity_action.h"
 #include "weapon.h"
-#include "ParticlesObject.h"
 #include "script_game_object.h"
 #include "script_engine.h"
 #include "movement_manager_space.h"
@@ -205,6 +204,9 @@ void __stdcall ActionCallback(IKinematics* tpKinematics)
 	if (!tpKinematics)
 		return;
 
+	if (!tpKinematics->GetUpdateCallbackParam())
+		return;
+
 	// sounds
 	CScriptEntity* l_tpScriptMonster = smart_cast<CScriptEntity*>(
 		(CGameObject*)(tpKinematics->GetUpdateCallbackParam()));
@@ -224,7 +226,11 @@ void __stdcall ActionCallback(IKinematics* tpKinematics)
 		l_tpScriptMonster->vfUpdateSounds();
 		l_tpScriptMonster->vfUpdateParticles();
 	}
-	catch(...)
+	catch (std::exception& e)
+	{
+		Msg("ActionCallback error: %s", e.what());
+	}
+	catch (...)
 	{
 
 	}
@@ -233,10 +239,12 @@ void __stdcall ActionCallback(IKinematics* tpKinematics)
 
 void CScriptEntity::vfUpdateParticles()
 {
+	if (!GetCurrentAction())
+		return;
 	CScriptParticleAction& l_tParticleAction = GetCurrentAction()->m_tParticleAction;
 	if (xr_strlen(l_tParticleAction.m_caBoneName))
 	{
-		CParticlesObject* l_tpParticlesObject = l_tParticleAction.m_tpParticleSystem;
+		intrusive_ptr<CParticlesObject> l_tpParticlesObject = l_tParticleAction.m_tpParticleSystem;
 		l_tpParticlesObject->UpdateParent(
 			GetUpdatedMatrix(l_tParticleAction.m_caBoneName, l_tParticleAction.m_tParticlePosition,
 			                 l_tParticleAction.m_tParticleAngles), l_tParticleAction.m_tParticleVelocity);
@@ -260,7 +268,7 @@ void CScriptEntity::vfFinishAction(CScriptEntityAction* tpEntityAction)
 		xr_delete(m_current_sound);
 	}
 	if (!tpEntityAction->m_tParticleAction.m_bAutoRemove)
-		CParticlesObject::Destroy(tpEntityAction->m_tParticleAction.m_tpParticleSystem);
+		Particles::Details::Destroy(tpEntityAction->m_tParticleAction.m_tpParticleSystem);
 }
 
 void CScriptEntity::ProcessScripts()
@@ -631,7 +639,10 @@ BOOL CScriptEntity::net_Spawn(CSE_Abstract* DC)
 void CScriptEntity::shedule_Update(u32 DT)
 {
 	if (m_bScriptControl)
+	{
+		PROF_EVENT("CScriptEntity::shedule_Update");
 		ProcessScripts();
+	}
 }
 
 void ScriptCallBack(CBlend* B)
@@ -704,6 +715,7 @@ bool CScriptEntity::bfScriptAnimation()
 
 void CScriptEntity::UpdateCL()
 {
+	PROF_EVENT("CScriptEntity::UpdateCL");
 	bfScriptAnimation();
 }
 
@@ -719,6 +731,7 @@ const CScriptEntityAction* CScriptEntity::GetActionByIndex(u32 action_index) con
 
 void CScriptEntity::sound_callback(const CObject* object, int sound_type, const Fvector& position, float sound_power)
 {
+	PROF_EVENT("IGame_Level::SoundEvent_Dispatch");
 	if (!smart_cast<const CGameObject*>(object))
 		return;
 
@@ -752,10 +765,12 @@ int CScriptEntity::get_enemy_strength()
 
 void CScriptEntity::process_sound_callbacks()
 {
+	PROF_EVENT("CScriptEntity::process_sound_callbacks");
 	xr_vector<CSavedSound>::const_iterator I = m_saved_sounds.begin();
 	xr_vector<CSavedSound>::const_iterator E = m_saved_sounds.end();
 	for (; I != E; ++I)
 	{
+		PROF_EVENT("suund_lua_call");
 		object().callback(GameObject::eSound)(
 			object().lua_game_object(),
 			(*I).m_game_object_id,

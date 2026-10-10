@@ -244,8 +244,8 @@ void CGameMtlLibrary::Load()
 		for (const auto& sec : materialsLtx->sections()) {
 			SGameMtlPair* M;
 			
-			std::string secStr = sec.Name.c_str();
-			auto materials = splitStringMulti(secStr, "@", false, true);
+			xr_string secStr = sec.Name.c_str();
+			auto materials = secStr.SplitStringMulti("@", false, true);
 			if (materials.size() < 2) {
 				Msg("![material_pairs.ltx] encountered wrongly defined pair %s, two materials are required", secStr.c_str());
 				continue;

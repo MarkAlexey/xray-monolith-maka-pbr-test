@@ -108,7 +108,7 @@ public:
 
 class CLevel;
 
-class CBulletManager
+class CBulletManager : private pure_relcase
 {
 private:
 	static float const parent_ignore_distance;
@@ -149,10 +149,9 @@ protected:
 	RStringVec m_ExplodeParticles;
 
 	//список пуль находящихся в данный момент на уровне
-	//.	xrCriticalSection		m_Lock				;
+	xrCriticalSection		m_Lock				;
 
 	BulletVec m_Bullets; // working set, locked
-	BulletVec m_BulletsRendered; // copy for rendering
 	xr_vector<_event> m_Events;
 
 #ifdef DEBUG
@@ -251,11 +250,11 @@ public:
 	               bool SendHit, bool AimBullet = false, int iShotNum = 0);
 
 	void CommitEvents(); // @ the start of frame
-	void CommitRenderSet(); // @ the end of frame
 	void Render();
+    void __stdcall net_Relcase(CObject* obj);
 
 #ifdef CBULLETMANAGER_EX
-    bool ValidateHitDynamicVisualMesh(SBullet& B, collide::rq_result& R, Fvector& collide_position, float range);
+    	bool ValidateHitDynamicVisualMesh(SBullet& B, collide::rq_result& R, Fvector& collide_position, float range);
 #endif
 };
 

@@ -27,6 +27,7 @@ bool CLevel::net_Start_client(const char* options)
 
 bool CLevel::net_start_client1()
 {
+	PROF_EVENT("CLevel::net_start_client1");
 	pApp->LoadBegin();
 	// name_of_server
 	string64 name_of_server = "";
@@ -52,6 +53,7 @@ bool CLevel::net_start_client1()
 
 bool CLevel::net_start_client2()
 {
+	PROF_EVENT("CLevel::net_start_client2");
 	if (psNET_direct_connect)
 	{
 		Server->create_direct_client();
@@ -79,6 +81,7 @@ void rescan_mp_archives()
 
 bool CLevel::net_start_client3()
 {
+	PROF_EVENT("CLevel::net_start_client3");
 	if (connected_to_server)
 	{
 		LPCSTR level_name = NULL;
@@ -133,6 +136,7 @@ bool CLevel::net_start_client3()
 
 bool CLevel::net_start_client4()
 {
+	PROF_EVENT("CLevel::net_start_client4");
 	if (connected_to_server)
 	{
 		// Begin spawn
@@ -151,9 +155,6 @@ bool CLevel::net_start_client4()
 
 		physics_world()->set_default_contact_shotmark(ContactShotMark);
 		physics_world()->set_default_character_contact_shotmark(CharacterContactShotMark);
-
-		VERIFY(physics_world());
-		physics_world()->set_step_time_callback((PhysicsStepTimeCallback*)&PhisStepsCallback);
 
 
 		// Send network to single or multithreaded mode
@@ -212,6 +213,7 @@ void CLevel::ClientSendProfileData()
 
 bool CLevel::net_start_client5()
 {
+	PROF_EVENT("CLevel::net_start_client5");
 	if (connected_to_server)
 	{
 		// HUD
@@ -235,6 +237,7 @@ bool CLevel::net_start_client5()
 
 bool CLevel::net_start_client6()
 {
+	PROF_EVENT("CLevel::net_start_client6");
 	if (connected_to_server)
 	{
 		// Sync

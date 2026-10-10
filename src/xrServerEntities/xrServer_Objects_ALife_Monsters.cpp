@@ -610,7 +610,7 @@ CSE_ALifeTrader::~CSE_ALifeTrader()
 #ifdef DEBUG
 bool CSE_ALifeTrader::match_configuration	() const
 {
-	return						(!strstr(Core.Params,"-designer"));
+	return						(!Core.ParamsData.test(ECoreParams::designer));
 }
 #endif
 
@@ -1041,7 +1041,7 @@ CSE_ALifeCreatureAbstract::~CSE_ALifeCreatureAbstract()
 #ifdef DEBUG
 bool CSE_ALifeCreatureAbstract::match_configuration	() const
 {
-	return						(!strstr(Core.Params,"-designer"));
+	return						(!Core.ParamsData.test(ECoreParams::designer));
 }
 #endif
 
@@ -1329,11 +1329,7 @@ void CSE_ALifeMonsterAbstract::STATE_Write(NET_Packet& tNetPacket)
 	tNetPacket.w_stringZ(m_out_space_restrictors);
 	tNetPacket.w_stringZ(m_in_space_restrictors);
 	tNetPacket.w_u16(m_smart_terrain_id);
-
-	if (tNetPacket.inistream)
-		tNetPacket.w_u16((m_task_reached) ? 1 : 0);
-	else
-		tNetPacket.w(&m_task_reached, sizeof(m_task_reached));
+	tNetPacket.w(&m_task_reached, sizeof(m_task_reached));
 }
 
 void CSE_ALifeMonsterAbstract::STATE_Read(NET_Packet& tNetPacket, u16 size)
@@ -1351,14 +1347,7 @@ void CSE_ALifeMonsterAbstract::STATE_Read(NET_Packet& tNetPacket, u16 size)
 
 	if (m_wVersion > 113)
 	{
-		if (tNetPacket.inistream)
-		{
-			u16 tmp;
-			tNetPacket.r_u16(tmp);
-			m_task_reached = (tmp != 0);
-		}
-		else
-			tNetPacket.r(&m_task_reached, sizeof(m_task_reached));
+		tNetPacket.r(&m_task_reached, sizeof(m_task_reached));
 	}
 }
 

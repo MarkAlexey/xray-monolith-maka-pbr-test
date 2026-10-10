@@ -63,7 +63,7 @@ void CHUDCrosshair::SetDispersion(float d)
 	dispersionRadius = d;
 }
 
-extern ENGINE_API BOOL g_bRendering;
+extern ENGINE_API xr_atomic_bool g_bRendering;
 
 static float lerp(float a, float b, float t)
 {

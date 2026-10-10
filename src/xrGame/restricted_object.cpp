@@ -132,39 +132,27 @@ u32 CRestrictedObject::accessible_nearest(const Fvector& position, Fvector& resu
 
 bool CRestrictedObject::accessible(const Fvector& position) const
 {
-	START_PROFILE("Restricted Object/Accessible")
-		;
-		return (accessible(position, EPS_L));
-	STOP_PROFILE;
+	return (accessible(position, EPS_L));
 }
 
 bool CRestrictedObject::accessible(const Fvector& position, float radius) const
 {
-	START_PROFILE("Restricted Object/Accessible")
-		;
-		Fsphere sphere;
-		sphere.P = position;
-		sphere.R = radius;
-		return (Level().space_restriction_manager().accessible(object().ID(), sphere));
-	STOP_PROFILE;
+	Fsphere sphere;
+	sphere.P = position;
+	sphere.R = radius;
+	return (Level().space_restriction_manager().accessible(object().ID(), sphere));
 }
 
 bool CRestrictedObject::accessible(u32 level_vertex_id) const
 {
-	START_PROFILE("Restricted Object/Accessible")
-		;
-		VERIFY(ai().level_graph().valid_vertex_id(level_vertex_id));
-		return (accessible(level_vertex_id, EPS_L));
-	STOP_PROFILE;
+	VERIFY(ai().level_graph().valid_vertex_id(level_vertex_id));
+	return (accessible(level_vertex_id, EPS_L));
 }
 
 bool CRestrictedObject::accessible(u32 level_vertex_id, float radius) const
 {
-	START_PROFILE("Restricted Object/Accessible")
-		;
-		VERIFY(ai().level_graph().valid_vertex_id(level_vertex_id));
-		return (Level().space_restriction_manager().accessible(object().ID(), level_vertex_id, radius));
-	STOP_PROFILE;
+	VERIFY(ai().level_graph().valid_vertex_id(level_vertex_id));
+	return (Level().space_restriction_manager().accessible(object().ID(), level_vertex_id, radius));
 }
 
 void CRestrictedObject::add_border(u32 start_vertex_id, float radius) const

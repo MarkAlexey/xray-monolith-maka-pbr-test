@@ -33,6 +33,7 @@ void CBaseMonster::feel_sound_new(CObject* who, int eType, CSound_UserDataPtr us
 
 	// ignore my sounds
 	if (this == who) return;
+	PROF_EVENT("CBaseMonster::feel_sound_new");
 
 	if (user_data)
 		user_data->accept(sound_user_data_visitor());
@@ -218,7 +219,7 @@ bool CBaseMonster::feel_vision_isRelevant(CObject* O)
 	if (!g_Alive()) return false;
 	if (0 == smart_cast<CEntity*>(O)) return false;
 
-	if ((O->spatial.type & STYPE_VISIBLEFORAI) != STYPE_VISIBLEFORAI) return false;
+	if ((O->SpatialComponent->spatial.type & STYPE_VISIBLEFORAI) != STYPE_VISIBLEFORAI) return false;
 
 	// если спит, то ничего не видит
 	if (m_bSleep) return false;

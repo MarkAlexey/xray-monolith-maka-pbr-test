@@ -93,7 +93,7 @@ void CObject::cNameVisual_set(shared_str N)
 
 #ifdef OPTIMIZE_CALCULATE_BONES
 		if (new_k)
-			new_k->spatialParent = this;
+			new_k->spatialParent = SpatialComponent;
 
 		if (old_k)
 			old_k->spatialParent = nullptr;
@@ -105,6 +105,7 @@ void CObject::cNameVisual_set(shared_str N)
 			new_k->SetUpdateCallbackParam(old_k->GetUpdateCallbackParam());
 		}
 
+        OnChangeVisual();
 		::Render->model_Delete(old_v);
 	}
 	else
@@ -119,10 +120,13 @@ void CObject::cNameVisual_set(shared_str N)
 		}
 #endif
 
-		::Render->model_Delete(renderable.visual);
-		NameVisual = 0;
+        // The children classes will see that renderable.visual is gone, but actual deletion will happen after the callback to prevent nasty stuff
+        IRenderVisual* old_v = renderable.visual;
+        renderable.visual = nullptr;
+        NameVisual = 0;
+        OnChangeVisual();
+		::Render->model_Delete(old_v);
 	}
-	OnChangeVisual();
 }
 
 // flagging
@@ -142,30 +146,33 @@ void CObject::processing_deactivate()
 
 void CObject::setEnabled(BOOL _enabled)
 {
+	if (Props.bDestroy || !SpatialComponent.get()) return;
 	if (_enabled)
 	{
 		Props.bEnabled = 1;
-		if (collidable.model) spatial.type |= STYPE_COLLIDEABLE;
+		if (collidable.model)
+			SpatialComponent->spatial.type |= STYPE_COLLIDEABLE;
 	}
 	else
 	{
 		Props.bEnabled = 0;
-		spatial.type &= ~STYPE_COLLIDEABLE;
+		SpatialComponent->spatial.type &= ~STYPE_COLLIDEABLE;
 	}
 }
 
 void CObject::setVisible(BOOL _visible)
 {
+	if (Props.bDestroy) return;
 	if (_visible)
-	{
-		// Parent should control object visibility itself (??????)
+	{ // Parent should control object visibility itself (??????)
 		Props.bVisible = 1;
-		if (renderable.visual) spatial.type |= STYPE_RENDERABLE;
+		if (renderable.visual)
+			SpatialComponent->spatial.type |= STYPE_RENDERABLE;
 	}
 	else
 	{
 		Props.bVisible = 0;
-		spatial.type &= ~STYPE_RENDERABLE;
+		SpatialComponent->spatial.type &= ~STYPE_RENDERABLE;
 	}
 }
 
@@ -197,8 +204,7 @@ const Fbox& CObject::BoundingBox() const
 // Purpose :
 //----------------------------------------------------------------------
 CObject::CObject() :
-	ISpatial(g_SpatialSpace),
-	dwFrame_AsCrow(u32(-1))
+	dwFrame_AsCrow (u32(-1))
 {
 	// Transform
 	Props.storage = 0;
@@ -270,8 +276,9 @@ BOOL CObject::net_Spawn(CSE_Abstract* data)
 		}
 	}
 
-	R_ASSERT(spatial.space);
-	spatial_register();
+	VERIFY(SpatialComponent->spatial.space);
+
+	spatial_register			();
 
 	if (register_schedule())
 		shedule_register();
@@ -304,6 +311,7 @@ const float base_spu_epsR = 0.05f;
 
 void CObject::spatial_update(float eps_P, float eps_R)
 {
+	if (Props.bDestroy) return;
 	//
 	BOOL bUpdate = FALSE;
 	if (PositionStack.empty())
@@ -346,15 +354,17 @@ void CObject::spatial_update(float eps_P, float eps_R)
 	}
 	else
 	{
-		if (spatial.node_ptr)
+		if (SpatialComponent->spatial.node_ptr)
 		{
 			// Object registered!
-			if (!fsimilar(Radius(), spatial.sphere.R, eps_R)) spatial_move();
+			if (!fsimilar(Radius(), SpatialComponent->spatial.sphere.R,eps_R))
+				spatial_move();
 			else
 			{
 				Fvector C;
 				Center(C);
-				if (!C.similar(spatial.sphere.P, eps_P)) spatial_move();
+				if (!C.similar(SpatialComponent->spatial.sphere.P,eps_P))
+					spatial_move();
 			}
 			// else nothing to do :_)
 		}
@@ -371,9 +381,11 @@ void CObject::UpdateCL()
     if (Device.dwFrame == dbg_update_cl) Debug.fatal(DEBUG_INFO, "'UpdateCL' called twice per frame for %s", *cName());
     dbg_update_cl = Device.dwFrame;
 
-    if (Parent && spatial.node_ptr) Debug.fatal(DEBUG_INFO, "Object %s has parent but is still registered inside spatial DB", *cName());
+    if (Parent && SpatialComponent->spatial.node_ptr)
+		Debug.fatal	(DEBUG_INFO,"Object %s has parent but is still registered inside spatial DB",*cName());
 
-    if ((0 == collidable.model) && (spatial.type&STYPE_COLLIDEABLE)) Debug.fatal(DEBUG_INFO, "Object %s registered as 'collidable' but has no collidable model", *cName());
+    if ((0==collidable.model)&&(SpatialComponent->spatial.type&STYPE_COLLIDEABLE))
+		Debug.fatal	(DEBUG_INFO,"Object %s registered as 'collidable' but has no collidable model",*cName());
 #endif
 
 	spatial_update(base_spu_epsP * 5, base_spu_epsR * 5);
@@ -412,21 +424,22 @@ void CObject::shedule_Update(u32 T)
 
 void CObject::spatial_register()
 {
-	Center(spatial.sphere.P);
-	spatial.sphere.R = Radius();
-	ISpatial::spatial_register();
+	Center(SpatialComponent->spatial.sphere.P);
+	SpatialComponent->spatial.sphere.R = Radius();
+	ISpatialOwner::spatial_register();
 }
 
 void CObject::spatial_unregister()
 {
-	ISpatial::spatial_unregister();
+	ISpatialOwner::spatial_unregister();
 }
 
 void CObject::spatial_move()
 {
-	Center(spatial.sphere.P);
-	spatial.sphere.R = Radius();
-	ISpatial::spatial_move();
+	if (Props.bDestroy) return;
+	Center(SpatialComponent->spatial.sphere.P);
+	SpatialComponent->spatial.sphere.R = Radius();
+	ISpatialOwner::spatial_move();
 }
 
 CObject::SavedPosition CObject::ps_Element(u32 ID) const
@@ -435,7 +448,7 @@ CObject::SavedPosition CObject::ps_Element(u32 ID) const
 	return PositionStack[ID];
 }
 
-void CObject::renderable_Render()
+void CObject::renderable_Render(IDSGraphManager* DM)
 {
 	MakeMeCrow();
 }
@@ -483,6 +496,9 @@ void CObject::setDestroy(BOOL _destroy)
 {
 	if (_destroy == (BOOL)Props.bDestroy)
 		return;
+
+    if (_destroy)
+        setVisible(false);
 
 	Props.bDestroy = _destroy ? 1 : 0;
 	if (_destroy)
@@ -533,4 +549,10 @@ Fvector CObject::get_last_local_point_on_mesh(Fvector const& local_point, u16 co
 	mE.transform_tiny(result, local_point);
 
 	return result;
+}
+
+void CObject::OnChangeVisual()
+{
+    if (g_pGameLevel)
+        g_pGameLevel->Objects.relcase_visual_invoke(this);   
 }

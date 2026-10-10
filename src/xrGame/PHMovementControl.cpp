@@ -163,8 +163,9 @@ void CPHMovementControl::Calculate(Fvector& vAccel, const Fvector& camDir, float
 	UpdateCollisionDamage();
 
 	ICollisionDamageInfo* cdi = CollisionDamageInfo();
-	if (cdi->HitCallback())
-		cdi->HitCallback()->call(gcontact_Initiator, fMinCrashSpeed, fMaxCrashSpeed, fContactSpeed, gcontact_HealthLost, cdi);
+	ICollisionHitCallback* hit_callback = cdi ? cdi->HitCallback() : nullptr;
+	if (hit_callback)
+		hit_callback->call(gcontact_Initiator, fMinCrashSpeed, fMaxCrashSpeed, fContactSpeed, gcontact_HealthLost, cdi);
 
 	TraceBorder(previous_position);
 	CheckEnvironment(vPosition);
@@ -1271,7 +1272,7 @@ void CPHMovementControl::UpdateObjectBox(CPHCharacter* ach)
 		return;
 
 	Fvector cbox;
-	PKinematics(pObject->Visual())->CalculateBones();
+	//PKinematics(pObject->Visual())->CalculateBones();
 	pObject->BoundingBox().getradius(cbox);
 
 	const Fvector& pa = ach->BodyPosition();

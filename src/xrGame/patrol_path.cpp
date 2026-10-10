@@ -46,11 +46,11 @@ CPatrolPath& CPatrolPath::load_raw(const CLevelGraph* level_graph, const CGameLe
 CPatrolPath& CPatrolPath::load_from_config(CInifile* ini_paths, LPCSTR patrol_name)
 {
 	R_ASSERT3(ini_paths->line_exist(patrol_name, "points"), "Missing key 'points' in patrol path", patrol_name);
-	LPCSTR points_csv = ini_paths->r_string(patrol_name, "points");
-	std::vector<std::string> points = splitStringMulti(points_csv, ",", false, true);
+	xr_string points_csv = ini_paths->r_string(patrol_name, "points");
+	xr_vector<xr_string> points = points_csv.SplitStringMulti(",", false, true);
 
 	// Keep track of name <-> vertex_id association
-	std::map<shared_str, u32> vertex_ids_by_name;
+	xr_map<shared_str, u32> vertex_ids_by_name;
 
 	// Add patrol points
 	for (int idx = 0; idx < points.size(); idx++)
@@ -76,13 +76,13 @@ CPatrolPath& CPatrolPath::load_from_config(CInifile* ini_paths, LPCSTR patrol_na
 		}
 
 		// Get list of vertices to link to
-		LPCSTR links_csv = ini_paths->r_string(patrol_name, links_csv_key.c_str());
-		std::vector<std::string> links = splitStringMulti(links_csv, ",", false, true);
+		xr_string links_csv = ini_paths->r_string(patrol_name, links_csv_key.c_str());
+		xr_vector<xr_string> links = links_csv.SplitStringMulti(",", false, true);
 
-		for (std::string link : links)
+		for (xr_string link : links)
 		{
 			// Link current point to target points
-			std::pair<u16, float> link_info = parse_point_link(patrol_name, link, vertex_ids_by_name);
+			std::pair<u32, float> link_info = parse_point_link(patrol_name, link, vertex_ids_by_name);
 			add_edge(idx, link_info.first, link_info.second);
 			Msg("[PP] Linked %d to %d with a probability of %f", link_info.first, idx, link_info.second);
 		}
@@ -93,7 +93,7 @@ CPatrolPath& CPatrolPath::load_from_config(CInifile* ini_paths, LPCSTR patrol_na
 	return (*this);
 }
 
-std::pair<u32, float> CPatrolPath::parse_point_link(LPCSTR patrol_name, std::string link, std::map<shared_str, u32> vertex_ids_by_name)
+std::pair<u32, float> CPatrolPath::parse_point_link(LPCSTR patrol_name, xr_string link, xr_map<shared_str, u32> vertex_ids_by_name)
 {
 	Msg("[PP] Linking %s", link.c_str());
 
@@ -103,13 +103,13 @@ std::pair<u32, float> CPatrolPath::parse_point_link(LPCSTR patrol_name, std::str
 	bool matched = std::regex_search(link, matches, pattern);
 	R_ASSERT4(matched, "Bad format for patrol path link", patrol_name, link.c_str());
 	
-	std::string target = matches[1].str();
+	xr_string target = matches[1].str().c_str();
 	float prob = std::stof(matches[2].str());
 
 	auto I = vertex_ids_by_name.find(target.c_str());
 	R_ASSERT4(I != vertex_ids_by_name.end(), "Patrol point link target does not exist", patrol_name, target.c_str());
 
-	return std::make_pair((*I).second, prob);
+	return { (*I).second, prob };
 }
 
 CPatrolPath::~CPatrolPath()

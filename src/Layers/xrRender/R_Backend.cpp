@@ -16,9 +16,9 @@ void CBackend::RestoreQuadIBData()
 
 void CBackend::CreateQuadIB()
 {
-	static const u32 dwTriCount = 4 * 1024;
-	static const u32 dwIdxCount = dwTriCount * 2 * 3;
-	u16 IndexBuffer[dwIdxCount];
+	constexpr u32 dwTriCount = 4 * (4096 * 8);
+	constexpr u32 dwIdxCount = dwTriCount * 2 * 3;
+	static u16 IndexBuffer[dwIdxCount];
 	u16* Indices = IndexBuffer;
 
 	D3D_BUFFER_DESC desc;

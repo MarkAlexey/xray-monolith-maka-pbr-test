@@ -4,6 +4,8 @@
 
 struct dContact;
 struct SGameMtl;
+class CBolt;
+class CGrenade;
 
 class CMissile : public CHudItemObject
 {
@@ -26,6 +28,9 @@ public:
 
 	virtual void reinit();
 	virtual CMissile* cast_missile() { return this; }
+
+	virtual CBolt* cast_bolt() { return nullptr; }
+	virtual CGrenade* cast_grenade() { return nullptr; }
 
 	virtual void Load(LPCSTR section);
 	virtual BOOL net_Spawn(CSE_Abstract* DC);
@@ -77,6 +82,8 @@ protected:
 	Fmatrix m_throw_matrix;
 
 	CMissile* m_fake_missile;
+
+	xr_vector<shared_str> m_sCheckoutBones;
 
 	u32 dwUpdateSounds_Frame = 0;
 

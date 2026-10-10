@@ -29,6 +29,7 @@ void dxLensFlareRender::Copy(ILensFlareRender& _in)
 
 void dxLensFlareRender::Render(CLensFlare& owner, BOOL bSun, BOOL bFlares, BOOL bGradient)
 {
+	PROF_EVENT("dxLensFlareRender::Render");
 	Fcolor dwLight;
 	Fcolor color;
 	Fvector vec, vecSx, vecSy;

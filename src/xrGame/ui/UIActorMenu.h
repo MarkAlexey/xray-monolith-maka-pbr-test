@@ -191,6 +191,9 @@ public:
 	CInventoryOwner* GetPartner() { return m_pPartnerInvOwner; };
 	void SetInvBox(CInventoryBox* box);
 	CInventoryBox* GetInvBox() { return m_pInvBox; };
+
+	virtual CUIWindow* ui_cast_window() { return this; }
+
 	bool b_sort_hotkeys;
 	void SelectInventoryTab(int tab);
 private:

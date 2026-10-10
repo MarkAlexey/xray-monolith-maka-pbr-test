@@ -260,6 +260,7 @@ void CWeaponStatMgun::Load(LPCSTR section)
 		LPCSTR str = pSettings->r_string(cNameSect_str(), "barrels");
 		string128 sec;
 		int n = _GetItemCount(str);
+        m_barrels.reserve(n);
 		for (int i = 0; i < n; ++i)
 		{
 			_GetItem(str, i, sec);
@@ -442,7 +443,7 @@ void CWeaponStatMgun::net_Destroy()
 	{
 		if (p_overheat->IsPlaying())
 			p_overheat->Stop(FALSE);
-		CParticlesObject::Destroy(p_overheat);
+		Particles::Details::Destroy(p_overheat);
 	}
 
 #ifdef HOLDERCUSTOM_NEW
@@ -800,9 +801,9 @@ void CWeaponStatMgun::cam_Update(float dt, float fov)
 #endif
 }
 
-void CWeaponStatMgun::renderable_Render()
+void CWeaponStatMgun::renderable_Render(IDSGraphManager* DM)
 {
-	inheritedPH::renderable_Render();
+	inheritedPH::renderable_Render(DM);
 
 	RenderLight();
 
@@ -1207,8 +1208,7 @@ void CWeaponStatMgun::UpdateSound()
 void CWeaponStatMgun::SetFeelVisionIgnore(bool enable)
 {
 #ifdef SPATIAL_CHANGE
-	ISpatial *IS = smart_cast<ISpatial *>(this);
-	R_ASSERT(IS);
+    ISpatialShared& IS = SpatialComponent;
 	if (enable)
 		IS->spatial.type |= STYPE_FEELVISIONIGNORE;
 	else

@@ -463,7 +463,6 @@ void game_sv_mp::ReconnectPlayer(ClientID const& clientID)
 
 bool g_bConsoleCommandsCreated = false;
 extern float g_fTimeFactor;
-#define SAVE_SCREENSHOTS_KEY "-savescreenshots"
 
 void game_sv_mp::Create(shared_str& options)
 {
@@ -480,7 +479,7 @@ void game_sv_mp::Create(shared_str& options)
 	//------------------------------------------------------------------
 	Set_RankUp_Allowed(false);
 	m_cdkey_ban_list.load();
-	if (strstr(Core.Params, SAVE_SCREENSHOTS_KEY))
+	if (Core.ParamsData.test(ECoreParams::savescreenshots))
 	{
 		g_sv_mp_save_proxy_screenshots = TRUE;
 	}

@@ -41,7 +41,7 @@ PROTECT_API void CRenderDevice::Initialize()
 	TimerMM.Start();
 
 #ifdef INGAME_EDITOR
-    if (strstr(Core.Params, "-editor"))
+    if (Core.ParamsData.test(ECoreParams::editor))
         initialize_editor();
 #endif // #ifdef INGAME_EDITOR
 

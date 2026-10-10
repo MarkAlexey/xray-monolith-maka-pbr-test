@@ -55,6 +55,7 @@ extern void OutputDebugStackTrace(const char* header);
 
 void xrCriticalSection::Enter()
 {
+	//PROF_EVENT("xrCriticalSection::Enter");
 #ifdef PROFILE_CRITICAL_SECTIONS
 # if 0//def DEBUG
     static bool show_call_stack = false;
@@ -63,16 +64,18 @@ void xrCriticalSection::Enter()
 # endif // DEBUG
     profiler temp(m_id);
 #endif // PROFILE_CRITICAL_SECTIONS
-	EnterCriticalSection((CRITICAL_SECTION*)pmutex);
+    EnterCriticalSection((CRITICAL_SECTION*)pmutex);
 }
 
 void xrCriticalSection::Leave()
 {
+	//PROF_EVENT("xrCriticalSection::Leave");
 	LeaveCriticalSection((CRITICAL_SECTION*)pmutex);
 }
 
 BOOL xrCriticalSection::TryEnter()
 {
+	//PROF_EVENT("xrCriticalSection::TryEnter");
 	return TryEnterCriticalSection((CRITICAL_SECTION*)pmutex);
 }
 

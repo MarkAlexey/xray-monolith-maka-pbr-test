@@ -1,6 +1,6 @@
 #pragma once
 
-#include <fastdelegate/fastdelegate.h>
+#include "xr_delegate.h"
 
 // refs
 class CInifile;
@@ -78,7 +78,7 @@ public:
 	typedef Root::const_iterator RootCIt;
 
 #ifndef _EDITOR
-	typedef fastdelegate::FastDelegate1<LPCSTR, bool> allow_include_func_t;
+	typedef xr_delegate<bool(LPCSTR)> allow_include_func_t;
 #endif
 	static CInifile* Create(LPCSTR szFileName, BOOL ReadOnly = TRUE);
 	static void Destroy(CInifile*);
@@ -134,6 +134,7 @@ public:
 	static void InvalidateCache(LPCSTR path = nullptr);
 	static void CInifile::GetCacheStats(u64& files_cached, u64& total_bytes, u64& section_count)
 	{
+        xrCriticalSectionGuard g(CacheCS);
 		total_bytes = 0;
 		section_count = 0;
 		files_cached = CachedData.size();

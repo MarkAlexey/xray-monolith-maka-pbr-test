@@ -34,8 +34,13 @@ CObjectList::~CObjectList()
 {
 	R_ASSERT(objects_active.empty());
 	R_ASSERT(objects_sleeping.empty());
-	R_ASSERT(destroy_queue.empty());
+    ProcessDestroyQueueImpl(force_destroy_queue);
+    ProcessDestroyQueueImpl(destroy_queue);
+    R_ASSERT(destroy_queue.empty());
+    R_ASSERT(force_destroy_queue.empty());
 	//. R_ASSERT ( map_NETID.empty() );
+
+    ClearProcessDestroyQueueFromDevice();
 }
 
 CObject* CObjectList::FindObjectByName(shared_str name)
@@ -130,53 +135,53 @@ void CObjectList::SingleUpdate(CObject* O)
 	VERIFY3(O->dbg_update_cl == Device.dwFrame, "Broken sequence of calls to 'UpdateCL'", *O->cName());
 #endif
 #if 0//ndef DEBUG
-    __try
-    {
-#endif
-	if (O->H_Parent() && (O->H_Parent()->getDestroy() || O->H_Root()->getDestroy()))
+	__try
 	{
-		// Push to destroy-queue if it isn't here already
-		Msg("! ERROR: incorrect destroy sequence for object[%d:%s], section[%s], parent[%d:%s]", O->ID(), *O->cName(),
-		    *O->cNameSect(), O->H_Parent()->ID(), *O->H_Parent()->cName());
-	}
+#endif
+		if (O->H_Parent() && (O->H_Parent()->getDestroy() || O->H_Root()->getDestroy()))
+		{
+			// Push to destroy-queue if it isn't here already
+			Msg("! ERROR: incorrect destroy sequence for object[%d:%s], section[%s], parent[%d:%s]", O->ID(), *O->cName(),
+				*O->cNameSect(), O->H_Parent()->ID(), *O->H_Parent()->cName());
+		}
 #if 0//ndef DEBUG
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER)
-    {
-        CObject* parent_obj = O->H_Parent();
-        CObject* root_obj = O->H_Root();
-        Msg ("! ERROR: going to crush: [%d:%s], section[%s], parent_obj_addr[0x%08x], root_obj_addr[0x%08x]",O->ID(),*O->cName(),*O->cNameSect(), *((u32*)&parent_obj), *((u32*)&root_obj));
-        if (parent_obj)
-        {
-            __try
-            {
-                Msg("! Parent object: [%d:%s], section[%s]",
-                    parent_obj->ID(),
-                    parent_obj->cName().c_str(),
-                    parent_obj->cNameSect().c_str());
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		CObject* parent_obj = O->H_Parent();
+		CObject* root_obj = O->H_Root();
+		Msg("! ERROR: going to crush: [%d:%s], section[%s], parent_obj_addr[0x%08x], root_obj_addr[0x%08x]", O->ID(), *O->cName(), *O->cNameSect(), *((u32*)&parent_obj), *((u32*)&root_obj));
+		if (parent_obj)
+		{
+			__try
+			{
+				Msg("! Parent object: [%d:%s], section[%s]",
+					parent_obj->ID(),
+					parent_obj->cName().c_str(),
+					parent_obj->cNameSect().c_str());
 
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-                Msg("! Failed to get parent object info.");
-            }
-        }
-        if (root_obj)
-        {
-            __try
-            {
-                Msg("! Root object: [%d:%s], section[%s]",
-                    root_obj->ID(),
-                    root_obj->cName().c_str(),
-                    root_obj->cNameSect().c_str());
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-                Msg("! Failed to get root object info.");
-            }
-        }
-        R_ASSERT(false);
-    } //end of __except
+			}
+			__except (EXCEPTION_EXECUTE_HANDLER)
+			{
+				Msg("! Failed to get parent object info.");
+			}
+		}
+		if (root_obj)
+		{
+			__try
+			{
+				Msg("! Root object: [%d:%s], section[%s]",
+					root_obj->ID(),
+					root_obj->cName().c_str(),
+					root_obj->cNameSect().c_str());
+			}
+			__except (EXCEPTION_EXECUTE_HANDLER)
+			{
+				Msg("! Failed to get root object info.");
+			}
+		}
+		R_ASSERT(false);
+	} //end of __except
 #endif
 
 #ifdef DEBUG
@@ -195,8 +200,10 @@ void CObjectList::clear_crow_vec(Objects& o)
 	o.clear_not_free();
 }
 
+extern BOOL mt_Scheduler;
 void CObjectList::Update(bool bForce)
 {
+	PROF_EVENT("CObjectList::Update");
 	if (!Device.Paused() || bForce)
 	{
 		// Clients
@@ -204,113 +211,113 @@ void CObjectList::Update(bool bForce)
 		{
 			// Select Crow-Mode
 			Device.Statistic->UpdateClient_updated = 0;
-
-			Objects& crows = m_crows[0];
+			Objects workload;
+			workload.reserve(objects_active.capacity());
 
 			{
-				Objects& crows1 = m_crows[1];
-				crows.insert(crows.end(), crows1.begin(), crows1.end());
-				crows1.clear_not_free();
+				PROF_EVENT("CObjectList::Update/Crows");
+				Objects& crows = m_crows[0];
+				{
+					Objects& crows1 = m_crows[1];
+					crows.insert(crows.end(), crows1.begin(), crows1.end());
+					crows1.clear_not_free();
+				}
+
+				Device.Statistic->UpdateClient_crows = crows.size();
+				Objects* required_workload;
+				if (!psDeviceFlags.test(rsDisableObjectsAsCrows))
+					required_workload = &crows;
+				else
+				{
+					required_workload = &objects_active;
+					clear_crow_vec(crows);
+				}
+
+				Device.Statistic->UpdateClient.Begin();
+				Device.Statistic->UpdateClient_active = objects_active.size();
+				Device.Statistic->UpdateClient_total = objects_active.size() + objects_sleeping.size();
+
+				{
+					PROF_EVENT("CObjectList::Update/CopyWorkload");
+					workload = *required_workload;
+				}
+
+				crows.clear_not_free();
+
+				for (const auto obj : workload)
+				{
+					obj->IAmNotACrowAnyMore();
+					obj->dwFrame_AsCrow = u32(-1);
+				}
 			}
 
-#if 0
-            std::sort (crows.begin(), crows.end());
-            crows.erase (
-                std::unique(
-                    crows.begin(),
-                    crows.end()
-                ),
-                crows.end()
-            );
-#else
-# ifdef DEBUG
-            std::sort(crows.begin(), crows.end());
-            VERIFY(
-                std::unique(
-                    crows.begin(),
-                    crows.end()
-                ) == crows.end()
-            );
-# endif // ifdef DEBUG
-#endif
-
-			Device.Statistic->UpdateClient_crows = crows.size();
-			Objects* workload = 0;
-			if (!psDeviceFlags.test(rsDisableObjectsAsCrows))
-				workload = &crows;
-			else
 			{
-				workload = &objects_active;
-				clear_crow_vec(crows);
+				PROF_EVENT("CObjectList::Update/SingleUpdate");
+				for (const auto obj : workload)
+				{
+					SingleUpdate(obj);
+				}
 			}
-
-			Device.Statistic->UpdateClient.Begin();
-			Device.Statistic->UpdateClient_active = objects_active.size();
-			Device.Statistic->UpdateClient_total = objects_active.size() + objects_sleeping.size();
-
-			u32 const objects_count = workload->size();
-			CObject** objects = (CObject**)_alloca(objects_count * sizeof(CObject*));
-			std::copy(workload->begin(), workload->end(), objects);
-
-			crows.clear_not_free();
-
-			CObject** b = objects;
-			CObject** e = objects + objects_count;
-			for (CObject** i = b; i != e; ++i)
-			{
-				(*i)->IAmNotACrowAnyMore();
-				(*i)->dwFrame_AsCrow = u32(-1);
-			}
-
-			for (CObject** i = b; i != e; ++i)
-				SingleUpdate(*i);
 
 			Device.Statistic->UpdateClient.End();
 		}
 	}
 
 	// Destroy
-	if (!destroy_queue.empty())
-	{
-		// Info
-		for (Objects::iterator oit = objects_active.begin(); oit != objects_active.end(); oit++)
-			for (int it = destroy_queue.size() - 1; it >= 0; it--)
-			{
-				(*oit)->net_Relcase(destroy_queue[it]);
-			}
-		for (Objects::iterator oit = objects_sleeping.begin(); oit != objects_sleeping.end(); oit++)
-			for (int it = destroy_queue.size() - 1; it >= 0; it--) (*oit)->net_Relcase(destroy_queue[it]);
+    ProcessDestroyQueueImpl(force_destroy_queue);
+    if (mt_Scheduler)
+    {
+        xrCriticalSectionGuard guard(&Device.seqParallelBeforRenderCS);
+        Device.seqParallelBeforRender.push_back(xr_make_delegate(this, &CObjectList::ProcessDestroyQueue));
+    }
+    else
+        ProcessDestroyQueue();
+}
 
-		for (int it = destroy_queue.size() - 1; it >= 0; it--) Sound->object_relcase(destroy_queue[it]);
+void CObjectList::ProcessDestroyQueue()
+{
+    ProcessDestroyQueueImpl(destroy_queue);
+}
 
-		RELCASE_CALLBACK_VEC::iterator It = m_relcase_callbacks.begin();
-		RELCASE_CALLBACK_VEC::iterator Ite = m_relcase_callbacks.end();
-		for (; It != Ite; ++It)
-		{
-			VERIFY(*(*It).m_ID == (It - m_relcase_callbacks.begin()));
-			Objects::iterator dIt = destroy_queue.begin();
-			Objects::iterator dIte = destroy_queue.end();
-			for (; dIt != dIte; ++dIt)
-			{
-				(*It).m_Callback(*dIt);
-				g_hud->net_Relcase(*dIt);
-			}
-		}
+void CObjectList::ProcessDestroyQueueImpl(Objects& queue)
+{
+    if (!queue.empty())
+    {
+        PROF_EVENT("CObjectList::Update/destroy_queue");
+        for (int it = queue.size() - 1; it >= 0; it--)
+        {
+            auto obj = queue[it];
+            for (const auto oit : objects_active)
+                oit->net_Relcase(obj);
 
-		// Destroy
-		for (int it = destroy_queue.size() - 1; it >= 0; it--)
-		{
-			CObject* O = destroy_queue[it];
-			// Msg ("Object [%x]", O);
+            for (const auto oit : objects_sleeping)
+                oit->net_Relcase(obj);
+
+            if (Sound)
+                Sound->object_relcase(obj);
+
+            auto It = m_relcase_callbacks.begin();
+            auto Ite = m_relcase_callbacks.end();
+            for (; It != Ite; ++It)
+            {
+                VERIFY(*(*It).m_ID == (It - m_relcase_callbacks.begin()));
+                (*It).m_Callback(obj);
+            }     
+
+            if (g_hud)
+                g_hud->net_Relcase(obj);
+
 #ifdef DEBUG
             if (debug_destroy)
-                Msg("Destroying object[%x][%x] [%d][%s] frame[%d]", fast_dynamic_cast<void*>(O), O, O->ID(), *O->cName(), Device.dwFrame);
+                Msg("Destroying object[%x][%x] [%d][%s] frame[%d]", fast_dynamic_cast<void*>(obj), obj, obj->ID(), *obj->cName(), Device.dwFrame);
 #endif // DEBUG
-			O->net_Destroy();
-			Destroy(O);
-		}
-		destroy_queue.clear();
-	}
+
+            obj->net_Destroy();
+            Destroy(obj);
+        }
+
+        queue.clear();
+    }
 }
 
 void CObjectList::net_Register(CObject* O)
@@ -420,11 +427,28 @@ return (it==map_NETID.end())?0:it->second;
 */
 void CObjectList::Load()
 {
-	R_ASSERT(/*map_NETID.empty() &&*/ objects_active.empty() && destroy_queue.empty() && objects_sleeping.empty());
+	R_ASSERT(/*map_NETID.empty() &&*/ objects_active.empty() && force_destroy_queue.empty() && destroy_queue.empty() && objects_sleeping.empty());
+}
+
+void CObjectList::ClearProcessDestroyQueueFromDevice()
+{
+    auto Callback = xr_make_delegate(this, &CObjectList::ProcessDestroyQueue);
+    xrCriticalSectionGuard guard(&Device.seqParallelBeforRenderCS);
+    Device.seqParallelBeforRender.erase(
+        std::remove(
+            Device.seqParallelBeforRender.begin(),
+            Device.seqParallelBeforRender.end(),
+            Callback
+        ), Device.seqParallelBeforRender.end()
+    );
 }
 
 void CObjectList::Unload()
 {
+    ClearProcessDestroyQueueFromDevice();
+    ProcessDestroyQueueImpl(force_destroy_queue);
+    ProcessDestroyQueueImpl(destroy_queue);
+
 	if (objects_sleeping.size() || objects_active.size())
 		Msg("! objects-leaked: %d", objects_sleeping.size() + objects_active.size());
 
@@ -455,13 +479,20 @@ void CObjectList::Unload()
 		O->net_Destroy();
 		Destroy(O);
 	}
+
+    // Clear the destroy_queues from dangling pointers
+    force_destroy_queue.clear();
+    destroy_queue.clear();
 }
 
 CObject* CObjectList::Create(LPCSTR name)
 {
 	CObject* O = g_pGamePersistent->ObjectPool.create(name);
 	// Msg("CObjectList::Create [%x]%s", O, name);
-	objects_sleeping.push_back(O);
+
+    if (O)
+	    objects_sleeping.push_back(O);
+
 	return O;
 }
 
@@ -470,36 +501,18 @@ void CObjectList::Destroy(CObject* O)
 	if (0 == O) return;
 	net_Unregister(O);
 
-	if (!Device.Paused())
-	{
-		if (!m_crows[1].empty())
-		{
-			Msg("assertion !m_crows[1].empty() failed: %d", m_crows[1].size());
-
-			Objects::const_iterator i = m_crows[1].begin();
-			Objects::const_iterator const e = m_crows[1].end();
-			for (u32 j = 0; i != e; ++i, ++j)
-				Msg("%d %s", j, (*i)->cName().c_str());
-			VERIFY(Device.Paused() || m_crows[1].empty());
-			m_crows[1].clear_not_free();
-		}
-	}
-	else
-	{
-		Objects& crows = m_crows[1];
-		Objects::iterator const i = std::find(crows.begin(), crows.end(), O);
-		if (i != crows.end())
-		{
-			crows.erase(i);
-			VERIFY(std::find(crows.begin(), crows.end(), O) == crows.end());
-		}
-	}
+    Objects& crows1 = m_crows[1];
+    Objects::iterator _i1 = std::find(crows1.begin(), crows1.end(), O);
+    if (_i1 != crows1.end())
+    {
+        crows1.erase_fast(_i1);
+    }
 
 	Objects& crows = m_crows[0];
 	Objects::iterator _i0 = std::find(crows.begin(), crows.end(), O);
 	if (_i0 != crows.end())
 	{
-		crows.erase(_i0);
+		crows.erase_fast(_i0);
 		VERIFY(std::find(crows.begin(), crows.end(), O) == crows.end());
 	}
 
@@ -552,6 +565,31 @@ void CObjectList::relcase_unregister(int* ID)
 	m_relcase_callbacks.pop_back();
 }
 
+void CObjectList::relcase_visual_register(RELCASE_CALLBACK cb, int* ID)
+{
+    *ID = m_relcase_visual_callbacks.size();
+    m_relcase_visual_callbacks.push_back(SRelcasePair(ID, cb));
+}
+
+void CObjectList::relcase_visual_unregister(int* ID)
+{
+    VERIFY(m_relcase_visual_callbacks[*ID].m_ID == ID);
+    m_relcase_visual_callbacks[*ID] = m_relcase_visual_callbacks.back();
+    *m_relcase_visual_callbacks.back().m_ID = *ID;
+    m_relcase_visual_callbacks.pop_back();
+}
+
+void CObjectList::relcase_visual_invoke(CObject* obj)
+{
+    auto It = m_relcase_visual_callbacks.begin();
+    auto Ite = m_relcase_visual_callbacks.end();
+    for (; It != Ite; ++It)
+    {
+        VERIFY(*(*It).m_ID == (It - m_relcase_visual_callbacks.begin()));
+        (*It).m_Callback(obj);
+    }
+}
+
 void CObjectList::dump_list(Objects& v, LPCSTR reason)
 {
 	Objects::iterator it = v.begin();
@@ -570,7 +608,8 @@ void CObjectList::dump_list(Objects& v, LPCSTR reason)
 
 bool CObjectList::dump_all_objects()
 {
-	dump_list(destroy_queue, "destroy_queue");
+    dump_list(force_destroy_queue, "force_destroy_queue");
+    dump_list(destroy_queue, "destroy_queue");
 	dump_list(objects_active, "objects_active");
 	dump_list(objects_sleeping, "objects_sleeping");
 	dump_list(m_crows[0], "m_crows[0]");
@@ -583,7 +622,11 @@ void CObjectList::register_object_to_destroy(CObject* object_to_destroy)
 #ifdef DEBUG
 	VERIFY(!registered_object_to_destroy(object_to_destroy));
 #endif
-	destroy_queue.push_back(object_to_destroy);
+
+    if (object_to_destroy->getForceDestroy())
+        force_destroy_queue.push_back(object_to_destroy);
+    else
+	    destroy_queue.push_back(object_to_destroy);
 
 	Objects::iterator it = objects_active.begin();
 	Objects::iterator it_e = objects_active.end();

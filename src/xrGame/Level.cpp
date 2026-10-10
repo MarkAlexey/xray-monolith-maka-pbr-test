@@ -173,42 +173,47 @@ namespace crash_saving {
         NET_Packet& net_packet = data->P;
         net_packet.w_begin(M_SAVE_GAME);
 
-		std::string path = "fatal_ctd_save_";
-		std::string path_mask(path);
-		std::string path_ext = ".scop";
-		path_mask.append("*").append(path_ext);
+        xr_string path = "fatal_ctd_save_";
+        xr_string path_mask(path);
+        xr_string path_ext = ".scop";
+        path_mask.append("*").append(path_ext);
 
         FS_FileSet fset_temp;
         FS.file_list(fset_temp, "$game_saves$", FS_ListFiles | FS_RootOnly, path_mask.c_str());
 
-		std::vector<FS_File> fset(fset_temp.begin(), fset_temp.end());
-		struct {
-			bool operator()(FS_File& a, FS_File& b) {
-				return a.time_write > b.time_write;
-			}
-		} sortFilesDesc;
-		std::sort(fset.begin(), fset.end(), sortFilesDesc);
+        xr_vector<FS_File> fset;
+        for (auto& file : fset_temp)
+        {
+            fset.push_back(file);
+        }
+        struct {
+            bool operator()(FS_File& a, FS_File& b) {
+                return a.time_write > b.time_write;
+            }
+        } sortFilesDesc;
+        std::sort(fset.begin(), fset.end(), sortFilesDesc);
 
         //Msg("save mask %s", path_mask.c_str());
 
-		for (auto &file : fset)
-		{
-			string128 name;
-			xr_strcpy(name, sizeof(name), file.name.c_str());
-			std::string name_string(name);
-			name_string.erase(name_string.length() - path_ext.length());
+        for (auto& file : fset)
+        {
+            string128 name;
+            xr_strcpy(name, sizeof(name), file.name.c_str());
+            xr_string name_string(name);
+            name_string.erase(name_string.length() - path_ext.length());
 
             //Msg("found save file %s, save_name %s", name, name_string.c_str());
 
-			try {
-				//Msg("save number %s", name_string.substr(path.length()).c_str());
-				int name_count = std::stoi(name_string.substr(path.length()));
-				saveCount = name_count;
-				break;
-			} catch (...) {
-				Msg("!error getting save number from %s", name);
-			}
-		}
+            try {
+                //Msg("save number %s", name_string.substr(path.length()).c_str());
+                int name_count = std::stoi(name_string.substr(path.length()).c_str());
+                saveCount = name_count;
+                break;
+            }
+            catch (...) {
+                Msg("!error getting save number from %s", name);
+            }
+        }
 
         saveCount++;
         if (saveCount >= saveCountMax) {
@@ -233,8 +238,9 @@ CLevel::CLevel() :
     , DemoCS(MUTEX_PROFILE_ID(DemoCS))
 #endif
 {
-	g_bDebugEvents = strstr(Core.Params, "-debug_ge") != nullptr;
-	game_events = xr_new<NET_Queue_Event>();
+    PROF_EVENT("CLevel::CLevel");
+    g_bDebugEvents = Core.ParamsData.test(ECoreParams::debug_ge);
+    game_events = xr_new<NET_Queue_Event>();
 
     eChangeRP = Engine.Event.Handler_Attach("LEVEL:ChangeRP", this);
     eDemoPlay = Engine.Event.Handler_Attach("LEVEL:PlayDEMO", this);
@@ -286,41 +292,42 @@ extern CAI_Space* g_ai_space;
 
 CLevel::~CLevel()
 {
-	//crash_saving::save_impl = nullptr; // CLevel not available, disable crash save
-	xr_delete(g_player_hud);
-	delete_data(m_script_attachments);
-	delete_data(hud_zones_list);
-	hud_zones_list = nullptr;
-	Msg("- Destroying level");
-	Engine.Event.Handler_Detach(eEntitySpawn, this);
-	Engine.Event.Handler_Detach(eEnvironment, this);
-	Engine.Event.Handler_Detach(eChangeTrack, this);
-	Engine.Event.Handler_Detach(eDemoPlay, this);
-	Engine.Event.Handler_Detach(eChangeRP, this);
-	if (physics_world())
-	{
-		destroy_physics_world();
-		xr_delete(m_ph_commander_physics_worldstep);
-	}
-	// destroy PSs
-	for (POIt p_it = m_StaticParticles.begin(); m_StaticParticles.end() != p_it; ++p_it)
-		CParticlesObject::Destroy(*p_it);
-	m_StaticParticles.clear();
-	// Unload sounds
-	// unload prefetched sounds
-	sound_registry.clear();
-	// unload static sounds
-	for (u32 i = 0; i < static_Sounds.size(); ++i)
-	{
-		static_Sounds[i]->destroy();
-		xr_delete(static_Sounds[i]);
-	}
-	static_Sounds.clear();
-	xr_delete(m_level_sound_manager);
-	xr_delete(m_space_restriction_manager);
-	xr_delete(m_seniority_hierarchy_holder);
-	xr_delete(m_client_spawn_manager);
-	xr_delete(m_autosave_manager);
+    PROF_EVENT("CLevel::~CLevel");
+    //crash_saving::save_impl = nullptr; // CLevel not available, disable crash save
+    xr_delete(g_player_hud);
+    delete_data(m_script_attachments);
+    delete_data(hud_zones_list);
+    hud_zones_list = nullptr;
+    Msg("- Destroying level");
+    Engine.Event.Handler_Detach(eEntitySpawn, this);
+    Engine.Event.Handler_Detach(eEnvironment, this);
+    Engine.Event.Handler_Detach(eChangeTrack, this);
+    Engine.Event.Handler_Detach(eDemoPlay, this);
+    Engine.Event.Handler_Detach(eChangeRP, this);
+    if (physics_world())
+    {
+        destroy_physics_world();
+        xr_delete(m_ph_commander_physics_worldstep);
+    }
+    // destroy PSs
+    for (POIt p_it = m_StaticParticles.begin(); m_StaticParticles.end() != p_it; ++p_it)
+        Particles::Details::Destroy(*p_it);
+    m_StaticParticles.clear();
+    // Unload sounds
+    // unload prefetched sounds
+    sound_registry.clear();
+    // unload static sounds
+    for (u32 i = 0; i < static_Sounds.size(); ++i)
+    {
+        static_Sounds[i]->destroy();
+        xr_delete(static_Sounds[i]);
+    }
+    static_Sounds.clear();
+    xr_delete(m_level_sound_manager);
+    xr_delete(m_space_restriction_manager);
+    xr_delete(m_seniority_hierarchy_holder);
+    xr_delete(m_client_spawn_manager);
+    xr_delete(m_autosave_manager);
     xr_delete(m_debug_renderer);
     delete_data(m_debug_render_queue);
     if (!g_dedicated_server)
@@ -973,9 +980,14 @@ void CLevel::MakeReconnect()
 	}
 }
 
+BOOL mt_ph_commander = FALSE;
+BOOL mt_TaskManager = FALSE;
 void CLevel::OnFrame()
 {
 	PROF_EVENT("CLevel::OnFrame()");
+
+    // demonized: update wallmarks before rendering
+    ::Render->update_Wallmarks();
 
 #ifdef DEBUG_MEMORY_MANAGER
     debug_memory_guard __guard__;
@@ -1034,21 +1046,14 @@ void CLevel::OnFrame()
 	if (!g_dedicated_server)
 	{
 		if (g_mt_config.test(mtMap))
-			Device.seqParallel.push_back(fastdelegate::FastDelegate0<>(m_map_manager, &CMapManager::Update));
+			Device.seqParallel.push_back(xr_make_delegate(m_map_manager, &CMapManager::Update));
 		else
 			MapManager().Update();
-		if (IsGameTypeSingle() && Device.dwPrecacheFrame == 0)
-		{
-			// XXX nitrocaster: was enabled in x-ray 1.5; to be restored or removed
-			//if (g_mt_config.test(mtMap))
-			//{
-			//    Device.seqParallel.push_back(fastdelegate::FastDelegate0<>(
-			//    m_game_task_manager,&CGameTaskManager::UpdateTasks));
-			//}
-			//else
-			GameTaskManager().UpdateTasks();
-		}
+
+        if (!mt_TaskManager && Device.dwPrecacheFrame == 0)
+            GameTaskManager().UpdateTasks();
 	}
+
 	// Inherited update
 	inherited::OnFrame();
 	// Draw client/server stats
@@ -1138,19 +1143,21 @@ void CLevel::OnFrame()
 #endif
 	g_pGamePersistent->Environment().SetGameTime(GetEnvironmentGameDayTimeSec(),
 	                                             game->GetEnvironmentGameTimeFactor());
-	if (!g_dedicated_server)
+	if (!mt_ph_commander)
+	{
+		PROF_EVENT("m_ph_commander");
 		ai().script_engine().script_process(ScriptEngine::eScriptProcessorLevel)->update();
-	m_ph_commander->update();
-	m_ph_commander_scripts->update();
-	Device.Statistic->TEST0.Begin();
-	BulletManager().CommitRenderSet();
-	Device.Statistic->TEST0.End();
+
+		m_ph_commander->update();
+		m_ph_commander_scripts->update();
+	}
+
 	// update static sounds
 	if (!g_dedicated_server)
 	{
 		if (g_mt_config.test(mtLevelSounds))
 		{
-			Device.seqParallel.push_back(fastdelegate::FastDelegate0<>(
+			Device.seqParallel.push_back(xr_make_delegate(
 				m_level_sound_manager, &CLevelSoundManager::Update));
 		}
 		else
@@ -1161,7 +1168,7 @@ void CLevel::OnFrame()
 	if (!g_dedicated_server)
 	{
 		if (g_mt_config.test(mtLUA_GC))
-			Device.seqParallel.push_back(fastdelegate::FastDelegate0<>(this, &CLevel::script_gc));
+			Device.seqParallel.push_back(xr_make_delegate(this, &CLevel::script_gc));
 		else
 			script_gc();
 	}
@@ -1184,11 +1191,20 @@ extern BOOL psLua_ParallelGC_debug;
 
 void CLevel::script_gc()
 {
+	if (mt_ph_commander)
+	{
+		PROF_EVENT("m_ph_commander");
+		ai().script_engine().script_process(ScriptEngine::eScriptProcessorLevel)->update();
+
+		m_ph_commander->update();
+		m_ph_commander_scripts->update();
+	}
 	if (!(psLua_ParallelGC && Device.LuaGC))
-	{	
-		PROF_EVENT();	
+	{
+		PROF_EVENT("CLevel::script_gc");
 		lua_gc(ai().script_engine().lua(), LUA_GCSTEP, psLUA_GCSTEP);
 	}
+	
 }
 
 // demonized: bind LuaGC call to be available in device.cpp
@@ -1196,8 +1212,8 @@ bool CLevel::Load(u32 dwNum)
 {
     inherited::Load(dwNum);
     Msg("Device.LuaGC bind");
-    Device.LuaGC = fastdelegate::FastDelegate0<int>(&CLevel::LuaGC);
-    Device.LuaGCDebug = fastdelegate::FastDelegate0<void>(&CLevel::LuaGCDebug);
+    Device.LuaGC.bind(&CLevel::LuaGC);
+    Device.LuaGCDebug.bind(&CLevel::LuaGCDebug);
     return true;
 }
 
@@ -1647,26 +1663,6 @@ void CLevel::ReculcInterpolationSteps()
 bool CLevel::InterpolationDisabled()
 {
 	return g_cl_lvInterp < 0;
-}
-
-void CLevel::PhisStepsCallback(u32 Time0, u32 Time1)
-{
-	if (!Level().game)
-		return;
-	if (GameID() == eGameIDSingle)
-		return;
-	//#pragma todo("Oles to all: highly inefficient and slow!!!")
-	//fixed (Andy)
-	/*
-	for (xr_vector<CObject*>::iterator O=Level().Objects.objects.begin(); O!=Level().Objects.objects.end(); ++O)
-	{
-	if( smart_cast<CActor*>((*O)){
-	CActor* pActor = smart_cast<CActor*>(*O);
-	if (!pActor || pActor->Remote()) continue;
-	pActor->UpdatePosStack(Time0, Time1);
-	}
-	};
-	*/
 }
 
 void CLevel::SetNumCrSteps(u32 NumSteps)

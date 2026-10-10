@@ -34,11 +34,11 @@ class PROTECT_API CDialogHolder : public pureFrame
 	xr_vector<recvItem> m_input_receivers;
 	xr_vector<dlgItem> m_dialogsToRender;
 	xr_vector<dlgItem> m_dialogsToRender_new;
-	bool m_b_in_update;
+	volatile bool m_b_in_update;
+    volatile bool m_b_in_render;
 
 	void StartMenu(CUIDialogWnd* pDialog, bool bDoHideIndicators);
 	void StopMenu(CUIDialogWnd* pDialog);
-	void SetMainInputReceiver(CUIDialogWnd* ir, bool _find_remove);
 protected:
 	void DoRenderDialogs();
 	void CleanInternals();
@@ -51,6 +51,7 @@ public:
 	CUIDialogWnd* TopInputReceiver();
 	void AddDialogToRender(CUIWindow* pDialog);
 	void RemoveDialogToRender(CUIWindow* pDialog);
+    void SetMainInputReceiver(CUIDialogWnd* ir, bool _find_remove);
 	virtual void _BCL OnFrame();
 	virtual bool UseIndicators() { return true; }
 

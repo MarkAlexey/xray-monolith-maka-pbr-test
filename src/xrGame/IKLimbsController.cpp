@@ -346,12 +346,50 @@ void _stdcall CIKLimbsController::IKVisualCallback(IKinematics* K)
 		return;
 #endif
 
-	CGameObject* O = ((CGameObject*)K->GetUpdateCallbackParam());
-	CPhysicsShellHolder* Sh = smart_cast<CPhysicsShellHolder*>(O);
-	VERIFY(Sh);
-	CIKLimbsController* ik = Sh->character_ik_controller();
-	VERIFY(ik);
-	ik->Calculate();
+	if(CGameObject* O = (CGameObject*)K->GetUpdateCallbackParam())
+	{
+		if(CPhysicsShellHolder* Sh = O->cast_physics_shell_holder())
+		{
+			if(CIKLimbsController* ik = Sh->character_ik_controller())
+			{
+			    if(!Sh->m_pPhysicsShell)
+			    {
+				    Fvector ce;
+				    O->Center(ce);
+				    if (Render->ViewBase.testSphere_dirty(ce, O->Radius()))
+				    {
+					    if (Device.vCameraPosition.distance_to_sqr(O->Position()) > 3000.f)
+					    {
+						    //if (Device.dwFrame < ik->optimize_frame)
+						    IKinematics* K = O->Visual()->dcast_PKinematics();
+						    u16 root = K->LL_GetBoneRoot();
+						    CBoneInstance& root_bi = K->LL_GetBoneInstance(root);
+						    root_bi.reset_callback();
+						    return;
+						    //ik->optimize_frame = Device.dwFrame + Random.randI(8);
+					    }
+
+                        {
+                            PROF_EVENT("IK_UPDATE_CALCULATE");
+                            ik->_pose_extrapolation.update(O->XFORM());
+                            for (CIKLimb& limb : ik->_bone_chains)
+                                ik->LimbUpdate(limb);
+
+                            ik->Calculate();
+                        }
+					    
+				    }
+				    else
+				    {
+					    IKinematics* K = O->Visual()->dcast_PKinematics();
+					    u16 root = K->LL_GetBoneRoot();
+					    CBoneInstance& root_bi = K->LL_GetBoneInstance(root);
+					    root_bi.reset_callback();
+				    }
+			    }
+			}
+		}
+	}
 }
 
 void CIKLimbsController::PlayLegs(CBlend* b)
@@ -380,11 +418,6 @@ void CIKLimbsController::Update()
 
 	skeleton_animated->UpdateTracks();
 	update_blend(m_legs_blend);
-
-	_pose_extrapolation.update(m_object->XFORM());
-	xr_vector<CIKLimb>::iterator i = _bone_chains.begin(), e = _bone_chains.end();
-	for (; e != i; ++i)
-		LimbUpdate(*i);
 
 	/*
 	Fmatrix predict;

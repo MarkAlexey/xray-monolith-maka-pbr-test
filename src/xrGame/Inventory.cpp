@@ -625,7 +625,8 @@ void CInventory::Activate(u16 slot, bool bForce)
 			CHudItem* tempItem = active_item->cast_hud_item();
 			R_ASSERT2(tempItem, active_item->object().cNameSect().c_str());
 
-			tempItem->SendDeactivateItem();
+			if (tempItem)
+				tempItem->SendDeactivateItem();
 #ifdef DEBUG
 			//			Msg("--- Inventory owner [%s]: send deactivate item [%s]", m_pOwner->Name(), active_item->NameItem());
 #endif // #ifdef DEBUG
@@ -874,8 +875,8 @@ void CInventory::Update()
 				funct(m_iActiveSlot, obj, prev_slot, prev_obj);
 			}
 		}
-		else if ((GetNextActiveSlot() != NO_ACTIVE_SLOT) && ActiveItem() && ActiveItem()->cast_hud_item()->IsHidden())
-					ActiveItem()->ActivateItem();
+		else if ((GetNextActiveSlot() != NO_ACTIVE_SLOT) && ActiveItem() && ActiveItem()->cast_hud_item() && ActiveItem()->cast_hud_item()->IsHidden())
+			ActiveItem()->ActivateItem();
 	}
 	UpdateDropTasks();
 }
@@ -1276,14 +1277,9 @@ CInventoryItem* CInventory::GetItemFromInventory(LPCSTR caItemName)
 {
 	TIItemContainer& l_list = m_all;
 
-	u32 crc = crc32(caItemName, xr_strlen(caItemName));
-
 	for (TIItemContainer::iterator l_it = l_list.begin(); l_list.end() != l_it; ++l_it)
-		if ((*l_it)->object().cNameSect()._get()->dwCRC == crc)
-		{
-			VERIFY(0 == xr_strcmp( (*l_it)->object().cNameSect().c_str(), caItemName));
+		if (xr_strcmp((*l_it)->object().cNameSect().c_str(), caItemName) == 0)
 			return (*l_it);
-		}
 	return (0);
 }
 
@@ -1547,7 +1543,9 @@ void CInventory::UnblockSlot(u16 slot_id)
 
 bool CInventory::IsSlotBlocked(u16 slot_id) const
 {
-	//VERIFY(slot_id <= LAST_SLOT);
+	if (m_blocked_slots.size() <= slot_id)
+		return false;
+
 	return m_blocked_slots[slot_id] > 0;
 }
 

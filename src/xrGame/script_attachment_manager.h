@@ -46,8 +46,7 @@ struct script_attachment_bone_cb
 };
 
 class script_attachment :
-	public IRenderable,
-	public ISpatial
+	public IRenderable
 {
 private:
 	shared_str m_name;
@@ -101,9 +100,9 @@ public:
 	virtual void spatial_move();
 	virtual IRenderable* dcast_Renderable() { return this; }
 
-	virtual void renderable_Render();
+	virtual void renderable_Render(IDSGraphManager* DM);
 
-	void Render(IKinematics* model, Fmatrix* mat);
+	void Render(IKinematics* model, Fmatrix* mat, IDSGraphManager* DM);
 	void Update();
 	void RenderUI();
 
@@ -185,7 +184,7 @@ public:
 	void RemoveChild(LPCSTR name, bool destroy = false);
 	void IterateAttachments(::luabind::functor<bool> functor);
 
-	void SetType(u16 type) { m_type = type < eSA_undefined ? type : eSA_World; }
+    void SetType(u16 type);
 	u16 GetType() { return m_type; }
 
 	u32 PlayMotion(LPCSTR name, bool mixin = true, float speed = 1.f);

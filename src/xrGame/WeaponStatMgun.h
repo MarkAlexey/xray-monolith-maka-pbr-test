@@ -52,7 +52,7 @@ struct SStmBarrel
 
 	shared_str m_sShellParticles;
 	shared_str m_sFlameParticles;
-	CParticlesObject *m_pFlameParticles;
+	intrusive_ptr<CParticlesObject> m_pFlameParticles;
 	shared_str m_sSmokeParticles;
 
 	Fcolor light_base_color;
@@ -135,6 +135,8 @@ private:
 	//casts
 public:
 	virtual CHolderCustom* cast_holder_custom() { return this; }
+	virtual CGameObject* cast_game_object() { return this; }
+	virtual CWeaponStatMgun* cast_weapon_stat_mgun() { return this; }
 
 	//general
 public:
@@ -176,7 +178,7 @@ private:
 	float m_overheat_decr_quant;
 	float m_overheat_threshold;
 	shared_str m_overheat_particles;
-	CParticlesObject* p_overheat;
+	intrusive_ptr<CParticlesObject> p_overheat;
 protected:
 	void UpdateBarrelDir();
 	virtual const Fvector& get_CurrentFirePoint();
@@ -210,7 +212,7 @@ public:
 #endif
 	virtual void cam_Update(float dt, float fov = 90.0f);
 
-	virtual void renderable_Render();
+	virtual void renderable_Render(IDSGraphManager* DM);
 
 	virtual bool attach_Actor(CGameObject* actor);
 	virtual void detach_Actor();

@@ -69,8 +69,9 @@ public:
 #endif	//	USE_DX10
 
 private:
-	IC BOOL desc_valid() { return pSurface == desc_cache; }
-	IC void desc_enshure() { if (!desc_valid()) desc_update(); }
+	IC void wait_for_loading() const { while (flags.bLoading){SwitchToThread();} }
+	IC BOOL desc_valid() { wait_for_loading(); return pSurface==desc_cache; }
+	IC void desc_enshure() { wait_for_loading(); if (!desc_valid()) desc_update(); }
 	void desc_update();
 #if defined(USE_DX10) || defined(USE_DX11)
 	void								Apply			(u32 dwStage);
@@ -83,15 +84,18 @@ public: //	Public class members (must be encapsulated furthur)
 	struct
 	{
 		u32 bLoaded : 1;
+		u32 bLoading : 1;
 		u32 bUser : 1;
 		u32 seqCycles : 1;
-		u32 MemoryUsage : 28;
+		u32 MemoryUsage : 27;
 #if defined(USE_DX10) || defined(USE_DX11)
 		u32					bLoadedAsStaging: 1;
 #endif	//	USE_DX10
 	} flags;
 
-	fastdelegate::FastDelegate1<u32> bind;
+    u32 dwLastUsedFrame = 0; // frame index of last Apply() call — used for eviction
+
+	xr_delegate<void(u32)> bind;
 
 
 	CAviPlayerCustom* pAVI;
@@ -127,8 +131,8 @@ struct resptrcode_texture : public resptr_base<CTexture>
 {
 	void create(LPCSTR _name);
 	void destroy() { _set(NULL); }
-	shared_str bump_get() { return _get()->m_bumpmap; }
-	bool bump_exist() { return 0 != bump_get().size(); }
+	shared_str bump_get() { while (_get() && _get()->flags.bLoading) { SwitchToThread(); }return _get()->m_bumpmap; }
+	bool bump_exist() { while (_get() && _get()->flags.bLoading) { SwitchToThread(); }return 0!=bump_get().size(); }
 };
 
 typedef resptr_core<CTexture, resptrcode_texture>

@@ -4,6 +4,10 @@
 #include <concurrent_unordered_map.h>
 #include <concurrent_vector.h>
 #include <atomic>
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <type_traits>
 
 // Atomic types
 using xr_atomic_u32 = std::atomic_uint32_t;
@@ -30,22 +34,20 @@ inline void xr_parallel_foreach(Index Begin, Index End, Body Functor)
 {
 	concurrency::parallel_for_each(Begin, End, Functor);
 }
+// Helper to deduce the value type for the default predicate
+template <typename RandomIt>
+using IterValueT = typename std::iterator_traits<RandomIt>::value_type;
+
+// Helper to check if an iterator is Random Access
+template <typename It>
+using IsRandomAccess = std::is_base_of<
+    std::random_access_iterator_tag,
+    typename std::iterator_traits<It>::iterator_category
+>;
 
 // PPL behaviour - fallback to std::sort if chunk size < 2048 and cores < 2
-template<typename Data, typename Body>
-inline void xr_parallel_sort(Data& data, Body functor)
+template<typename RandomIt, typename P = std::less<IterValueT<RandomIt>>>
+IC void xr_parallel_sort(RandomIt first, RandomIt last, P pred = {})
 {
-	concurrency::parallel_sort(std::begin(data), std::end(data), functor);
-}
-
-template<typename Data, typename Body>
-inline void xr_sort(Data& data, Body functor)
-{
-	std::sort(std::begin(data), std::end(data), functor);
-}
-
-template<typename Data, typename Body>
-inline void xr_stable_sort(Data& data, Body functor)
-{
-	std::stable_sort(std::begin(data), std::end(data), functor);
+    concurrency::parallel_sort(first, last, pred);
 }

@@ -14,6 +14,10 @@ CUIDialogWnd::CUIDialogWnd()
 
 CUIDialogWnd::~CUIDialogWnd()
 {
+    if (m_pParentHolder)
+    {
+        m_pParentHolder->SetMainInputReceiver(this, true);
+    }
 }
 
 void CUIDialogWnd::Show(bool status)

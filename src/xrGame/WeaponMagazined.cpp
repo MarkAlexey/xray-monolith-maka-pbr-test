@@ -2,7 +2,6 @@
 
 #include "WeaponMagazined.h"
 #include "actor.h"
-#include "ParticlesObject.h"
 #include "Scope.h"
 #include "Silencer.h"
 #include "GrenadeLauncher.h"
@@ -71,7 +70,7 @@ CWeaponMagazined::~CWeaponMagazined()
 	}
 
 	// sounds
-	Device.remove_from_seq_parallel(fastdelegate::FastDelegate0<>(this, &CWeaponMagazined::UpdateSoundsPositions));
+	Device.remove_from_seq_parallel(xr_make_delegate(this, &CWeaponMagazined::UpdateSoundsPositions));
 }
 
 void CWeaponMagazined::net_Destroy()
@@ -658,6 +657,7 @@ void CWeaponMagazined::on_b_hud_detach()
 extern ENGINE_API BOOL g_bootComplete;
 void CWeaponMagazined::UpdateCL()
 {
+	PROF_EVENT();
 	inherited::UpdateCL();
 	float dt = Device.fTimeDelta;
 
@@ -711,7 +711,7 @@ void CWeaponMagazined::UpdateSounds()
 	{
 		// Force update of fire dependencies and then put into second thread, fixes flickering limbs
 		get_LastFP();
-		Device.seqParallel.push_back(fastdelegate::FastDelegate0<>(this, &CWeaponMagazined::UpdateSoundsPositions));
+		Device.seqParallel.push_back(xr_make_delegate(this, &CWeaponMagazined::UpdateSoundsPositions));
 	}
 	else
 	{

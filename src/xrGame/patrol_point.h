@@ -18,6 +18,8 @@ class CGameGraph;
 
 class CPatrolPoint : public IPureSerializeObject<IReader, IWriter>
 {
+	friend class CPatrolPathStorage;
+
 protected:
 	shared_str m_name;
 	Fvector m_position;

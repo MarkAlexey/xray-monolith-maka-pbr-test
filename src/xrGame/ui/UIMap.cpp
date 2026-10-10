@@ -307,6 +307,7 @@ void CUIGlobalMap::Init_internal(const shared_str& name, CInifile& pLtx, const s
 
 void CUIGlobalMap::Update()
 {
+	xrCriticalSectionGuard guard(csUi);
 	for (WINDOW_LIST_it it = m_ChildWndList.begin(); m_ChildWndList.end() != it; ++it)
 	{
 		CUICustomMap* m = smart_cast<CUICustomMap*>(*it);
@@ -412,6 +413,7 @@ void CUILevelMap::Draw()
 	if (MapWnd())
 	{
 		float gmz = MapWnd()->GlobalMap()->GetCurrentZoom().x;
+		xrCriticalSectionGuard guard(csUi);
 		if (m_label && m_label_scale_max > 0.0f)
 			m_label->SetVisible(!!pda_show_map_labels && (gmz < m_label_scale_max));
 

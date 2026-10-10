@@ -14,6 +14,9 @@ class ENGINE_API IRender_DetailModel;
 #include "../Include/xrRender/FactoryPtr.h"
 #include "../Include/xrRender/RainRender.h"
 
+// SSS
+#include "../../xrEngine/perlin.h"
+
 //
 class ENGINE_API CEffect_Rain
 {
@@ -65,6 +68,7 @@ private:
 	// Data and logic
 	xr_vector<Item> items;
 	States state;
+	xrCriticalSection rainCS;
 
 	// Particles
 	xr_vector<Particle> particle_pool;
@@ -80,6 +84,8 @@ private:
 	void p_create();
 	void p_destroy();
 
+	// SSS
+
 	void p_remove(Particle* P, Particle*& LST);
 	void p_insert(Particle* P, Particle*& LST);
 	int p_size(Particle* LST);
@@ -87,7 +93,7 @@ private:
 	void p_free(Particle* P);
 
 	// Some methods
-	void Born(Item& dest, float radius);
+	void Born(Item& dest, float radius, float speed);
 	void Hit(Fvector& pos);
 	BOOL RayPick(const Fvector& s, const Fvector& d, float& range, collide::rq_target tgt);
 	void RenewItem(Item& dest, float height, BOOL bHit);
@@ -106,6 +112,7 @@ public:
 	}
 
 	float GetRainVolume() { return rain_volume; }
+	void UpdateItems();
 };
 
 #endif //RainH

@@ -15,6 +15,7 @@
 #include "script_storage.h"
 #include <unordered_map>
 #include <set>
+#include <luabind/class_info.hpp>
 
 #ifdef USE_DEBUGGER
 #	ifndef USE_LUA_STUDIO
@@ -141,6 +142,10 @@ CScriptEngine::CScriptEngine()
 	m_last_no_file_length = 0;
 	*m_last_no_file = 0;
 
+#ifdef USE_LUA_FUNCTOR_CACHE
+	m_cache_valid = true;
+#endif
+
 #ifdef USE_DEBUGGER
 #	ifndef USE_LUA_STUDIO
 	m_scriptDebugger = NULL;
@@ -153,6 +158,11 @@ CScriptEngine::CScriptEngine()
 
 CScriptEngine::~CScriptEngine()
 {
+
+#ifdef USE_LUA_FUNCTOR_CACHE
+	m_cache_valid = false;
+#endif
+
 	while (!m_script_processes.empty())
 		remove_script_process(m_script_processes.begin()->first);
 
@@ -365,7 +375,7 @@ void CScriptEngine::setup_auto_load()
 }
 
 extern void export_classes(lua_State* L);
-extern xr_unordered_map<std::string, std::set<std::string>> unlocalizers;
+extern xr_unordered_map<xr_string, xr_set<xr_string>> unlocalizers;
 extern bool unlocalizerPassed;
 
 void CScriptEngine::init()
@@ -376,10 +386,15 @@ void CScriptEngine::init()
         m_lua_studio_world->remove		(lua());
 #endif // #ifdef USE_LUA_STUDIO
 
+	// Invalidate functor cache as the Lua state is being recreated
+#ifdef USE_LUA_FUNCTOR_CACHE
+	invalidate_functor_cache();
+#endif
+
 	CScriptStorage::reinit();
 
 #ifdef USE_LUA_STUDIO
-    if (m_lua_studio_world || strstr(Core.Params, "-lua_studio")) {
+    if (m_lua_studio_world || Core.ParamsData.test(ECoreParams::lua_studio) {
         if (!lua_studio_connected)
             try_connect_to_debugger		();
         else {
@@ -395,6 +410,7 @@ void CScriptEngine::init()
 #endif // #ifdef USE_LUA_STUDIO
 
 	::luabind::open(lua());
+	::luabind::bind_class_info(lua());
 	setup_callbacks();
 	export_classes(lua());
 	setup_auto_load();
@@ -427,8 +443,12 @@ void CScriptEngine::init()
 	load_common_scripts();
 #endif
 	m_stack_level = lua_gettop(lua());
+	
+#ifdef USE_LUA_FUNCTOR_CACHE
+	m_cache_valid = true;
+#endif
 
-    if (strstr(Core.Params, "-ldbg")) {
+	if (strstr(Core.Params, "-ldbg")) {
         CScriptStorage::DebuggerAttach();
     }
 }
@@ -506,7 +526,7 @@ void CScriptEngine::process_file_if_exists(LPCSTR file_name, bool warn_if_not_ex
 			return;
 		}
 		//#ifndef MASTER_GOLD
-		if (strstr(Core.Params, "-dbg"))
+		if (Core.isDebug())
 			Msg("* loading script %s", S1);
 		//#endif // MASTER_GOLD
 		m_reload_modules = false;

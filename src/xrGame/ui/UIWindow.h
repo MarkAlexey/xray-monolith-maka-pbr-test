@@ -5,6 +5,19 @@ class UIHint;
 class CScriptXmlInit;
 class CUIWindow;
 
+class CUIStatic;
+class CUICellItem;
+class CUIListBoxItem;
+class CUIListItem;
+class CUIListWnd;
+class ITextureOwner;
+class CUILightAnimColorConroller;
+class CUITreeViewItem;
+class CUIScrollView;
+class CUIFixedScrollBar;
+class CUISelectable;
+class CUIListItemServer;
+
 struct _12b
 {
 	DWORD _[3];
@@ -115,6 +128,20 @@ public:
 	CUIWindow();
 	virtual ~CUIWindow();
 
+	virtual CUIWindow* ui_cast_window() { return this; }
+	virtual CUIStatic* ui_cast_static() { return nullptr; }
+	virtual CUICellItem* ui_cast_cell_item() { return nullptr; }
+	virtual CUIListBoxItem* ui_cast_list_box_item() { return nullptr; }
+	virtual CUIListItem* ui_cast_list_item() { return nullptr; }
+	virtual CUIListWnd* ui_cast_list() { return nullptr; }
+	virtual ITextureOwner* ui_cast_texture_owner() { return nullptr; }
+	virtual CUILightAnimColorConroller* ui_cast_light_anim_color_controller() { return nullptr; }
+	virtual CUITreeViewItem* ui_cast_tree_view_item() { return nullptr; }
+	virtual CUIScrollView* ui_cast_scroll_view() { return nullptr; }
+	virtual CUIFixedScrollBar* ui_cast_fixed_scroll_bar() { return nullptr; }
+	virtual CUISelectable* ui_cast_selectable() { return nullptr; }
+	virtual CUIListItemServer* ui_cast_list_item_server() { return nullptr; }
+
 
 	////////////////////////////////////
 	//работа с дочерними и родительскими окнами
@@ -122,7 +149,11 @@ public:
 	virtual void DetachChild(CUIWindow* pChild);
 	virtual bool IsChild(CUIWindow* pChild) const;
 	virtual void DetachAll();
-	int GetChildNum() { return m_ChildWndList.size(); }
+	int GetChildNum()
+	{
+		xrCriticalSectionGuard guard(csUi);
+		return m_ChildWndList.size();
+	}
 
 	void SetParent(CUIWindow* pNewParent);
 	CUIWindow* GetParent() const { return m_pParentWnd; }
@@ -299,16 +330,22 @@ public:
 	IC bool GetCustomDraw() const { return m_bCustomDraw; }
 	IC void SetCustomDraw(bool b) { m_bCustomDraw = b; }
 
+	xrCriticalSection csUi;
+
 protected:
 	IC void SafeRemoveChild(CUIWindow* child)
 	{
+		xrCriticalSectionGuard guard(csUi);
 		WINDOW_LIST_it it = std::find(m_ChildWndList.begin(), m_ChildWndList.end(), child);
-		if (it != m_ChildWndList.end())m_ChildWndList.erase(it);
+		if (it != m_ChildWndList.end()) m_ChildWndList.erase(it);
 	};
 
 	shared_str m_windowName;
 	//список дочерних окон
 	WINDOW_LIST m_ChildWndList;
+
+    WINDOW_LIST m_ChildWndToDelete;
+    void CollectGarbage();
 
 	//указатель на родительское окно
 	CUIWindow* m_pParentWnd;

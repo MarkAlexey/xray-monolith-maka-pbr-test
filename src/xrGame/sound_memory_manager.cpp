@@ -22,8 +22,12 @@
 #include "ai/stalker/ai_stalker.h"
 #include "profiler.h"
 #include "client_spawn_manager.h"
-#include "memory_manager.h"
 #include "../xrEngine/IGame_Persistent.h"
+
+#include "stalker_movement_manager_smart_cover.h"
+#include "movement_manager_space.h"
+#include "stalker_planner.h"
+#include "ai_sounds.h"
 
 #ifndef MASTER_GOLD
 #	include "actor.h"
@@ -33,9 +37,9 @@
 #define SILENCE
 //#define SAVE_OWN_SOUNDS
 //#define SAVE_OWN_ITEM_SOUNDS
-#define SAVE_NON_ALIVE_OBJECT_SOUNDS
-#define SAVE_FRIEND_ITEM_SOUNDS
-#define SAVE_FRIEND_SOUNDS
+// #define SAVE_NON_ALIVE_OBJECT_SOUNDS
+// #define SAVE_FRIEND_ITEM_SOUNDS
+// #define SAVE_FRIEND_SOUNDS
 //#define SAVE_VISIBLE_OBJECT_SOUNDS
 
 const float COMBAT_SOUND_PERCEIVE_RADIUS_SQR = _sqr(5.f);
@@ -128,6 +132,7 @@ IC bool is_sound_type(int s, const ESoundTypes& t)
 void CSoundMemoryManager::feel_sound_new(CObject* object, int sound_type, CSound_UserDataPtr user_data,
                                          const Fvector& position, float sound_power)
 {
+	PROF_EVENT("SoundMemory::feel_sound_new");
 #ifndef MASTER_GOLD
 	if (object && smart_cast<CActor*>(object) && psAI_Flags.test(aiIgnoreActor))
 		return;
@@ -230,6 +235,7 @@ void CSoundMemoryManager::add(const CSoundObject& sound_object, bool check_for_e
 
 void CSoundMemoryManager::add(const CObject* object, int sound_type, const Fvector& position, float sound_power)
 {
+	PROF_EVENT("SoundMemory::add");
 #ifndef SAVE_OWN_SOUNDS
 	// we do not want to save our own sounds
 	if (object && (m_object->ID() == object->ID()))
@@ -248,32 +254,46 @@ void CSoundMemoryManager::add(const CObject* object, int sound_type, const Fvect
 		return;
 #endif
 
-#ifndef SAVE_FRIEND_ITEM_SOUNDS
-	// we do not want to save sounds from the teammates items
-	CEntityAlive	*me				= m_object;
-	if (object && object->H_Parent() && (me->tfGetRelationType(smart_cast<const CEntityAlive*>(object->H_Parent())) == ALife::eRelationTypeFriend))
+	// we do not want to save sounds from the teammates and neutrals items
+	CEntityAlive *me_entity_alive = m_object;
+	if (object && object->H_Parent() && smart_cast<const CEntityAlive*>(object->H_Parent()) && (me_entity_alive->tfGetRelationType(smart_cast<const CEntityAlive*>(object->H_Parent())) == ALife::eRelationTypeFriend || me_entity_alive->tfGetRelationType(smart_cast<const CEntityAlive*>(object->H_Parent())) == ALife::eRelationTypeNeutral))
 		return;
-#endif
 
-#ifndef SAVE_FRIEND_SOUNDS
-	const CEntityAlive	*entity_alive	= smart_cast<const CEntityAlive*>(object);
-	// we do not want to save sounds from the teammates
-	if (entity_alive && me && (me->tfGetRelationType(entity_alive) == ALife::eRelationTypeFriend))
+	const CEntityAlive *who_entity_alive = smart_cast<const CEntityAlive*>(object);
+	// we do not want to save sounds from the teammates and neutrals
+	if (who_entity_alive && me_entity_alive && (me_entity_alive->tfGetRelationType(who_entity_alive) == ALife::eRelationTypeFriend || me_entity_alive->tfGetRelationType(who_entity_alive) == ALife::eRelationTypeNeutral))
 		return;
-#endif
 
-#ifndef SAVE_VISIBLE_OBJECT_SOUNDS
-#	ifdef SAVE_FRIEND_SOUNDS
-	const CEntityAlive* entity_alive = smart_cast<const CEntityAlive*>(object);
-#	endif
-	// we do not save sounds from the objects we see (?!)
-	if (m_object->memory().visual().visible_now(entity_alive))
+	if(who_entity_alive && !m_object->memory().enemy().is_useful(who_entity_alive))
 		return;
-#endif
 
 	const CGameObject* game_object = smart_cast<const CGameObject*>(object);
 	if (!game_object && object)
 		return;
+
+	bool heavy_sound = ((sound_type&SOUND_TYPE_WEAPON_SHOOTING) == SOUND_TYPE_WEAPON_SHOOTING ||
+					(sound_type&SOUND_TYPE_WEAPON_BULLET_HIT) == SOUND_TYPE_WEAPON_BULLET_HIT ||
+					(sound_type&SOUND_TYPE_WEAPON_EMPTY_CLICKING) == SOUND_TYPE_WEAPON_EMPTY_CLICKING || 
+					(sound_type&SOUND_TYPE_STEP) == SOUND_TYPE_STEP);
+
+	if(heavy_sound && sound_power >= 4.f)
+	{
+		if(CAI_Stalker *stalker = smart_cast<CAI_Stalker*>(m_object))
+		{
+			if(who_entity_alive && who_entity_alive->g_Alive() && !m_object->memory().visual().visible_now(who_entity_alive))
+			{
+				stalker->movement().set_mental_state(eMentalStateDanger);
+				CNotYetVisibleObject        new_object;
+				new_object.m_object         = smart_cast<const CGameObject*>(object);
+				new_object.m_value          = 1.0f;
+				new_object.m_prev_time      = Device.dwTimeGlobal-1;
+				new_object.m_update_time    = Device.dwTimeGlobal;
+				m_object->memory().visual().add_not_yet_visible_object(new_object);
+				m_object->memory().visual().add_visible_object(object, Device.fTimeDelta);
+				//Msg("sound_power %f", sound_power);
+			}
+		}
+	}
 
 	const CGameObject* self = m_object;
 
@@ -321,15 +341,15 @@ void CSoundMemoryManager::update()
 	START_PROFILE("Memory Manager/sounds::update")
 		clear_delayed_objects();
 
-		VERIFY(m_sounds);
-		m_sounds->erase(
-			std::remove_if(
-				m_sounds->begin(),
-				m_sounds->end(),
-				CRemoveOfflinePredicate()
-			),
-			m_sounds->end()
-		);
+		if (m_sounds)
+		    m_sounds->erase(
+			    std::remove_if(
+				    m_sounds->begin(),
+				    m_sounds->end(),
+				    CRemoveOfflinePredicate()
+			    ),
+			    m_sounds->end()
+		    );
 
 #ifdef USE_SELECTED_SOUND
 	xr_delete					(m_selected_sound);
@@ -371,10 +391,12 @@ struct CSoundObjectPredicate
 
 void CSoundMemoryManager::remove_links(CObject* object)
 {
-	VERIFY(m_sounds);
-	SOUNDS::iterator I = std::find_if(m_sounds->begin(), m_sounds->end(), CSoundObjectPredicate(object));
-	if (I != m_sounds->end())
-		m_sounds->erase(I);
+	if (m_sounds)
+	{
+		SOUNDS::iterator I = std::find_if(m_sounds->begin(), m_sounds->end(), CSoundObjectPredicate(object));
+		if (I != m_sounds->end())
+			m_sounds->erase(I);
+	}
 
 #ifdef USE_SELECTED_SOUND
 	if (!m_selected_sound)

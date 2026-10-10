@@ -333,7 +333,7 @@ IPureServer::EConnect IPureServer::Connect(LPCSTR options, GameDescriptionData& 
 #endif
 
 		BOOL bSimulator = FALSE;
-		if (strstr(Core.Params, "-netsim")) bSimulator = TRUE;
+		if (Core.ParamsData.test(ECoreParams::netsim)) bSimulator = TRUE;
 
 
 		// dump_URL		("! sv ",	net_Address_device);

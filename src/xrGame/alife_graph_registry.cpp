@@ -9,9 +9,11 @@
 #include "stdafx.h"
 #include "alife_graph_registry.h"
 #include "../xrEngine/x_ray.h"
+#include "level.h"
 
 using namespace ALife;
 
+xr_task_group level_load;
 CALifeGraphRegistry::CALifeGraphRegistry()
 {
 	m_level = 0;
@@ -67,7 +69,20 @@ void CALifeGraphRegistry::update(CSE_ALifeDynamicObject* object)
 
 void CALifeGraphRegistry::setup_current_level()
 {
-	m_level = xr_new<CALifeLevelRegistry>(ai().game_graph().vertex(actor()->m_tGraphID)->level_id());
+	u8 level_id = ai().game_graph().vertex(actor()->m_tGraphID)->level_id();
+
+	GameGraph::LEVEL_MAP::const_iterator I = ai().game_graph().header().levels().find(level_id);
+	Level().set_name((*I).second.name());
+	int levelid = pApp->Level_ID(*(*I).second.name(), "1.0", true);
+	static DWORD this_thread_id = 0;
+	this_thread_id = GetCurrentThreadId();
+	level_load.run([=]()
+	{
+		if (this_thread_id != GetCurrentThreadId()) { PROF_THREAD("X-Ray PPL Thread") }
+		Level().Load(levelid);
+	});
+
+	m_level = xr_new<CALifeLevelRegistry>(level_id);
 	level().set_process_time(m_process_time);
 	for (int i = 0, n = ai().game_graph().header().vertex_count(); i < n; ++i)
 		if (ai().game_graph().vertex(i)->level_id() == level().level_id())
@@ -86,8 +101,6 @@ void CALifeGraphRegistry::setup_current_level()
 
 		m_temp.clear();
 	}
-	GameGraph::LEVEL_MAP::const_iterator I = ai().game_graph().header().levels().find(
-		ai().game_graph().vertex(actor()->m_tGraphID)->level_id());
 	R_ASSERT2(ai().game_graph().header().levels().end() != I, "Graph point level ID not found!");
 
 	int id = pApp->Level_ID(*(*I).second.name(), "1.0", true);

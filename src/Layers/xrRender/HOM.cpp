@@ -7,25 +7,33 @@
 #include "occRasterizer.h"
 #include "../../xrEngine/GameFont.h"
 
-#include "dxRenderDeviceRender.h"
+#include "../../xrCore/profiler.h"
 
-#include <tbb/blocked_range.h>
-#include <tbb/parallel_for.h>
+#include "dxRenderDeviceRender.h"
 
 float psOSSR = .001f;
 
 void __stdcall CHOM::MT_RENDER()
 {
-	MT.Enter();
+	PROF_EVENT("Render HOM");
+
+	xrCriticalSectionGuard guard(m_mt_render_guard);
+	const u32 current_frame = Device.dwFrame;
+
 	bool b_main_menu_is_active = (g_pGamePersistent->m_pMainMenu && g_pGamePersistent->m_pMainMenu->IsActive());
-	if (MT_frame_rendered != Device.dwFrame && !b_main_menu_is_active)
+	if (b_main_menu_is_active)
+	{
+		MT_frame_rendered.store(current_frame, std::memory_order_release);
+		return;
+	}
+
+	if (MT_frame_rendered.load(std::memory_order_acquire) != current_frame)
 	{
 		CFrustum ViewBase;
 		ViewBase.CreateFromMatrix(Device.mFullTransform, FRUSTUM_P_LRTB + FRUSTUM_P_FAR);
 		Enable();
 		Render(ViewBase);
 	}
-	MT.Leave();
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -37,6 +45,7 @@ CHOM::CHOM()
 	bEnabled = FALSE;
 	m_pModel = 0;
 	m_pTris = 0;
+    MT_frame_rendered.store(0, std::memory_order_relaxed);
 #ifdef DEBUG
 	Device.seqRender.Add(this,REG_PRIORITY_LOW-1000);
 #endif
@@ -128,6 +137,12 @@ void CHOM::Load()
 	bEnabled = TRUE;
 	S->close();
 	FS.r_close(fs);
+
+	if (ps_r2_ls_flags.test(R2FLAG_EXP_MT_CALC))
+	{
+		// MT-HOM (@front)
+		Device.seqParallelRender.push_back(xr_make_delegate(this, &CHOM::MT_RENDER));
+	}
 }
 
 void CHOM::Unload()
@@ -135,6 +150,10 @@ void CHOM::Unload()
 	xr_delete(m_pModel);
 	xr_free(m_pTris);
 	bEnabled = FALSE;
+
+	auto I = std::find(Device.seqParallelRender.begin(), Device.seqParallelRender.end(), xr_make_delegate(this, &CHOM::MT_RENDER));
+	if (I != Device.seqParallelRender.end())
+		Device.seqParallelRender.erase(I);
 }
 
 class pred_fb
@@ -265,7 +284,7 @@ void CHOM::Render(CFrustum& base)
 	Raster.clear();
 	Render_DB(base);
 	Raster.propagade();
-	MT_frame_rendered = Device.dwFrame;
+	MT_frame_rendered.store(Device.dwFrame, std::memory_order_release);
 	Device.Statistic->RenderCALC_HOM.End();
 }
 
@@ -324,6 +343,13 @@ BOOL CHOM::visible(Fbox2& B, float depth)
 {
 	if (!bEnabled) return TRUE;
 	return Raster.test(B.min.x, B.min.y, B.max.x, B.max.y, depth);
+}
+
+BOOL CHOM::visible(Fsphere& S)
+{
+	Fbox B;
+	B.setb(S.P,Fvector().set(S.R, S.R, S.R));
+	return visible(B);
 }
 
 BOOL CHOM::visible(vis_data& vis)

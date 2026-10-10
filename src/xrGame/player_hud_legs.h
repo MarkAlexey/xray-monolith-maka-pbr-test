@@ -9,7 +9,7 @@ class player_legs_controller
 {
 public:
     void    update(CActor* actor, bool isShadowPass = false);
-    void    render();
+    void    render(IDSGraphManager* DM);
     void    destroy();
 
     bool    is_active() const { return m_model != nullptr; }

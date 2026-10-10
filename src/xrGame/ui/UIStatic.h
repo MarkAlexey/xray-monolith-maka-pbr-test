@@ -118,7 +118,11 @@ public:
 	virtual void ColorAnimationSetTextureColor(u32 color, bool only_alpha);
 	virtual void ColorAnimationSetTextColor(u32 color, bool only_alpha);
 
-	void SetNoShaderCache(bool v) { m_UIStaticItem.SetNoShaderCache(v); }
+	virtual CUIWindow* ui_cast_window() { return this; }
+	virtual CUIStatic* ui_cast_static() { return this; }
+	virtual ITextureOwner* ui_cast_texture_owner() { return this; }
+	virtual CUILightAnimColorConroller* ui_cast_light_anim_color_controller() { return this; }
+    void SetNoShaderCache(bool v) { m_UIStaticItem.SetNoShaderCache(v); }
 
 protected:
 	CUILines* m_pTextControl;
@@ -134,7 +138,7 @@ protected:
 	Fvector2 m_TextureOffset;
 
 public:
-	std::string m_TextureName;
+	xr_string m_TextureName;
 	CUILines* TextItemControl();
 	shared_str m_stat_hint_text;
 
@@ -177,6 +181,9 @@ public:
 	}
 
 	virtual void ColorAnimationSetTextColor(u32 color, bool only_alpha);
+
+	virtual CUIWindow* ui_cast_window() { return this; }
+	virtual CUILightAnimColorConroller* ui_cast_light_anim_color_controller() { return this; }
 
 	CUILines& TextItemControl() { return m_lines; }
 

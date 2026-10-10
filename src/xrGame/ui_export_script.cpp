@@ -14,6 +14,7 @@
 #include "UI/UIComboBox.h"
 #include "ui/UIOptionsManagerScript.h"
 #include "ui/UIMapInfo.h"
+#include "map_manager.h"
 #include "ScriptXmlInit.h"
 #include "ui/UIActorMenu.h"
 

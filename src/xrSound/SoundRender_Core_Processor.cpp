@@ -163,6 +163,7 @@ static u32 g_saved_event_count = 0;
 
 void CSoundRender_Core::update_events()
 {
+	PROF_EVENT("Sound: Update Events");
 	g_saved_event_count = s_events.size();
 	for (u32 it = 0; it < s_events.size(); it++)
 	{

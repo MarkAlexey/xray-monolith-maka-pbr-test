@@ -94,6 +94,7 @@ void CHitMemoryManager::reload(LPCSTR section)
 
 void CHitMemoryManager::add(float amount, const Fvector& vLocalDir, const CObject* who, s16 element)
 {
+	PROF_EVENT("HitMemory::add");
 #ifndef MASTER_GOLD
 	if (who && smart_cast<CActor const*>(who) && psAI_Flags.test(aiIgnoreActor))
 		return;
@@ -254,10 +255,12 @@ void CHitMemoryManager::remove_links(CObject* object)
 		m_last_hit_time = 0;
 	}
 
-	VERIFY(m_hits);
-	HITS::iterator I = std::find_if(m_hits->begin(), m_hits->end(), CHitObjectPredicate(object));
-	if (I != m_hits->end())
-		m_hits->erase(I);
+	if (m_hits)
+	{
+		HITS::iterator I = std::find_if(m_hits->begin(), m_hits->end(), CHitObjectPredicate(object));
+		if (I != m_hits->end())
+			m_hits->erase(I);
+	}
 
 #ifdef USE_SELECTED_HIT
 	if (!m_selected_hit)

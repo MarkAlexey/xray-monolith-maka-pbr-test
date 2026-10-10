@@ -17,7 +17,8 @@ CUI3tButton::CUI3tButton()
 
 	m_background = NULL;
 	m_back_frameline = NULL;
-	m_frameline_mode = false;
+	m_back_framewindow = NULL;
+	m_frameline_mode = Framemode_None;
 }
 
 
@@ -73,7 +74,7 @@ void CUI3tButton::InitButton(Fvector2 pos, Fvector2 size)
 {
 	// Custom draw: the background is painted by DrawTexture, so keep it out of the child list, which
 	// runs after DrawTexture and would paint it a second time over anything layered on the face.
-	if (m_frameline_mode)
+	if (m_frameline_mode == Framemode_Line)
 	{
 		if (!m_back_frameline)
 		{
@@ -84,6 +85,17 @@ void CUI3tButton::InitButton(Fvector2 pos, Fvector2 size)
 		}
 		m_back_frameline->SetWndPos(Fvector2().set(0, 0));
 		m_back_frameline->SetWndSize(size);
+	}
+	else if (m_frameline_mode == Framemode_Window)
+	{
+		if (!m_back_framewindow)
+		{
+			m_back_framewindow = xr_new<CUI_IB_FrameWindow>();
+			m_back_framewindow->SetAutoDelete(true);
+			AttachChild(m_back_framewindow);
+		}
+		m_back_framewindow->SetWndPos(Fvector2().set(0, 0));
+		m_back_framewindow->SetWndSize(size);
 	}
 	else
 	{
@@ -106,6 +118,7 @@ void CUI3tButton::SetWidth(float width)
 	CUIButton::SetWidth(width);
 	if (m_background) { m_background->SetWidth(width); }
 	else if (m_back_frameline) { m_back_frameline->SetWidth(width); }
+	else if (m_back_framewindow) { m_back_framewindow->SetWidth(width); }
 }
 
 void CUI3tButton::SetHeight(float height)
@@ -113,6 +126,7 @@ void CUI3tButton::SetHeight(float height)
 	CUIButton::SetHeight(height);
 	if (m_background) { m_background->SetHeight(height); }
 	else if (m_back_frameline) { m_back_frameline->SetHeight(height); }
+	else if (m_back_framewindow) { m_back_framewindow->SetHeight(height); }
 }
 
 void CUI3tButton::InitTexture(LPCSTR tex_name)
@@ -160,6 +174,13 @@ void CUI3tButton::InitTexture(LPCSTR tex_enabled,
 		m_back_frameline->InitState(S_Touched, tex_touched);
 		m_back_frameline->InitState(S_Highlighted, tex_highlighted);
 	}
+	else if (m_back_framewindow)
+	{
+		m_back_framewindow->InitState(S_Enabled, tex_enabled);
+		m_back_framewindow->InitState(S_Disabled, tex_disabled);
+		m_back_framewindow->InitState(S_Touched, tex_touched);
+		m_back_framewindow->InitState(S_Highlighted, tex_highlighted);
+	}
 
 	this->m_bTextureEnable = true;
 }
@@ -190,6 +211,10 @@ void CUI3tButton::DrawTexture()
 		{
 			m_back_frameline->Draw();
 		}
+		else if (m_back_framewindow)
+		{
+			m_back_framewindow->Draw();
+		}
 	}
 }
 
@@ -203,6 +228,7 @@ void CUI3tButton::Update()
 	{
 		if (m_background) { m_background->SetCurrentState(state); }
 		else if (m_back_frameline) { m_back_frameline->SetCurrentState(state); }
+		else if (m_back_framewindow) { m_back_framewindow->SetCurrentState(state); }
 	}
 
 	TextItemControl()->SetTextColor(StateTextColor(state));

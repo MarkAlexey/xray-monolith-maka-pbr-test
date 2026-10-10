@@ -25,8 +25,11 @@ XRCORE_API void vminfo(size_t* _free, size_t* reserved, size_t* committed)
 	}
 }
 
+xrCriticalSection mem_lock;
 XRCORE_API void log_vminfo()
 {
+    xrCriticalSectionGuard g(mem_lock);
+	PROF_EVENT("log_vminfo");
 	size_t w_free, w_reserved, w_committed;
 	vminfo(&w_free, &w_reserved, &w_committed);
 	Msg(
@@ -37,8 +40,10 @@ XRCORE_API void log_vminfo()
 	);
 }
 
-size_t xrMemory::mem_usage()
+size_t xrMemory::mem_usage(bool assert)
 {
+    xrCriticalSectionGuard g(mem_lock);
+	PROF_EVENT("mem_usage");
 	_HEAPINFO hinfo = {};
 	int status;
 	size_t bytesUsed = 0;
@@ -54,13 +59,13 @@ size_t xrMemory::mem_usage()
 	case _HEAPEND:
 		break;
 	case _HEAPBADPTR:
-		FATAL("bad pointer to heap");
+		if (assert) FATAL("bad pointer to heap");
 		break;
 	case _HEAPBADBEGIN:
-		FATAL("bad start of heap");
+        if (assert) FATAL("bad start of heap");
 		break;
 	case _HEAPBADNODE:
-		FATAL("bad node in heap");
+        if (assert) FATAL("bad node in heap");
 		break;
 	}
 	return bytesUsed;

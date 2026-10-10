@@ -48,7 +48,7 @@ namespace luabind { namespace detail { namespace free_functions {
         bool ambiguous = false;
         int min_match = std::numeric_limits<int>::max();
         int match_index = -1;
-        bool ret;
+        [[maybe_unused]]bool ret;
 
 #ifdef LUABIND_NO_ERROR_CHECKING
         if (rep->overloads().size() == 1)
@@ -170,3 +170,4 @@ namespace luabind { namespace detail { namespace free_functions {
 
     
 }}} // namespace luabind::detail::free_functions
+

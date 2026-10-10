@@ -2,6 +2,7 @@
 #define _RENDER_H_
 
 #include "../xrCDB/frustum.h"
+#include "../xrCDB/ISpatial.h"
 #include "vis_common.h"
 //#include "IRenderDetailModel.h"
 
@@ -27,6 +28,7 @@ struct ENGINE_API FSlideWindowItem;
 class IRenderVisual;
 class IKinematics;
 class CGameFont;
+class CObject;
 //class IRenderDetailModel;
 
 #ifndef _EDITOR
@@ -36,7 +38,9 @@ const float fLightSmoothFactor = 4.f;
 #endif
 //////////////////////////////////////////////////////////////////////////
 // definition (Dynamic Light)
-class ENGINE_API IRender_Light : public xr_resource
+class ENGINE_API IRender_Light:
+	public xr_resource,
+	public ISpatialOwner
 {
 public:
 	enum LT
@@ -50,6 +54,7 @@ public:
 
 public:
 	virtual void set_type(LT type) = 0;
+	virtual LT get_type() = 0;
 	virtual void set_active(bool) = 0;
 	virtual bool get_active() = 0;
 	virtual void set_shadow(bool) = 0;
@@ -71,12 +76,24 @@ public:
 	virtual void set_color(float r, float g, float b) = 0;
 	virtual void set_hud_mode(bool b) = 0;
 	virtual bool get_hud_mode() = 0;
+	virtual vis_data& get_homdata() = 0;
+
+	virtual void	set_occq_mode						(bool b)							= 0;
+	virtual bool	get_occq_mode						()									= 0;
+
+	virtual void	set_ignore_object					(CObject* O)						= 0;
+	virtual CObject* get_ignore_object					()									= 0;
+	
+	virtual void	set_decor_object					(CObject* O, int index = 0)			= 0;
+	virtual CObject* get_decor_object					(int index = 0)						= 0;
+
 	virtual ~IRender_Light();
+	virtual void destroy(bool deffered = true) = 0;
 };
 
 struct ENGINE_API resptrcode_light : public resptr_base<IRender_Light>
 {
-	void destroy() { _set(NULL); }
+	void destroy() { if(p_){p_->destroy(); p_ = NULL;} }
 };
 
 typedef resptr_core<IRender_Light, resptrcode_light> ref_light;
@@ -177,9 +194,64 @@ public:
 
 //////////////////////////////////////////////////////////////////////////
 // definition (Renderer)
+class ENGINE_API IDSGraphManager
+{
+public:
+	enum
+	{
+		fl_deffered,
+		fl_forward,
+		fl_wmarks,
+		fl_normal,
+		fl_shmap,
+		fl_invisible,
+		fl_hud,
+		fl_cam,
+		fl_max,
+	};
+	IRenderable* val_pObject = nullptr;
+	bool i_mask[fl_max]{};//deffered,forward,wmarks,normal,shmap,val_invisible,val_hud,val_cam_attached
+
+	virtual void add_Static(IRenderVisual* pVisual, CFrustum& frustum, u32 planes) = 0;
+	virtual void add_Dynamic(IRenderVisual* piVisual, Fmatrix* xform) = 0;
+
+	virtual void set_Object(IRenderable* O = nullptr) = 0;
+	IRenderable* get_Object() { return val_pObject; }
+
+	virtual void set_HUD(bool V = false) { i_mask[fl_hud]=V; }
+	virtual bool get_HUD() { return i_mask[fl_hud]; }
+
+	// Anomaly
+	virtual void set_CamAttached(bool V) { i_mask[fl_cam] = V; }
+	virtual bool get_CamAttached() { return i_mask[fl_cam]; }
+
+	virtual void set_Invisible(bool V = false) { i_mask[fl_invisible] = V; }
+
+	virtual IDSGraphManager* dcast_IPortalTraverser() { return this; }
+};
+
 class ENGINE_API IRender_interface
 {
 public:
+	enum
+	{
+		PHASE_NORMAL = 0,	// E[0]
+		PHASE_SMAP = 1,	// E[1]
+		PHASE_REFLECT = 2,
+		//r1
+		PHASE_POINT = 3,
+		PHASE_SPOT = 4,
+	};
+	enum
+	{
+		MMSM_OFF = 0,
+		MMSM_ON,
+		MMSM_AUTO,
+		MMSM_AUTODETECT
+	};
+	u32 phase = PHASE_NORMAL;
+	BOOL b_loaded = FALSE;
+
 	enum GenerationLevel
 	{
 		GENERATION_R1 = 81,
@@ -222,14 +294,12 @@ public:
 public:
 	// options
 	bool hud_loading; // set while loading HUD models; read by script set_shader bookkeeping
-	s32 m_skinning;
 	s32 m_MSAASample;
 
 	BENCH_SEC_SCRAMBLEMEMBER1
 
 	// data
 	CFrustum ViewBase;
-	CFrustum* View;
 public:
 	// feature level
 	virtual GenerationLevel get_generation() = 0;
@@ -249,8 +319,9 @@ public:
 	virtual void level_Load(IReader*) = 0;
 	virtual void level_Unload() = 0;
 
+	virtual size_t SectorsCount() { return size_t(0); }
+
 	//virtual IDirect3DBaseTexture9* texture_load (LPCSTR fname, u32& msize) = 0;
-	void shader_option_skinning(s32 mode) { m_skinning = mode; }
 	virtual HRESULT shader_compile(
 		LPCSTR name,
 		DWORD const* pSrcData,
@@ -274,23 +345,8 @@ public:
 	virtual IRender_Target* getTarget() = 0;
 
 	// Main
-	IC void set_Frustum(CFrustum* O)
-	{
-		VERIFY(O);
-		View = O;
-	}
-
-	virtual void set_Transform(Fmatrix* M) = 0;
-	virtual void set_HUD(BOOL V) = 0;
-	virtual BOOL get_HUD() = 0;
-	virtual void set_CamAttached(BOOL V) = 0;
-	virtual BOOL get_CamAttached() = 0;
-	virtual void set_Invisible(BOOL V) = 0;
 	virtual void flush() = 0;
-	virtual void set_Object(IRenderable* O) = 0;
 	virtual void add_Occluder(Fbox2& bb_screenspace) = 0; // mask screen region as oclluded (-1..1, -1..1)
-	virtual void add_Visual(IRenderVisual* V) = 0; // add visual leaf (no culling performed at all)
-	virtual void add_Geometry(IRenderVisual* V) = 0; // add visual(s) (all culling performed)
 	// virtual void add_StaticWallmark (ref_shader& S, const Fvector& P, float s, CDB::TRI* T, Fvector* V)=0;
 	virtual void add_StaticWallmark(const wm_shader& S, const Fvector& P, float s, CDB::TRI* T, Fvector* V) = 0;
 	// Prefer this function when possible
@@ -304,6 +360,9 @@ public:
 	// Prefer this function when possible
 	virtual void add_SkeletonWallmark(const Fmatrix* xf, IKinematics* obj, IWallMarkArray* pArray, const Fvector& start,
 	                                  const Fvector& dir, float size, float ttl = 0.f, bool ignore_opt = false) = 0;
+
+    virtual void remove_SkeletonWallmarksFromObject(IKinematics* obj) = 0;
+    virtual void update_Wallmarks() = 0;
 
 	//virtual IBlender* blender_create (CLASS_ID cls) = 0;
 	//virtual void blender_destroy (IBlender* &) = 0;
@@ -333,6 +392,7 @@ public:
 	virtual IRenderVisual* model_Duplicate(IRenderVisual* V) = 0;
 	//virtual void model_Delete (IRenderVisual* & V, BOOL bDiscard=FALSE) = 0;
 	virtual void model_Delete(IRenderVisual*& V, BOOL bDiscard = FALSE) = 0;
+	virtual void model_Delete_Deffered(IRenderVisual*& V) = 0;
 	// virtual void model_Delete (IRender_DetailModel* & F) = 0;
 	virtual void model_Logging(BOOL bEnable) = 0;
 	virtual void models_Prefetch() = 0;
@@ -376,7 +436,7 @@ public:
 	virtual void rmNear() = 0;
 	virtual void rmFar() = 0;
 	virtual void rmNormal() = 0;
-	virtual u32 memory_usage() = 0;
+	virtual u32 memory_usage() { return 0; }
 	virtual u32 active_phase() = 0; //Swartz: actor shadow
 	virtual void RenderToTarget(RRT target) = 0;
 	// Constructor/destructor

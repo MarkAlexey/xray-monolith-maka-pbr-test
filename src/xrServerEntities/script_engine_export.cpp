@@ -264,6 +264,7 @@ void export_classes	(lua_State *L)
 	CAntirad::script_register(L);
 	CInventoryItem::script_register(L);
 	gamespy_gp_profile::script_register(L);
+	CMapManager::script_register(L);
 	CMedkit::script_register(L);
 	player_hud::script_register(L);
 	script_attachment::script_register(L);

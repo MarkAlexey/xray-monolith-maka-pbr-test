@@ -167,15 +167,24 @@ CUIWindow::~CUIWindow()
 	//if (m_pHint)
 	//	xr_delete(m_pHint);
 
+    if (CurrentGameUI())
+    {
+        CurrentGameUI()->RemoveDialogToRender(this);
+    }
+
 	CUIWindow* parent = GetParent();
 	bool ad = IsAutoDelete();
 	if (parent && !ad)
 		parent->CUIWindow::DetachChild(this);
 
-	DetachAll();
+	if (!m_ChildWndList.empty()) {
+		DetachAll();
+	}
 
 	if (GetPPMode())
 		MainMenu()->UnregisterPPDraw(this);
+
+    CollectGarbage();
 
 #ifdef LOG_ALL_WNDS
 	xr_vector<DBGList>::iterator _it = dbg_list_wnds.begin();
@@ -200,15 +209,17 @@ CUIWindow::~CUIWindow()
 
 void CUIWindow::Draw()
 {
-	for (WINDOW_LIST_it it = m_ChildWndList.begin(); m_ChildWndList.end() != it; ++it)
+	PROF_EVENT("CUIWindow::Draw");
+	xrCriticalSectionGuard guard(csUi);
+	for (CUIWindow* W : m_ChildWndList)
 	{
-		if (!(*it)) continue;
-		if (!(*it)->IsShown()) continue;
-		if ((*it)->GetCustomDraw()) continue;
-		(*it)->Draw();
+		if (!W)		continue;
+		if (!W->IsShown())		continue;
+		if (W->GetCustomDraw())	continue;
+		W->Draw();
 	}
 #ifdef DEBUG
-	if(g_show_wnd_rect2){
+	if (g_show_wnd_rect2) {
 		Frect r;
 		GetAbsoluteRect(r);
 		add_rect_to_draw(r);
@@ -218,12 +229,14 @@ void CUIWindow::Draw()
 
 void CUIWindow::Draw(float x, float y)
 {
+	PROF_EVENT("CUIWindow::Draw");
 	SetWndPos(Fvector2().set(x, y));
 	Draw();
 }
 
 void CUIWindow::Update()
 {
+	PROF_EVENT("CUIWindow::Update");
 	CUIDialogWnd* TIR = CurrentGameUI() ? CurrentGameUI()->TopInputReceiver() : nullptr;
 
 	if (GetUICursor().IsVisible() || (TIR && !TIR->NeedCursor()))
@@ -244,20 +257,30 @@ void CUIWindow::Update()
 		}
 	}
 
-	for (WINDOW_LIST_it it = m_ChildWndList.begin(); m_ChildWndList.end() != it; ++it)
-	{
-		if (!(*it)->IsShown()) continue;
-		(*it)->Update();
-	}
+    {
+        xrCriticalSectionGuard guard(csUi);
+        for (WINDOW_LIST_it it = m_ChildWndList.begin(); m_ChildWndList.end() != it; ++it)
+        {
+            if (!(*it)->IsShown()) continue;
+            (*it)->Update();
+        }
+    }
 
-	/*
-	if (m_pHint && bShowHint)
-	{
-		if (Device.dwTimeGlobal < (m_dwFocusReceiveTime + dwHintDelay))
-			return;
-		m_pHint->set_text(m_sHint);
-	}
-	*/
+    CollectGarbage();
+}
+
+void CUIWindow::CollectGarbage()
+{
+    if (m_ChildWndToDelete.empty())
+        return;
+
+    WINDOW_LIST temp;
+    temp.swap(m_ChildWndToDelete);
+    for (CUIWindow* pChild : temp)
+    {
+        if (pChild)
+            xr_delete(pChild);
+    }
 }
 
 void CUIWindow::AttachChild(CUIWindow* pChild)
@@ -272,6 +295,8 @@ void CUIWindow::AttachChild(CUIWindow* pChild)
 	}
 
 	pChild->SetParent(this);
+
+	xrCriticalSectionGuard guard(csUi);
 	m_ChildWndList.push_back(pChild);
 }
 
@@ -283,19 +308,26 @@ void CUIWindow::DetachChild(CUIWindow* pChild)
 
 	erase_capture_subtree(pChild);
 
-	//.	SafeRemoveChild			(pChild);
-	WINDOW_LIST_it it = std::find(m_ChildWndList.begin(), m_ChildWndList.end(), pChild);
-	R_ASSERT(it!=m_ChildWndList.end());
-	m_ChildWndList.erase(it);
+	{
+		xrCriticalSectionGuard guard(csUi);
+
+		//.	SafeRemoveChild			(pChild);
+		WINDOW_LIST_it it = std::find(m_ChildWndList.begin(), m_ChildWndList.end(), pChild);
+		R_ASSERT(it != m_ChildWndList.end());
+		m_ChildWndList.erase(it);
+	}
 
 	pChild->SetParent(NULL);
 
-	if (pChild->IsAutoDelete())
-		xr_delete(pChild);
+    if (pChild->IsAutoDelete())
+        if (std::find(m_ChildWndToDelete.begin(), m_ChildWndToDelete.end(), pChild) == m_ChildWndToDelete.end())
+            m_ChildWndToDelete.push_back(pChild);
 }
 
 void CUIWindow::DetachAll()
 {
+	xrCriticalSectionGuard guard(csUi);
+
 	while (!m_ChildWndList.empty())
 	{
 		DetachChild(m_ChildWndList.back());
@@ -405,6 +437,7 @@ bool CUIWindow::OnMouseAction(float x, float y, EUIMessages mouse_action)
 	//Проверка на попадание мыши в окно,
 	//происходит в обратном порядке, чем рисование окон
 	//(последние в списке имеют высший приоритет)
+	xrCriticalSectionGuard guard(csUi);
 	WINDOW_LIST::reverse_iterator it = m_ChildWndList.rbegin();
 
 	for (; it != m_ChildWndList.rend(); ++it)
@@ -416,14 +449,14 @@ bool CUIWindow::OnMouseAction(float x, float y, EUIMessages mouse_action)
 			if (w->IsEnabled())
 			{
 				if (w->OnMouseAction(cursor_pos.x - w->GetWndRect().left,
-				                     cursor_pos.y - w->GetWndRect().top, mouse_action))
+					cursor_pos.y - w->GetWndRect().top, mouse_action))
 					return true;
 			}
 		}
 		else if (w->IsEnabled() && w->CursorOverWindow())
 		{
 			if (w->OnMouseAction(cursor_pos.x - w->GetWndRect().left,
-			                     cursor_pos.y - w->GetWndRect().top, mouse_action))
+				cursor_pos.y - w->GetWndRect().top, mouse_action))
 				return true;
 		}
 	}
@@ -530,6 +563,7 @@ bool CUIWindow::OnKeyboardAction(int dik, EUIMessages keyboard_action)
 		if (result) return true;
 	}
 
+	xrCriticalSectionGuard guard(csUi);
 	WINDOW_LIST::reverse_iterator it = m_ChildWndList.rbegin();
 
 	for (; it != m_ChildWndList.rend(); ++it)
@@ -555,6 +589,7 @@ bool CUIWindow::OnKeyboardHold(int dik)
 		if (result) return true;
 	}
 
+	xrCriticalSectionGuard guard(csUi);
 	WINDOW_LIST::reverse_iterator it = m_ChildWndList.rbegin();
 
 	for (; it != m_ChildWndList.rend(); ++it)
@@ -591,6 +626,7 @@ void CUIWindow::SetKeyboardCapture(CUIWindow* pChildWindow, bool capture_status)
 //обработка сообщений 
 void CUIWindow::SendMessage(CUIWindow* pWnd, s16 msg, void* pData)
 {
+	xrCriticalSectionGuard guard(csUi);
 	//оповестить дочерние окна
 	for (WINDOW_LIST_it it = m_ChildWndList.begin(); m_ChildWndList.end() != it; ++it)
 	{
@@ -606,6 +642,7 @@ CUIWindow* CUIWindow::GetCurrentMouseHandler()
 
 CUIWindow* CUIWindow::GetChildMouseHandler()
 {
+	xrCriticalSectionGuard guard(csUi);
 	CUIWindow* pWndResult;
 	WINDOW_LIST::reverse_iterator it = m_ChildWndList.rbegin();
 
@@ -637,6 +674,7 @@ void CUIWindow::Reset()
 
 void CUIWindow::ResetAll()
 {
+	xrCriticalSectionGuard guard(csUi);
 	for (WINDOW_LIST_it it = m_ChildWndList.begin(); m_ChildWndList.end() != it; ++it)
 	{
 		(*it)->Reset();
@@ -650,6 +688,7 @@ CUIWindow* CUIWindow::GetMessageTarget()
 
 bool CUIWindow::IsChild(CUIWindow* pPossibleChild) const
 {
+	xrCriticalSectionGuard guard(const_cast<xrCriticalSection&>(csUi));
 	WINDOW_LIST::const_iterator it = std::find(m_ChildWndList.begin(), m_ChildWndList.end(), pPossibleChild);
 	return it != m_ChildWndList.end();
 }
@@ -660,6 +699,7 @@ CUIWindow* CUIWindow::FindChild(const LPCSTR name)
 	if (WindowName() == name)
 		return this;
 
+	xrCriticalSectionGuard guard(csUi);
 	WINDOW_LIST::const_iterator it = m_ChildWndList.begin();
 	WINDOW_LIST::const_iterator it_e = m_ChildWndList.end();
 	for (; it != it_e; ++it)
@@ -684,6 +724,7 @@ void CUIWindow::SetParent(CUIWindow* pNewParent)
 
 void CUIWindow::ShowChildren(bool show)
 {
+	xrCriticalSectionGuard guard(csUi);
 	for (WINDOW_LIST_it it = m_ChildWndList.begin(); m_ChildWndList.end() != it; ++it)
 		(*it)->Show(show);
 }

@@ -64,7 +64,7 @@ bool CScriptGameObject::is_body_turning() const
 	if (!monster)
 	{
 		ai().script_engine().script_log(ScriptStorage::eLuaMessageTypeError,
-		                                "CGameObject : cannot access class member is_turning!");
+		                                make_string("CGameObject [%s]: cannot access class member is_turning!", object().cNameSect().c_str()).c_str());
 		return (false);
 	}
 
@@ -90,7 +90,7 @@ u32 CScriptGameObject::add_sound(LPCSTR prefix, u32 max_count, ESoundTypes type,
 	if (!monster)
 	{
 		ai().script_engine().script_log(ScriptStorage::eLuaMessageTypeError,
-		                                "CSoundPlayer : cannot access class member add!");
+		                                make_string("CSoundPlayer [%s]: cannot access class member add!", object().cNameSect().c_str()).c_str());
 		return (0);
 	}
 	else
@@ -104,7 +104,7 @@ u32 CScriptGameObject::add_combat_sound(LPCSTR prefix, u32 max_count, ESoundType
 	if (!stalker)
 	{
 		ai().script_engine().script_log(ScriptStorage::eLuaMessageTypeError,
-		                                "CSoundPlayer : cannot access class member add!");
+		                                make_string("CSoundPlayer [%s]: cannot access class member add!", object().cNameSect().c_str()).c_str());
 		return (0);
 	}
 	else
@@ -123,7 +123,7 @@ void CScriptGameObject::remove_sound(u32 internal_type)
 	CCustomMonster* monster = smart_cast<CCustomMonster*>(&object());
 	if (!monster)
 		ai().script_engine().script_log(ScriptStorage::eLuaMessageTypeError,
-		                                "CSoundPlayer : cannot access class member add!");
+		                                make_string("CSoundPlayer [%s]: cannot access class member add!", object().cNameSect().c_str()).c_str());
 	else
 		monster->sound().remove(internal_type);
 }
@@ -133,7 +133,7 @@ void CScriptGameObject::set_sound_mask(u32 sound_mask)
 	CCustomMonster* monster = smart_cast<CCustomMonster*>(&object());
 	if (!monster)
 		ai().script_engine().script_log(ScriptStorage::eLuaMessageTypeError,
-		                                "CSoundPlayer : cannot access class member set_sound_mask!");
+		                                make_string("CSoundPlayer [%s]: cannot access class member set_sound_mask!", object().cNameSect().c_str()).c_str());
 	else
 	{
 		CEntityAlive* entity_alive = smart_cast<CEntityAlive*>(monster);
@@ -150,7 +150,7 @@ void CScriptGameObject::play_sound(u32 internal_type)
 	CCustomMonster* monster = smart_cast<CCustomMonster*>(&object());
 	if (!monster)
 		ai().script_engine().script_log(ScriptStorage::eLuaMessageTypeError,
-		                                "CSoundPlayer : cannot access class member play!");
+		                                make_string("CSoundPlayer [%s]: cannot access class member play!", object().cNameSect().c_str()).c_str());
 	else
 		monster->sound().play(internal_type);
 }
@@ -160,7 +160,7 @@ void CScriptGameObject::play_sound(u32 internal_type, u32 max_start_time)
 	CCustomMonster* monster = smart_cast<CCustomMonster*>(&object());
 	if (!monster)
 		ai().script_engine().script_log(ScriptStorage::eLuaMessageTypeError,
-		                                "CSoundPlayer : cannot access class member play!");
+		                                make_string("CSoundPlayer [%s]: cannot access class member play!", object().cNameSect().c_str()).c_str());
 	else
 		monster->sound().play(internal_type, max_start_time);
 }
@@ -170,7 +170,7 @@ void CScriptGameObject::play_sound(u32 internal_type, u32 max_start_time, u32 mi
 	CCustomMonster* monster = smart_cast<CCustomMonster*>(&object());
 	if (!monster)
 		ai().script_engine().script_log(ScriptStorage::eLuaMessageTypeError,
-		                                "CSoundPlayer : cannot access class member play!");
+		                                make_string("CSoundPlayer [%s]: cannot access class member play!", object().cNameSect().c_str()).c_str());
 	else
 		monster->sound().play(internal_type, max_start_time, min_start_time);
 }
@@ -180,7 +180,7 @@ void CScriptGameObject::play_sound(u32 internal_type, u32 max_start_time, u32 mi
 	CCustomMonster* monster = smart_cast<CCustomMonster*>(&object());
 	if (!monster)
 		ai().script_engine().script_log(ScriptStorage::eLuaMessageTypeError,
-		                                "CSoundPlayer : cannot access class member play!");
+		                                make_string("CSoundPlayer [%s]: cannot access class member play!", object().cNameSect().c_str()).c_str());
 	else
 		monster->sound().play(internal_type, max_start_time, min_start_time, max_stop_time);
 }
@@ -191,7 +191,7 @@ void CScriptGameObject::play_sound(u32 internal_type, u32 max_start_time, u32 mi
 	CCustomMonster* monster = smart_cast<CCustomMonster*>(&object());
 	if (!monster)
 		ai().script_engine().script_log(ScriptStorage::eLuaMessageTypeError,
-		                                "CSoundPlayer : cannot access class member play!");
+		                                make_string("CSoundPlayer [%s]: cannot access class member play!", object().cNameSect().c_str()).c_str());
 	else
 		monster->sound().play(internal_type, max_start_time, min_start_time, max_stop_time, min_stop_time);
 }
@@ -202,7 +202,7 @@ void CScriptGameObject::play_sound(u32 internal_type, u32 max_start_time, u32 mi
 	CCustomMonster* monster = smart_cast<CCustomMonster*>(&object());
 	if (!monster)
 		ai().script_engine().script_log(ScriptStorage::eLuaMessageTypeError,
-		                                "CSoundPlayer : cannot access class member play!");
+		                                make_string("CSoundPlayer [%s]: cannot access class member play!", object().cNameSect().c_str()).c_str());
 	else
 		monster->sound().play(internal_type, max_start_time, min_start_time, max_stop_time, min_stop_time, id);
 }
@@ -213,7 +213,7 @@ int CScriptGameObject::active_sound_count(bool only_playing)
 	if (!monster)
 	{
 		ai().script_engine().script_log(ScriptStorage::eLuaMessageTypeError,
-		                                "CGameObject : cannot access class member active_sound_count!");
+		                                make_string("CGameObject [%s]: cannot access class member active_sound_count!", object().cNameSect().c_str()).c_str());
 		return (-1);
 	}
 	else
@@ -231,7 +231,7 @@ bool CScriptGameObject::wounded() const
 	if (!stalker)
 	{
 		ai().script_engine().script_log(ScriptStorage::eLuaMessageTypeError,
-		                                "CAI_Stalker : cannot access class member wounded!");
+		                                make_string("CAI_Stalker [%s]: cannot access class member wounded!", object().cNameSect().c_str()).c_str());
 		return (false);
 	}
 
@@ -244,7 +244,7 @@ void CScriptGameObject::wounded(bool value)
 	if (!stalker)
 	{
 		ai().script_engine().script_log(ScriptStorage::eLuaMessageTypeError,
-		                                "CAI_Stalker : cannot access class member wounded!");
+		                                make_string("CAI_Stalker [%s]: cannot access class member wounded!", object().cNameSect().c_str()).c_str());
 		return;
 	}
 
@@ -271,7 +271,7 @@ CSightParams CScriptGameObject::sight_params()
 	if (!stalker)
 	{
 		ai().script_engine().script_log(ScriptStorage::eLuaMessageTypeError,
-		                                "CAI_Stalker : cannot access class member sight_params!");
+		                                make_string("CAI_Stalker [%s]: cannot access class member sight_params!", object().cNameSect().c_str()).c_str());
 
 		CSightParams result;
 		result.m_object = 0;
@@ -294,7 +294,7 @@ bool CScriptGameObject::critically_wounded()
 	if (!custom_monster)
 	{
 		ai().script_engine().script_log(ScriptStorage::eLuaMessageTypeError,
-		                                "CCustomMonster : cannot access class member critically_wounded!");
+		                                make_string("CCustomMonster [%s]: cannot access class member critically_wounded!", object().cNameSect().c_str()).c_str());
 		return (false);
 	}
 
@@ -575,7 +575,7 @@ void CScriptGameObject::memory_remove_links(const CScriptGameObject* tpLuaGameOb
 	else
 	{
 		ai().script_engine().script_log(ScriptStorage::eLuaMessageTypeError,
-			"CGameObject : cannot access class member memory_remove_links!");
+			make_string("CGameObject [%s]: cannot access class member memory_remove_links!", object().cNameSect().c_str()).c_str());
 	}
 }
 

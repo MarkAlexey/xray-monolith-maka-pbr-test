@@ -82,7 +82,8 @@ IC ID3DDepthStencilView* CBackend::get_ZB()
 }
 
 ICF void CBackend::set_States(ID3DState* _state)
-{
+ {
+	PROF_EVENT("CBackend::set_States");
 	//	DX10 Manages states using it's own algorithm. Don't mess with it.
 #if !defined(USE_DX10) && !defined(USE_DX11)
 	if (state != _state)
@@ -121,7 +122,10 @@ IC void CBackend::set_Matrices			(SMatrixList*	_M)
 #endif
 
 IC void CBackend::set_Element(ShaderElement* S, u32 pass)
-{
+ {
+	PROF_EVENT("CBackend::set_Element");
+    if (!S->passes[pass])
+        return;
 	SPass& P = *(S->passes[pass]);
 	set_States(P.state);
 	set_PS(P.ps);

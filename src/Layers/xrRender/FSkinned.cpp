@@ -401,6 +401,7 @@ void CSkeletonX_ST::Copy(dxRender_Visual* P)
 //////////////////////////////////////////////////////////////////////
 void CSkeletonX_PM::Render(float LOD)
 {
+	PROF_EVENT("CSkeletonX_PM::Render");
 	int lod_id = inherited1::last_lod;
 	if (LOD >= 0.f)
 	{
@@ -415,6 +416,7 @@ void CSkeletonX_PM::Render(float LOD)
 
 void CSkeletonX_ST::Render(float LOD)
 {
+	PROF_EVENT("CSkeletonX_ST::Render");
 	_Render(rm_geom, vCount, 0, dwPrimitives);
 }
 
@@ -435,7 +437,7 @@ void CSkeletonX_PM::Load(const char* N, IReader* data, u32 dwFlags)
 	_Load(N, data, vCount);
 	void* _verts_ = data->pointer();
 	inherited1::Load(N, data, dwFlags | VLOAD_NOVERTICES);
-	::Render->shader_option_skinning(-1);
+	Engine.External.SetSkinningMode();
 #if defined(USE_DX10) || defined(USE_DX11)
 	_DuplicateIndices(N, data);
 #endif	//	USE_DX10
@@ -448,7 +450,7 @@ void CSkeletonX_ST::Load(const char* N, IReader* data, u32 dwFlags)
 	_Load(N, data, vCount);
 	void* _verts_ = data->pointer();
 	inherited1::Load(N, data, dwFlags | VLOAD_NOVERTICES);
-	::Render->shader_option_skinning(-1);
+	Engine.External.SetSkinningMode();
 #if defined(USE_DX10) || defined(USE_DX11)
 	_DuplicateIndices(N, data);
 #endif	//	USE_DX10
@@ -796,7 +798,7 @@ static void verify_vertex( const vertex_type& v, const Fvisual* V, const CKinema
 			Msg( " iBase: %d, iCount: %d, V->iBase %d, V->iCount %d, V->vBase: %d,  V->vCount  %d, vertex_idx: %d, idx: %d", iBase, iCount, V->iBase, V->iCount, V->vBase, V->vCount, vertex_idx, idx  );
 			Msg( " v.P: %s , v.N: %s, v.T: %s, v.B: %s", get_string( v.P ).c_str(),get_string(  v.N ).c_str(),get_string(  v.T ).c_str(),get_string(  v.B  ).c_str());
 			Msg( "Parent->dbg_name: %s ", Parent->dbg_name.c_str() );
-			FlushLog();
+			xrLogger::FlushLog();
 			FATAL( "v.get_bone_id(i) >= Parent->LL_BoneCount()" );
 		}
 #endif

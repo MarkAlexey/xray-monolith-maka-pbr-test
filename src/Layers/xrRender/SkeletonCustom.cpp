@@ -8,12 +8,9 @@
 #ifndef _EDITOR
 #include	"../../xrEngine/Render.h"
 #endif
+
 int psSkeletonUpdate = 32;
-xrCriticalSection UCalc_Mutex
-#ifdef PROFILE_CRITICAL_SECTIONS
-	(MUTEX_PROFILE_ID(UCalc_Mutex))
-#endif // PROFILE_CRITICAL_SECTIONS
-;
+xrCriticalSection wallmarks_cs;
 
 #ifndef _EDITOR
 #include "../../xrServerEntities/smart_cast.h"
@@ -211,7 +208,8 @@ void CKinematics::Load(const char* N, IReader* data, u32 dwFlags)
 	bone_map_N = xr_new<accel>();
 	bone_map_P = xr_new<accel>();
 	bones = xr_new<vecBones>();
-	bone_instances = NULL;
+	bone_instances = nullptr;
+	bones_size = u16(0);
 
 	// Load bones
 #pragma todo("container is created in stack!")
@@ -332,6 +330,8 @@ void CKinematics::Load(const char* N, IReader* data, u32 dwFlags)
 	wm_frame = u32(-1);
 
 	LL_Validate();
+
+	bones_size = bones->size();
 }
 
 IC void iBuildGroups(CBoneData* B, U16Vec& tgt, u16 id, u16& last_id)
@@ -398,10 +398,11 @@ void CKinematics::Copy(dxRender_Visual* P)
 {
 	inherited::Copy(P);
 
-	CKinematics* pFrom = fast_dynamic_cast<CKinematics*>(P);
+	CKinematics* pFrom = (CKinematics*)P->dcast_PKinematics();
 	VERIFY(pFrom);
 	pUserData = pFrom->pUserData;
 	bones = pFrom->bones;
+	bones_size = pFrom->bones_size;
 	iRoot = pFrom->iRoot;
 	bone_map_N = pFrom->bone_map_N;
 	bone_map_P = pFrom->bone_map_P;
@@ -545,7 +546,7 @@ void CKinematics::Visibility_Update()
 	// check visible
 	for (u32 c_it = 0; c_it < children.size(); c_it++)
 	{
-		CSkeletonX* _c = fast_dynamic_cast<CSkeletonX*>(children[c_it]);
+		CSkeletonX* _c = smart_cast<CSkeletonX*>(children[c_it]);
 		VERIFY(_c);
 		if (!_c->has_visible_bones())
 		{
@@ -560,7 +561,7 @@ void CKinematics::Visibility_Update()
 	// check invisible
 	for (u32 _it = 0; _it < children_invisible.size(); _it++)
 	{
-		CSkeletonX* _c = fast_dynamic_cast<CSkeletonX*>(children_invisible[_it]);
+		CSkeletonX* _c = smart_cast<CSkeletonX*>(children_invisible[_it]);
 		VERIFY(_c) ;
 		if (_c->has_visible_bones())
 		{
@@ -696,6 +697,7 @@ void CKinematics::AddWallmark(const Fmatrix* parent_xform, const Fvector3& start
 		}
 	}
 
+	xrCriticalSectionGuard guard(wallmarks_cs);
 	// find similar wm
 	for (u32 wm_idx = 0; wm_idx < wallmarks.size(); wm_idx++)
 	{
@@ -743,37 +745,48 @@ struct zero_wm_pred
 
 void CKinematics::CalculateWallmarks()
 {
+	PROF_EVENT("Calculate Wallmarks");
+	xrCriticalSectionGuard guard(wallmarks_cs);
 	if (!wallmarks.empty() && (wm_frame != RDEVICE.dwFrame))
 	{
 		wm_frame = RDEVICE.dwFrame;
-		bool need_remove = false;
-		for (SkeletonWMVecIt it = wallmarks.begin(); it != wallmarks.end(); it++)
+		for (SkeletonWMVecIt it = wallmarks.begin(); it != wallmarks.end();)
 		{
 			intrusive_ptr<CSkeletonWallmark>& wm = *it;
+
+			if (wm == 0)
+			{
+				it = wallmarks.erase(it);
+				continue;
+			}
+
 			float w = wm->TimeEnd() == -1.f ? 0.f : (RDEVICE.fTimeGlobal - wm->TimeStart()) / wm->TimeEnd();
 			if (w < 1.f)
 			{
 				// append wm to WallmarkEngine
 				if (::Render->ViewBase.testSphere_dirty(wm->m_Bounds.P, wm->m_Bounds.R))
-					//::Render->add_SkeletonWallmark	(wm);
-					::RImplementation.add_SkeletonWallmark(wm);
+				{
+					::RImplementation.add_SkeletonWallmark(std::move(wm));
+					it = wallmarks.erase(it);
+				}
+				else
+				{
+					it++;
+				}
+				
 			}
 			else
 			{
 				// remove wallmark				
-				need_remove = true;
+				it = wallmarks.erase(it);
 			}
-		}
-		if (need_remove)
-		{
-			SkeletonWMVecIt new_end = std::remove_if(wallmarks.begin(), wallmarks.end(), zero_wm_pred());
-			wallmarks.erase(new_end, wallmarks.end());
 		}
 	}
 }
 
 void CKinematics::RenderWallmark(intrusive_ptr<CSkeletonWallmark> wm, FVF::LIT* & V)
 {
+	PROF_EVENT("CKinematics::RenderWallmark");
 	VERIFY(wm);
 	VERIFY(V);
 	VERIFY2(bones, "Invalid visual. Bones already released.");
@@ -859,6 +872,7 @@ void CKinematics::RenderWallmark(intrusive_ptr<CSkeletonWallmark> wm, FVF::LIT* 
 
 void CKinematics::ClearWallmarks()
 {
+	xrCriticalSectionGuard guard(wallmarks_cs);
 	//	for (SkeletonWMVecIt it=wallmarks.begin(); it!=wallmarks.end(); it++)
 	//		xr_delete	(*it);
 	wallmarks.clear();
