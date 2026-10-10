@@ -114,6 +114,24 @@ void CTextureDescrMngr::LoadTHM(LPCSTR initial, map_TD& s_texture_details, map_C
 			if (desc.m_spec->m_use_pbr)
 				desc.m_spec->m_material = 1.0f;
 
+			// IX-Ray: optional "<texture>.ltx" next to the THM, section [shaders_options], one
+			// define per line (for example USE_DX_NORMAL_MAP = 1). A value of 0 leaves it out.
+			string_path ltx_name;
+			if (FS.exist(ltx_name, initial, fn, ".ltx"))
+			{
+				CInifile ini(ltx_name, TRUE, TRUE, FALSE);
+				if (ini.section_exist("shaders_options"))
+				{
+					for (const CInifile::Item& item : ini.r_section("shaders_options").Data)
+					{
+						if (!item.first.size() || (item.second.size() && !xr_strcmp(item.second, "0")))
+							continue;
+						desc.m_spec->m_shader_options.emplace_back(item.first,
+							item.second.size() ? item.second : shared_str("1"));
+					}
+				}
+			}
+
 			if (tp.bump_mode == STextureParams::tbmUse)
 			{
 				desc.m_spec->m_bump_name = tp.bump_name;
@@ -194,6 +212,14 @@ BOOL CTextureDescrMngr::UsePBRTextures(const shared_str& tex_name) const
 		}
 	}
 	return FALSE;
+}
+
+const CTextureDescrMngr::shader_options* CTextureDescrMngr::GetShaderOptions(const shared_str& tex_name) const
+{
+	map_TD::const_iterator I = m_texture_details.find(tex_name);
+	if (I != m_texture_details.end() && I->second.m_spec && !I->second.m_spec->m_shader_options.empty())
+		return &I->second.m_spec->m_shader_options;
+	return NULL;
 }
 
 float CTextureDescrMngr::GetMaterial(const shared_str& tex_name) const

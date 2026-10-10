@@ -4,6 +4,39 @@ void fix_texture_name(LPSTR fn);
 
 #include "dxRenderDeviceRender.h"
 
+#ifdef USE_DX11
+// IX-Ray PBR: shader options that depend on the base texture (its THM and its optional
+// "<texture>.ltx" [shaders_options]). Each option is set as a define for the next compile and
+// appended to `name` ("A,B=2,"), which goes into the shader name so the shader cache keeps
+// every combination apart.
+static void add_texture_shader_options(LPSTR name, u32 name_size, bool pbr, bool pbr_detail,
+                                       const CTextureDescrMngr::shader_options* options)
+{
+	auto add = [&](LPCSTR option, LPCSTR value)
+	{
+		RImplementation.addShaderOption(option, value);
+		xr_strcat(name, name_size, option);
+		if (xr_strcmp(value, "1"))
+		{
+			xr_strcat(name, name_size, "=");
+			xr_strcat(name, name_size, value);
+		}
+		xr_strcat(name, name_size, ",");
+	};
+
+	if (pbr)
+		add("USE_PBR", "1");
+	if (pbr_detail)
+		add("USE_PBR_DETAIL", "1");
+	if (options)
+	{
+		// The strings stay alive in the texture description, which outlives the compile
+		for (const auto& option : *options)
+			add(option.first.c_str(), option.second.c_str());
+	}
+}
+#endif
+
 void uber_deffer(CBlender_Compile& C, bool hq, LPCSTR _vspec, LPCSTR _pspec, BOOL _aref, LPCSTR _detail_replace,
                  bool DO_NOT_FINISH, bool DO_NOT_WRITE)
 {
@@ -103,6 +136,7 @@ void uber_deffer(CBlender_Compile& C, bool hq, LPCSTR _vspec, LPCSTR _pspec, BOO
 	const bool pbr = bump && !!DEV->m_textures_description.UsePBRTextures(fname);
 	// A detail bump is decoded IX-Ray style only when its own THM is marked PBR as well
 	const bool pbr_detail = pbr && bHasDetailBump && !!DEV->m_textures_description.UsePBRTextures(dt);
+	const CTextureDescrMngr::shader_options* texture_options = DEV->m_textures_description.GetShaderOptions(fname);
 
 	if (bump && hq && RImplementation.o.dx11_enable_tessellation && C.TessMethod != 0)
 	{
@@ -139,17 +173,7 @@ void uber_deffer(CBlender_Compile& C, bool hq, LPCSTR _vspec, LPCSTR _pspec, BOO
 			xr_strcat(params, "USE_TDETAIL_BUMP,");
 		}
 
-		if (pbr)
-		{
-			RImplementation.addShaderOption("USE_PBR", "1");
-			xr_strcat(params, "USE_PBR,");
-		}
-
-		if (pbr_detail)
-		{
-			RImplementation.addShaderOption("USE_PBR_DETAIL", "1");
-			xr_strcat(params, "USE_PBR_DETAIL,");
-		}
+		add_texture_shader_options(params, sizeof(params), pbr, pbr_detail, texture_options);
 
 		xr_strcat(params, ")");
 
@@ -179,16 +203,13 @@ void uber_deffer(CBlender_Compile& C, bool hq, LPCSTR _vspec, LPCSTR _pspec, BOO
 	}
 	else
 	{
-		if (pbr)
+		string256 options = "";
+		add_texture_shader_options(options, sizeof(options), pbr, pbr_detail, texture_options);
+		if (options[0])
 		{
-			RImplementation.addShaderOption("USE_PBR", "1");
-			if (pbr_detail)
-			{
-				RImplementation.addShaderOption("USE_PBR_DETAIL", "1");
-				xr_strcat(ps, "(USE_PBR,USE_PBR_DETAIL)");
-			}
-			else
-				xr_strcat(ps, "(USE_PBR)");
+			xr_strcat(ps, "(");
+			xr_strcat(ps, options);
+			xr_strcat(ps, ")");
 		}
 		if (DO_NOT_WRITE) C.r_Pass(vs, ps, FALSE, TRUE, FALSE);
 		else C.r_Pass(vs, ps, FALSE);

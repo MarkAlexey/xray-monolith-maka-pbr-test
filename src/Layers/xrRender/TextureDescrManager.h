@@ -9,6 +9,11 @@ struct TH_LoadTHM;
 
 class CTextureDescrMngr
 {
+public:
+	// IX-Ray: shader defines from a per-texture "<texture>.ltx", section [shaders_options]
+	typedef xr_vector<std::pair<shared_str, shared_str>> shader_options;
+
+private:
 	struct texture_assoc
 	{
 		shared_str detail_name;
@@ -31,6 +36,7 @@ class CTextureDescrMngr
 		float m_material;
 		bool m_use_steep_parallax;
 		bool m_use_pbr; // material == tmPBR_Material (IX-Ray PBR packing in bump/bump#)
+		shader_options m_shader_options;
 	};
 
 public:
@@ -65,5 +71,6 @@ public:
 	BOOL GetDetailTexture(const shared_str& tex_name, LPCSTR& res, R_constant_setup* & CS) const;
 	BOOL UseSteepParallax(const shared_str& tex_name) const;
 	BOOL UsePBRTextures(const shared_str& tex_name) const;
+	const shader_options* GetShaderOptions(const shared_str& tex_name) const;
 };
 #endif

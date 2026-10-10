@@ -174,13 +174,17 @@ void sload_pbr( inout surface_bumped S, p_bumped I, float4 Nu, float4 NuE )
 	S.pbr.z		*= NDetailX.w;
 #	else	//	USE_PBR_DETAIL
 	float3 ND	= NDetail.wzy + NDetailX.xyz - 1.0;
+#		ifndef USE_DX_NORMAL_MAP
 	ND.y		= -ND.y;	// undo the flip below, legacy maps are already in the engine's convention
+#		endif
 	N			+= ND;
 #	endif	//	USE_PBR_DETAIL
 #endif
 
+	// IX-Ray PBR normal maps are OpenGL style (green up) unless the texture's .ltx sets
+	// USE_DX_NORMAL_MAP = 1 in [shaders_options] (DirectX style, green down)
 #ifndef USE_DX_NORMAL_MAP
-	N.y			= -N.y;		// IX-Ray PBR normal maps are OpenGL style (green up)
+	N.y			= -N.y;
 #endif
 	S.normal	= N;
 
