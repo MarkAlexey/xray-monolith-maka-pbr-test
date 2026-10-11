@@ -405,7 +405,7 @@ What differs from IX-Ray, and why:
 - **VSLR (IX-Ray's offscreen cubemap reflections) is not ported yet.** It needs a reflection
   element in every geometry blender, a forward shader and a six-face scene pass per frame.
 
-Console: `r4_sslr_reflections 0/1` (vid_restart), `r4_sslr_intensity`, `r4_sslr_temporal`,
+Console: `r4_sslr_reflections 0/1` (needs a game restart; `vid_restart` does not re-read renderer options), `r4_sslr_intensity`, `r4_sslr_temporal`,
 `r4_sslr_max_dist`, `r4_sslr_skip_ssfx_ssr`. Compile-time settings and a debug view are in
 `gamedata\shaders\r3\sslr_settings.h`. SSLR is off with MSAA and is not run for the second
 viewport. Pixels closer than `SSLR_HUD_DEPTH` (1.2 m) are treated as HUD and skipped.
@@ -462,3 +462,49 @@ The compiled output was also checked for what it binds: `combine_1` binds `s_ref
 ES and with ES + SSS); `ssfx_ssr_combine` reads `s_position` for the HUD mask only with SSLR on.
 
 The C++ was reviewed against the existing HDAO compute path it is modelled on; it was not compiled.
+
+## IX-Ray cascaded sun shadows (CSM)
+
+IX-Ray renders every sun cascade into one `Texture2DArray` and lights the screen in a single
+fullscreen pass that picks the cascade per pixel (`R_sun.cpp`, `accum_direct_cascade()`,
+`accum_sun.ps.hlsl`). Monolith renders a cascade into the shared sun map, lights that
+cascade's light-space box, and repeats, three stencil-masked passes with hard seams between
+them.
+
+`r4_sun_csm 1` (default; game restart to change) ports this as a hybrid:
+
+- All cascades except the last are rendered into `$user$smap_csm`, a texture array with the
+  same format as the legacy sun map, one slice per cascade, and lit by one fullscreen pass,
+  `accum_sun_csm.ps`. That pass chooses the cascade per pixel (IX-Ray `calc_cascades`) and
+  cross-fades into the next cascade near the edge (`r4_sun_csm_blend`, 0 to 0.3 of a cascade).
+- The last (far) cascade still goes through `rt_smap_depth` and the installed `accum_sun_far`
+  (vanilla, ES or SSS). Volumetric sun shafts read the far cascade from there, and SSS/ES tune
+  the far pass, so keeping it avoids rewriting both.
+- Hand-off is through the stencil, the same way the legacy cascades hand off to each other: the
+  single pass zeroes the light marker on pixels it lights and discards everything outside the
+  array cascades, so the far pass lights exactly the remainder.
+- The lighting in `accum_sun_csm.ps` reproduces the installed near pass: IX-Ray PBR for PBR
+  pixels, the Enhanced Shaders output with ES, vanilla otherwise, plus SSS's normal-offset bias
+  and screen-space shadows when the engine reports SSS (new define `MONOLITH_SSFX_CORE`).
+  `plight_infinity()` comes from the installed `lmodel.h`, so the compatibility patch's IX-Ray
+  BRDF applies here too.
+- The cloud-shadow (sunmask) matrix is now computed once per frame and shared by all cascades,
+  so cloud shadows line up across cascade boundaries. Its scroll speed is scaled by the cascade
+  count to keep the old speed.
+- `CTexture::surface_set` (DX10/11, shared by R3 and R4) now creates a `Texture2DArray` view for
+  array textures; nothing used arrays before, so other textures are unaffected.
+
+Off automatically with MSAA, `-sunfilter`, or when `accum_sun_csm.ps` is missing. Extra memory:
+one shadow map per array slice (2 x 64 MB at `r2_smap_size 4096` with 32-bit depth).
+`CSM_DEBUG` and `CSM_PCF_TAPS` are at the top of `accum_sun_csm.ps`.
+
+Not ported from IX-Ray: its cascade sizes (15/40/160 m; Monolith keeps the configurable
+`ssfx_shadow_cascades`), its normal-based "far shadow" fade beyond the last cascade, and its
+HUD contact shadows. Under SSS, PBR textures are still lit as legacy by this pass too, because
+SSS's `gbuffer_stage.h` replaces the PBR one, the same limitation as the legacy sun shaders.
+
+Checked: `accum_sun_csm.ps`/`.vs` compile with DXC on vanilla, vanilla + ES + compat patch,
+vanilla + ES + SSS (main, AO, SSS, SSR, IL, New Shadow & Light Features, flora, gloss, ES patch)
++ compat patch, and vanilla + SSS without ES, with and without `MONOLITH_SSFX_CORE`, sunmask,
+`SUN_QUALITY` 2/3 and the debug view; each binds the expected resources (`s_ssfx_sss` only with
+SSS). The C++ was not compiled.

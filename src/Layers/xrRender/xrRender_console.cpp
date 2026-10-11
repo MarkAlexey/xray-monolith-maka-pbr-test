@@ -233,11 +233,15 @@ float ps_r2_ls_depth_bias = -0.001f; // -0.0001f
 float ps_r2_ls_squality = 1.0f; // 1.00f
 
 // IX-Ray SSLR
-int ps_r4_sslr_enable = 1; // r4_sslr_reflections, needs vid_restart
+int ps_r4_sslr_enable = 1; // r4_sslr_reflections, needs a game restart (read in CRender::create)
 float ps_r4_sslr_intensity = 1.0f; // how strongly SSLR replaces the cubemap reflection
 float ps_r4_sslr_temporal = 0.9f; // history weight
 float ps_r4_sslr_max_dist = 60.0f; // longest ray, metres
 int ps_r4_sslr_skip_ssfx_ssr = 0; // skip the SSS SSR pass while SSLR is on
+
+// IX-Ray CSM
+int ps_r4_sun_csm = 1; // r4_sun_csm, needs a game restart (read in CRender::create)
+float ps_r4_sun_csm_blend = 0.1f; // cross-fade band between cascades, fraction of a cascade
 float ps_r2_sun_tsm_projection = 0.3f; // 0.18f
 float ps_r2_sun_tsm_bias = -0.01f; //
 float ps_r2_sun_near = 20.f; // 12.0f
@@ -1302,6 +1306,10 @@ void xrRender_initconsole()
 	CMD4(CCC_Float, "r4_sslr_temporal", &ps_r4_sslr_temporal, 0.f, 0.98f);
 	CMD4(CCC_Float, "r4_sslr_max_dist", &ps_r4_sslr_max_dist, 1.f, 300.f);
 	CMD4(CCC_Integer, "r4_sslr_skip_ssfx_ssr", &ps_r4_sslr_skip_ssfx_ssr, 0, 1);
+
+	// IX-Ray CSM
+	CMD4(CCC_Integer, "r4_sun_csm", &ps_r4_sun_csm, 0, 1);
+	CMD4(CCC_Float, "r4_sun_csm_blend", &ps_r4_sun_csm_blend, 0.f, 0.3f);
 
 	CMD3(CCC_Mask, "r2_zfill", &ps_r2_ls_flags, R2FLAG_ZFILL);
 	CMD4(CCC_Float, "r2_zfill_depth", &ps_r2_zfill, .001f, .5f);

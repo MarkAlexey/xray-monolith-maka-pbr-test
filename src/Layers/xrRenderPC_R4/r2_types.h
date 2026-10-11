@@ -45,6 +45,7 @@
 
 #define		r2_RT_smap_surf		"$user$smap_surf"		// --- directional
 #define		r2_RT_smap_depth	"$user$smap_depth"		// ---directional
+#define		r2_RT_smap_csm		"$user$smap_csm"		// Monolith: IX-Ray CSM, Texture2DArray of the near sun cascades
 #define		r2_RT_smap_depth_minmax	"$user$smap_depth_minmax"
 
 #define		r2_material			"$user$material"		// ---

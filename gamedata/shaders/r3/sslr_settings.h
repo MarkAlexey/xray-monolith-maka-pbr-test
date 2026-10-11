@@ -6,7 +6,8 @@
 //
 // Compile-time settings. Shaders recompile on game restart (delete the shader cache if you
 // change them and nothing happens). Runtime settings are console commands:
-//   r4_sslr_reflections 0/1   - on/off (needs vid_restart, it changes shader defines)
+//   r4_sslr_reflections 0/1   - on/off. Needs a GAME restart: renderer options are read once at
+//                               startup (vid_restart only recreates render targets)
 //   r4_sslr_intensity  0..1   - how strongly SSLR replaces the cubemap reflection
 //   r4_sslr_temporal   0..0.98 - history weight of the temporal filter
 //   r4_sslr_max_dist   1..300  - longest traced ray, metres

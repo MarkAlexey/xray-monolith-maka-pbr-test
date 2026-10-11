@@ -175,6 +175,10 @@ extern ECORE_API float ps_r4_sslr_intensity;
 extern ECORE_API float ps_r4_sslr_temporal;
 extern ECORE_API float ps_r4_sslr_max_dist;
 extern ECORE_API int ps_r4_sslr_skip_ssfx_ssr;
+
+// IX-Ray CSM
+extern ECORE_API int ps_r4_sun_csm;
+extern ECORE_API float ps_r4_sun_csm_blend;
 extern ECORE_API float ps_r2_sun_lumscale_hemi; // 1.0f
 extern ECORE_API float ps_r2_sun_lumscale_amb; // 1.0f
 extern ECORE_API Fvector3 ps_r2_sun_lumscale_color;

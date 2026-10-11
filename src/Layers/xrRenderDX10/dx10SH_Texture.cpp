@@ -96,7 +96,17 @@ void CTexture::surface_set(ID3DBaseTexture* surf)
 			}
 			else
 			{
-				if (desc.SampleDesc.Count <= 1)
+				if (desc.SampleDesc.Count <= 1 && desc.ArraySize > 1)
+				{
+					// Monolith: texture arrays (IX-Ray CSM shadow map array). A TEXTURE2D view of an
+					// array resource is invalid in D3D11, so view all slices as a Texture2DArray.
+					ViewDesc.ViewDimension = D3D_SRV_DIMENSION_TEXTURE2DARRAY;
+					ViewDesc.Texture2DArray.MostDetailedMip = 0;
+					ViewDesc.Texture2DArray.MipLevels = desc.MipLevels;
+					ViewDesc.Texture2DArray.FirstArraySlice = 0;
+					ViewDesc.Texture2DArray.ArraySize = desc.ArraySize;
+				}
+				else if (desc.SampleDesc.Count <= 1)
 				{
 					ViewDesc.ViewDimension = D3D_SRV_DIMENSION_TEXTURE2D;
 					ViewDesc.Texture2D.MostDetailedMip = 0;

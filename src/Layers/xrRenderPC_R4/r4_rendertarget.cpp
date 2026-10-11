@@ -2,6 +2,7 @@
 #include "../xrRender/resourcemanager.h"
 #include "blender_light_occq.h"
 #include "blender_sslr.h"
+#include "blender_accum_csm.h"
 #include "blender_light_mask.h"
 #include "blender_light_direct.h"
 #include "blender_light_point.h"
@@ -384,6 +385,7 @@ CRenderTarget::CRenderTarget()
 	b_occq = xr_new<CBlender_light_occq>();
 	b_accum_mask = xr_new<CBlender_accum_direct_mask>();
 	b_accum_direct = xr_new<CBlender_accum_direct>();
+	b_accum_csm = xr_new<CBlender_accum_csm>();
 	b_accum_point = xr_new<CBlender_accum_point>();
 	b_accum_spot = xr_new<CBlender_accum_spot>();
 	b_accum_reflected = xr_new<CBlender_accum_reflected>();
@@ -674,6 +676,16 @@ CRenderTarget::CRenderTarget()
 		//rt_smap_ZB					= NULL;
 		s_accum_mask.create(b_accum_mask, "r3\\accum_mask");
 		s_accum_direct.create(b_accum_direct, "r3\\accum_direct");
+
+		// IX-Ray CSM: array of the near sun cascades, created after rt_smap_depth (copies its format)
+		if (RImplementation.o.sun_csm)
+		{
+			create_smap_csm(RImplementation.o.smapsize);
+			if (csm_slices())
+				s_accum_csm.create(b_accum_csm);
+			else
+				RImplementation.o.sun_csm = FALSE;
+		}
 
 		if (RImplementation.o.dx10_msaa)
 		{
@@ -1321,7 +1333,9 @@ CRenderTarget::~CRenderTarget()
 	xr_delete(b_accum_reflected);
 	xr_delete(b_accum_spot);
 	xr_delete(b_accum_point);
+	destroy_smap_csm();
 	xr_delete(b_accum_direct);
+	xr_delete(b_accum_csm);
 	xr_delete(b_ssao);
 
 	////////////lvutner

@@ -71,6 +71,13 @@ void CRender::render_sun_cascades()
 	if (b_need_to_render_sunshafts)
 		m_sun_cascades[m_sun_cascades.size() - 1].reset_chain = true;
 
+#ifdef USE_DX11
+	// IX-Ray CSM: all array slices are cleared once, so a cascade with nothing to draw
+	// does not keep last frame's depth
+	if (o.sun_csm)
+		Target->clear_smap_csm();
+#endif
+
 	for (u32 i = 0; i < m_sun_cascades.size(); ++i)
 		render_sun_cascade(i);
 
@@ -304,6 +311,12 @@ void CRender::render_sun_cascade(u32 cascade_ind)
             bool bForward_Shadows = cascade.GMCascade.RGraph.mapStaticPasses[1][0].size() || cascade.GMCascade.RGraph.mapDynamicPasses[1][0].size() || cascade.GMCascade.RGraph.mapStaticSorted.Sorted.size() || cascade.GMCascade.RGraph.mapDynamicSorted.Sorted.size();
             if (bDeffered_Shadows || bForward_Shadows)
             {
+#ifdef USE_DX11
+                // IX-Ray CSM: near cascades go into their own array slice
+                if (o.sun_csm && cascade_ind < Target->csm_slices())
+                    Target->phase_smap_csm(fuckingsun, cascade_ind);
+                else
+#endif
                 Target->phase_smap_direct(fuckingsun, SE_SUN_FAR);
                 RCache.set_xform_world(Fidentity);
                 RCache.set_xform_view(Fidentity);
@@ -329,6 +342,21 @@ void CRender::render_sun_cascade(u32 cascade_ind)
 
         // End SMAP-render
     }	
+
+#ifdef USE_DX11
+	// IX-Ray CSM: array cascades are lit together in one pass after the last of them is
+	// rendered; the far cascade continues below with the legacy (installed) far shader
+	if (o.sun_csm && cascade_ind < Target->csm_slices())
+	{
+		if (cascade_ind + 1 == Target->csm_slices())
+			Target->accum_direct_csm();
+
+		RCache.set_xform_world(Fidentity);
+		RCache.set_xform_view(Device.mView);
+		RCache.set_xform_project(Device.mProject);
+		return;
+	}
+#endif
 
 	// Accumulate
 	PROF_EVENT("Render Cascade: Accumulate");

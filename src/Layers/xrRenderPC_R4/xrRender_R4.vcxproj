@@ -556,6 +556,7 @@
     <ClInclude Include="..\xrRender\DetailFormat.h" />
     <ClInclude Include="dx11HDAOCSBlender.h" />
     <ClInclude Include="blender_sslr.h" />
+    <ClInclude Include="blender_accum_csm.h" />
     <ClInclude Include="dx11MinMaxSMBlender.h" />
     <ClInclude Include="..\xrRender\light.h" />
     <ClInclude Include="light_gi.h" />
@@ -755,6 +756,7 @@
     <ClCompile Include="CSCompiler.cpp" />
     <ClCompile Include="dx11HDAOCSBlender.cpp" />
     <ClCompile Include="blender_sslr.cpp" />
+    <ClCompile Include="blender_accum_csm.cpp" />
     <ClCompile Include="dx11MinMaxSMBlender.cpp" />
     <ClCompile Include="light_GI.cpp" />
     <ClCompile Include="r2_test_hw.cpp" />
@@ -778,6 +780,7 @@
     <ClCompile Include="r4_rendertarget_phase_combine.cpp" />
     <ClCompile Include="r4_rendertarget_phase_hdao.cpp" />
     <ClCompile Include="r4_rendertarget_phase_sslr.cpp" />
+    <ClCompile Include="r4_rendertarget_accum_csm.cpp" />
     <ClCompile Include="r4_rendertarget_phase_luminance.cpp" />
     <ClCompile Include="r4_rendertarget_phase_occq.cpp" />
     <ClCompile Include="r4_rendertarget_phase_PP.cpp" />

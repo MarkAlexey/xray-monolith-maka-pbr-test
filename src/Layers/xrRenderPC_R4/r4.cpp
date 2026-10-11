@@ -524,6 +524,10 @@ void CRender::create()
 	o.sslr = (ps_r4_sslr_enable != 0) && !o.dx10_msaa && FS.exist(fn, "$game_shaders$", "r3\\sslr_render", ".cs");
 	Msg("- IX-Ray SSLR %s", o.sslr ? "ON" : (ps_r4_sslr_enable && o.dx10_msaa ? "OFF (MSAA)" : "OFF"));
 
+	// IX-Ray single-pass cascaded sun (r4_rendertarget_accum_csm.cpp)
+	o.sun_csm = (ps_r4_sun_csm != 0) && !o.dx10_msaa && !o.sunfilter && o.HW_smap && FS.exist(fn, "$game_shaders$", "r3\\accum_sun_csm", ".ps");
+	Msg("- IX-Ray CSM %s", o.sun_csm ? "ON" : "OFF");
+
 	// constants
 	CResourceManager* RM = dxRenderDeviceRender::Instance().Resources;
 	RM->RegisterConstantSetup("parallax", &binder_parallax);
@@ -1832,6 +1836,17 @@ HRESULT CRender::shader_compile(
 	defines[def_it].Definition = "1";
 	def_it++;
 	sh_name[len] = '1';
+	++len;
+
+	// Screen Space Shaders core present: lets engine-owned shaders (accum_sun_csm.ps) include
+	// SSS headers without failing when SSS is not installed
+	if (o.ssfx_core)
+	{
+		defines[def_it].Name = "MONOLITH_SSFX_CORE";
+		defines[def_it].Definition = "1";
+		def_it++;
+	}
+	sh_name[len] = '0' + char(o.ssfx_core);
 	++len;
 
 	// IX-Ray SSLR: consumers (pbr_ixray.h, patched ES hmodel.h) read s_refl only with this define

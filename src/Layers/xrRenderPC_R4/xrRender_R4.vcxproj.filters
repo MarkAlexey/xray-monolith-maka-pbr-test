@@ -315,6 +315,9 @@
     <ClInclude Include="dx11HDAOCSBlender.h">
       <Filter>Shading templates</Filter>
     </ClInclude>
+    <ClInclude Include="blender_accum_csm.h">
+      <Filter>Shading templates</Filter>
+    </ClInclude>
     <ClInclude Include="blender_sslr.h">
       <Filter>Shading templates</Filter>
     </ClInclude>
@@ -948,6 +951,9 @@
     <ClCompile Include="blender_ssao.cpp">
       <Filter>Shading templates</Filter>
     </ClCompile>
+    <ClCompile Include="blender_accum_csm.cpp">
+      <Filter>Shading templates</Filter>
+    </ClCompile>
     <ClCompile Include="blender_sslr.cpp">
       <Filter>Shading templates</Filter>
     </ClCompile>
@@ -1075,6 +1081,9 @@
       <Filter>Core_Target</Filter>
     </ClCompile>
     <ClCompile Include="r4_rendertarget_phase_sslr.cpp">
+      <Filter>Core_Target</Filter>
+    </ClCompile>
+    <ClCompile Include="r4_rendertarget_accum_csm.cpp">
       <Filter>Core_Target</Filter>
     </ClCompile>
     <ClCompile Include="r4_rendertarget_phase_luminance.cpp">

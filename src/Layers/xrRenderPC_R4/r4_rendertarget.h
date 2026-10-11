@@ -31,6 +31,7 @@ public:
 	IBlender* b_occq;
 	IBlender* b_accum_mask;
 	IBlender* b_accum_direct;
+	IBlender* b_accum_csm = nullptr; // IX-Ray single-pass cascaded sun
 	IBlender* b_accum_point;
 	IBlender* b_accum_spot;
 	IBlender* b_accum_reflected;
@@ -152,6 +153,12 @@ public:
 	// smap
 	ref_rt rt_smap_surf; // 32bit,		color
 	ref_rt rt_smap_depth; // 24(32) bit,	depth
+	// IX-Ray CSM: near sun cascades as one Texture2DArray (r4_rendertarget_accum_csm.cpp)
+	ID3DTexture2D* t_smap_csm_surf = nullptr;
+	ID3DDepthStencilView* rt_smap_csm_dsv[3] = {};
+	ref_texture t_smap_csm;
+	u32 smap_csm_slices = 0;
+	u32 smap_csm_size = 0;
 	ref_rt rt_smap_depth_minmax; //	is used for min/max sm
 	//	TODO: DX10: CHeck if we need old-style SMAP
 	//	IDirect3DSurface9*			rt_smap_ZB;		//
@@ -247,6 +254,7 @@ private:
 	// Accum
 	ref_shader s_accum_mask;
 	ref_shader s_accum_direct;
+	ref_shader s_accum_csm; // IX-Ray CSM
 	ref_shader s_accum_direct_volumetric;
 	ref_shader s_accum_direct_volumetric_minmax;
 	ref_shader s_accum_point;
@@ -460,6 +468,14 @@ public:
 	void draw_volume(light* L);
 	void accum_direct(u32 sub_phase);
 	void accum_direct_cascade(u32 sub_phase, Fmatrix& xform, Fmatrix& xform_prev, float fBias);
+	// IX-Ray CSM (r4_sun_csm)
+	void create_smap_csm(u32 size);
+	void destroy_smap_csm();
+	void clear_smap_csm();
+	void phase_smap_csm(light* L, u32 slice);
+	void accum_direct_csm();
+	u32 csm_slices() const { return smap_csm_slices; }
+	Fmatrix sun_clouds_xform(light* sun);
 	void accum_direct_f(u32 sub_phase);
 	void accum_direct_lum();
 	void accum_direct_blend();

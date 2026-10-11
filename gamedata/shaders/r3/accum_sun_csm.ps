@@ -1,0 +1,203 @@
+//////////////////////////////////////////////////////////////////////////////////////////
+// Monolith: IX-Ray style single-pass cascaded sun (r4_sun_csm 1)
+//
+// Lights every pixel covered by the near sun cascades in ONE fullscreen pass. The cascade is
+// chosen per pixel from the shadow-map array s_smap_csm (IX-Ray calc_cascades), with a
+// cross-fade between neighbouring cascades. Pixels outside every array cascade are discarded
+// and lit afterwards by the installed accum_sun_far shader (see r4_rendertarget_accum_csm.cpp).
+//
+// The lighting reproduces the legacy accum_sun_near of whatever is installed:
+//   - PBR textures:                      IX-Ray pbr_light_sun (pbr_ixray.h)
+//   - Enhanced Shaders (with/without SSS): ES output, SRGBToLinear(colour * shadow) * light
+//   - vanilla:                           Ldynamic_color * light * shadow
+//   - Screen Space Shaders:              normal-offset bias and SSS screen-space shadows,
+//                                        when the engine reports SSS (MONOLITH_SSFX_CORE)
+// plight_infinity() comes from the installed lmodel.h, so the compatibility patch's IX-Ray
+// BRDF applies here too.
+//
+// Known differences from the legacy passes:
+//   - Cascade coverage is tested in shadow-texture space (IX-Ray) instead of by drawing each
+//     cascade's light-space box with depth clipping. Same pixels, without the seams.
+//   - SSS "New Shadow & Light Features" settings that only exist inside SSS's own
+//     accum_sun_near (beyond ssfx_shadow_bias) are not reproduced.
+//   - The PCF kernel is this file's (CSM_PCF_TAPS), not shadow.h's SUN_QUALITY kernel.
+//////////////////////////////////////////////////////////////////////////////////////////
+
+#include "common.h"
+#include "lmodel.h"
+#include "pbr_ixray.h"
+#include "shadow.h"		// sunmask(), smp_smap
+
+#ifdef MONOLITH_SSFX_CORE
+#	include "check_screenspace.h"
+#	ifdef SSFX_SSS
+		Texture2D s_ssfx_sss;
+		uniform float4 ssfx_issvp;
+#	endif
+#endif
+
+//========================================================================================
+// Settings
+//========================================================================================
+
+// PCF taps per axis (2..4). Each tap is a hardware 2x2 comparison, so 3 = 6x6 texels.
+#ifndef CSM_PCF_TAPS
+#	if defined(SUN_QUALITY) && SUN_QUALITY > 2
+#		define CSM_PCF_TAPS 4
+#	elif defined(SUN_QUALITY) && SUN_QUALITY > 1
+#		define CSM_PCF_TAPS 3
+#	else
+#		define CSM_PCF_TAPS 2
+#	endif
+#endif
+
+// Normal-offset bias in view-space metres when SSS shadows are not installed. SSS's own
+// accum_sun_near uses 0.01 without its shadow module and ssfx_shadow_bias.y with it.
+#ifndef CSM_NORMAL_OFFSET
+#	define CSM_NORMAL_OFFSET 0.01
+#endif
+
+// Debug: 1 = tint by cascade (red, green, blue), 2 = show the cross-fade weight
+#ifndef CSM_DEBUG
+#	define CSM_DEBUG 0
+#endif
+
+//========================================================================================
+
+Texture2DArray s_smap_csm;
+
+uniform float4x4 m_shadow_csm0;
+uniform float4x4 m_shadow_csm1;
+uniform float4x4 m_shadow_csm2;
+uniform float4   csm_params;	// x = cascades in the array, y = cross-fade band, z = map size, w = 1/size
+
+float4x4 csm_matrix( uint i )
+{
+	return i == 0 ? m_shadow_csm0 : ( i == 1 ? m_shadow_csm1 : m_shadow_csm2 );
+}
+
+// Grid PCF on one array slice. tc: xy = texture coords, z = depth to compare.
+float csm_pcf( float3 tc, uint slice )
+{
+	const float off = ( CSM_PCF_TAPS - 1 ) * 0.5;
+	float sum = 0;
+	[unroll] for( int y = 0; y < CSM_PCF_TAPS; ++y )
+	[unroll] for( int x = 0; x < CSM_PCF_TAPS; ++x )
+	{
+		float2 o = ( float2( x, y ) - off ) * csm_params.w;
+		sum += s_smap_csm.SampleCmpLevelZero( smp_smap, float3( tc.xy + o, slice ), tc.z ).x;
+	}
+	return sum / float( CSM_PCF_TAPS * CSM_PCF_TAPS );
+}
+
+// Distance to the nearest edge of the cascade, 0 at the edge, 0.5 in the centre
+float csm_edge( float3 tc )
+{
+	float2 e = min( tc.xy, 1.0 - tc.xy );
+	return min( e.x, e.y );
+}
+
+bool csm_inside( float3 tc )
+{
+	return all( tc.xy > 0.0 ) && all( tc.xy < 1.0 ) && tc.z >= 0.0 && tc.z <= 1.0;
+}
+
+// Shadow for view-space point P4 (IX-Ray calc_cascades + shadow_sun, with a cross-fade).
+// Returns false when no array cascade covers the point.
+bool csm_shadow( float4 P4, out float s, out uint cascade, out float fade )
+{
+	s = 1; cascade = 0; fade = 0;
+	const uint count = (uint)csm_params.x;
+
+	[loop] for( uint i = 0; i < count; ++i )
+	{
+		float4 t	= mul( csm_matrix( i ), P4 );
+		float3 tc	= t.xyz / t.w;
+		if( !csm_inside( tc ) )
+			continue;
+
+		cascade	= i;
+		s		= csm_pcf( tc, i );
+
+		// Cross-fade into the next array cascade near this one's edge. Not done for the last
+		// array cascade: the far cascade is lit by a separate pass.
+		float band	= max( csm_params.y * 0.5, 1e-4 );
+		float e		= csm_edge( tc );
+		[branch] if( e < band && i + 1 < count )
+		{
+			float4 t2	= mul( csm_matrix( i + 1 ), P4 );
+			float3 tc2	= t2.xyz / t2.w;
+			if( csm_inside( tc2 ) )
+			{
+				fade	= 1.0 - e / band;
+				s		= lerp( s, csm_pcf( tc2, i + 1 ), fade );
+			}
+		}
+		return true;
+	}
+	return false;
+}
+
+struct v2p_csm
+{
+	float2 tc0	: TEXCOORD0;
+	float2 tcJ	: TEXCOORD1;
+	float4 hpos	: SV_Position;
+};
+
+float4 main( v2p_csm I ) : SV_Target
+{
+	gbuffer_data gbd = gbuffer_load_data( GLD_P( I.tc0, I.hpos, 0 ) );
+
+	float4 _P = float4( gbd.P, gbd.mtl );
+	float4 _N = float4( gbd.N, gbd.hemi );
+	float4 _C = float4( gbd.C, gbd.gloss );
+
+	// Normal offset for biasing (SSS update 19 does the same in its accum_sun_near)
+	float3 NormalOffset = 0;
+#if defined(MONOLITH_SSFX_CORE) && defined(SSFX_SHADOWS)
+	NormalOffset = _N.xyz * ssfx_shadow_bias.y;
+#elif defined(MONOLITH_SSFX_CORE)
+	NormalOffset = _N.xyz * CSM_NORMAL_OFFSET;
+#endif
+
+	float4 P4 = float4( _P.xyz + NormalOffset, 1.0 );
+
+	float s; uint cascade; float fade;
+	if( !csm_shadow( P4, s, cascade, fade ) )
+	{
+		discard;	// outside the array cascades: the legacy far pass lights it
+	}
+
+	s *= sunmask( float4( _P.xyz, 1.0 ) );
+
+#if defined(MONOLITH_SSFX_CORE) && defined(SSFX_SSS)
+	s *= saturate( s_ssfx_sss.Sample( smp_nofilter, I.tc0 ).b + ssfx_issvp.x );
+#endif
+
+	// ----- light-model
+	float m = xmaterial;
+#ifndef USE_R2_STATIC_SUN
+	m = _P.w;
+#endif
+
+#if CSM_DEBUG == 1
+	return float4( cascade == 0 ? float3( 1, 0, 0 ) : ( cascade == 1 ? float3( 0, 1, 0 ) : float3( 0, 0, 1 ) ), 0 ) * ( 0.25 + 0.75 * s );
+#elif CSM_DEBUG == 2
+	return float4( fade.xxx, 0 );
+#endif
+
+#ifdef PBR_GBUFFER
+	pbr_material pm = pbr_load_unified( GLD_P( I.tc0, I.hpos, 0 ), _C, m );
+	[branch] if( pm.enabled )
+		return float4( pbr_light_sun( pm, gbd.P, _N.xyz, Ldynamic_dir.xyz, Ldynamic_color.rgb ) * pbr_to_linear( s ), 0 );
+#endif
+
+	float4 light = plight_infinity( m, _P, _N, _C, Ldynamic_dir );
+
+#if defined(SSFX_ENHANCED_SHADERS) || defined(PBR_ES)
+	return float4( SRGBToLinear( Ldynamic_color.rgb * s.xxx ), 1 ) * light;	// Enhanced Shaders
+#else
+	return float4( Ldynamic_color * light * s );								// vanilla
+#endif
+}
