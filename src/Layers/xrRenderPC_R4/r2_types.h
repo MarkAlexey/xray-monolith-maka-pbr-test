@@ -78,6 +78,12 @@
 
 #define		r2_RT_ssfx				"$user$ssfx" // SSS Temp1
 #define		r2_RT_ssfx_temp			"$user$ssfx_temp" // SSS Temp2
+
+// Monolith: IX-Ray SSLR (RGBA16F, UAV)
+#define		r2_RT_sslr				"$user$sslr"		// final reflection (rgb gamma colour, a confidence), read by combine as s_refl
+#define		r2_RT_sslr_old			"$user$sslr_old"	// last frame's r2_RT_sslr (temporal history)
+#define		r2_RT_sslr_data			"$user$sslr_data"	// trace data: xyz hit position (view space), w roughness
+#define		r2_RT_sslr_temp			"$user$sslr_temp"	// spatially resolved reflection
 #define		r2_RT_ssfx_temp2		"$user$ssfx_temp2" // SSS Temp3
 #define		r2_RT_ssfx_temp3		"$user$ssfx_temp3"
 #define		r2_RT_ssfx_accum		"$user$ssfx_accum" // SSS Volumetric

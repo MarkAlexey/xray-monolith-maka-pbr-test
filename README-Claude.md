@@ -369,3 +369,81 @@ setup with Atmospherics and Beef's NVGs, with unified lighting on and off; the o
 left are ones the original files have too (Enhanced Shaders' `combine_1` with the static
 sun). As with everything here, it has not been built with
 MSVC or run.
+
+## IX-Ray SSLR, shared BRDF and the cubemap remap
+
+This adds IX-Ray's screen-space local reflections (SSLR) to the DX11 renderer, makes Enhanced
+Shaders' pseudo-PBR use exactly the same IX-Ray BRDF as real PBR textures, and fixes the
+stretched sky/hemisphere cubemap lookups. IX-Ray SSLR replaces Screen Space Shaders' SSR for
+everything it covers; SSS SSR stays only on the HUD (weapons, hands).
+
+### SSLR
+
+Ported from IX-Ray's `blender_sslr`, `phase_sslr` and `sslr_render/filter/temporal`
+(LVutner and the IX-Ray team). Three compute passes run inside `phase_combine`, before
+`combine_1`:
+
+| Pass | Shader | Output |
+|---|---|---|
+| trace | `sslr_render.cs` | one GGX-VNDF-sampled ray per pixel, screen-space march + bisection, colour from last frame |
+| resolve | `sslr_filter.cs` | neighbours' rays reused, weighted by this pixel's GGX lobe, depth and normal |
+| temporal | `sslr_temporal.cs` | reprojected history, clamped to the 3x3 neighbourhood |
+
+`combine_1` reads the result as `s_refl` and blends it over the cubemap reflection where the
+rays hit (`sslr_apply.h`). Misses keep the existing cubemap reflection, so the IBL calibration
+of PBR and Enhanced Shaders is unchanged where SSLR has nothing to say.
+
+What differs from IX-Ray, and why:
+
+- Anomaly's G-buffer stores linear view depth (IX-Ray stores NDC depth), so all depth tests
+  were rewritten.
+- No velocity buffer is needed: hits and history are reprojected with `m_previous`, which the
+  engine already computes. Reflections of moving objects smear slightly.
+- No blue-noise texture array exists in Anomaly; interleaved gradient noise is used.
+- IX-Ray's sky fallback inside the trace is dropped (the consumer has its own).
+- IX-Ray's temporal pass sampled the (-1, -1) neighbour twice; fixed to (+1, -1).
+- **VSLR (IX-Ray's offscreen cubemap reflections) is not ported yet.** It needs a reflection
+  element in every geometry blender, a forward shader and a six-face scene pass per frame.
+
+Console: `r4_sslr_reflections 0/1` (vid_restart), `r4_sslr_intensity`, `r4_sslr_temporal`,
+`r4_sslr_max_dist`, `r4_sslr_skip_ssfx_ssr`. Compile-time settings and a debug view are in
+`gamedata\shaders\r3\sslr_settings.h`. SSLR is off with MSAA and is not run for the second
+viewport. Pixels closer than `SSLR_HUD_DEPTH` (1.2 m) are treated as HUD and skipped.
+
+### One BRDF for PBR and pseudo-PBR
+
+`ixray_brdf.h` holds the IX-Ray BRDF (GGX, Smith, Schlick with IX-Ray's F90, Fresnel-blended
+diffuse/specular, split-sum ambient). `pbr_ixray.h` now calls it, and the compatibility patch
+makes Enhanced Shaders' `Lit_BRDF`/`Amb_BRDF` call it too, with IX-Ray's point/spot falloff.
+ES's material guessing (`calc_albedo/specular/rough`, `pbr_settings.h`) is untouched. Settings
+(`ES_IXRAY_*`) are at the top of the patched `pbr_brdf.h`.
+
+### Cubemap remap
+
+`ixr_cube_unfuck()` in `ixray_brdf.h` is Maka's remap (divide by the largest component,
+`y * 2 - 1`) with a zero guard and an optional horizon clamp. It is used by the PBR sky and
+hemisphere lookups, ES's reflection lookup, and SSS's `SSFX_calc_sky`/`SSFX_calc_env` (water
+and SSR sky fallback), which used an ad-hoc perspective/altitude hack and an unremapped lookup.
+
+### The SSS 23.5 / ES 1.10 compatibility patch
+
+`tools/make_pbr_compat_patch.py` builds it from your own SSS and ES archives (this repository
+does not redistribute them). Every edit is anchored on exact text; with a different SSS/ES
+version the script refuses to write a partial patch. `--dry-run` checks the anchors only.
+
+```
+python tools/make_pbr_compat_patch.py --es Enhanced_Shaders_Color_Grading_1_10.zip ^
+    --sss ScreenSpaceShaders_Update23_5.zip --out pbr_compat_patch --zip
+```
+
+Install its folders last, after ES and all SSS modules, then delete the shader cache.
+
+### How it was checked
+
+Not built with MSVC and not run. The three compute shaders were compiled with DXC (legacy HLSL,
+cs_6_0, which is stricter than the game's FXC cs_5_0 in most respects) at default and reduced
+quality settings. The patched Enhanced Shaders `lmodel.h`/`hmodel.h`/`pbr_brdf.h` were compiled
+with DXC through a stub `common.h` (vanilla Anomaly shaders were not available), with every
+`ES_IXRAY_*` option, with and without `USE_SSLR_REFLECTIONS`, and the compiled output checked
+for `s_refl` being bound only when SSLR is on. The SSS-side patched files were not compiled.
+The C++ was reviewed against the existing HDAO compute path it is modelled on; no compiler run.

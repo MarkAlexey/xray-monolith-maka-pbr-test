@@ -149,6 +149,16 @@ static class cl_water_intensity : public R_constant_setup
 	}
 } binder_water_intensity;
 
+// IX-Ray SSLR runtime parameters: x = intensity, y = temporal weight, z = max ray distance,
+// w = frame index (noise animation). Read by sslr_*.cs and by sslr_apply.h in combine.
+static class cl_sslr_params : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_r4_sslr_intensity, ps_r4_sslr_temporal, ps_r4_sslr_max_dist, float(Device.dwFrame % 1024));
+	}
+} binder_sslr_params;
+
 #ifdef TREE_WIND_EFFECT
 static class cl_tree_amplitude_intensity : public R_constant_setup
 {
@@ -510,10 +520,15 @@ void CRender::create()
 	Msg("- SSS MOTION BLUR SHADER INSTALLED %i", o.ssfx_motionblur);
 	Msg("- SSS TAA SHADER INSTALLED %i", o.ssfx_taa);
 
+	// IX-Ray SSLR: needs its compute shaders, cannot run with MSAA (see r4_rendertarget_phase_sslr.cpp)
+	o.sslr = (ps_r4_sslr_enable != 0) && !o.dx10_msaa && FS.exist(fn, "$game_shaders$", "r3\\sslr_render", ".cs");
+	Msg("- IX-Ray SSLR %s", o.sslr ? "ON" : (ps_r4_sslr_enable && o.dx10_msaa ? "OFF (MSAA)" : "OFF"));
+
 	// constants
 	CResourceManager* RM = dxRenderDeviceRender::Instance().Resources;
 	RM->RegisterConstantSetup("parallax", &binder_parallax);
 	RM->RegisterConstantSetup("water_intensity", &binder_water_intensity);
+	RM->RegisterConstantSetup("sslr_params", &binder_sslr_params);
 	RM->RegisterConstantSetup("sun_shafts_intensity", &binder_sun_shafts_intensity);
 	RM->RegisterConstantSetup("m_AlphaRef", &binder_alpha_ref);
 	RM->RegisterConstantSetup("pos_decompression_params", &binder_pos_decompress_params);
@@ -1817,6 +1832,16 @@ HRESULT CRender::shader_compile(
 	defines[def_it].Definition = "1";
 	def_it++;
 	sh_name[len] = '1';
+	++len;
+
+	// IX-Ray SSLR: consumers (pbr_ixray.h, patched ES hmodel.h) read s_refl only with this define
+	if (o.sslr)
+	{
+		defines[def_it].Name = "USE_SSLR_REFLECTIONS";
+		defines[def_it].Definition = "1";
+		def_it++;
+	}
+	sh_name[len] = '0' + char(o.sslr);
 	++len;
 
 	//Be carefull!!!!! this should be at the end to correctly generate

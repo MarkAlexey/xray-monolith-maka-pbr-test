@@ -1,0 +1,48 @@
+#include "stdafx.h"
+#include "blender_sslr.h"
+
+// Monolith: IX-Ray SSLR blender. Texture names must match gamedata\shaders\r3\sslr_common.h.
+// s_image / s_refl change meaning per pass (see each .cs file header).
+
+CBlender_sslr::CBlender_sslr() { description.CLS = 0; }
+CBlender_sslr::~CBlender_sslr() {}
+
+static void sslr_gbuffer(CBlender_Compile& C)
+{
+	C.r_dx10Texture("s_position", r2_RT_P);
+	C.r_dx10Texture("s_surface", r2_RT_surface);
+	C.r_dx10Texture("s_diffuse", r2_RT_albedo);
+	C.r_dx10Sampler("smp_nofilter");
+	C.r_dx10Sampler("smp_rtlinear");
+}
+
+void CBlender_sslr::Compile(CBlender_Compile& C)
+{
+	IBlender::Compile(C);
+
+	switch (C.iElement)
+	{
+	case 0: // trace: previous frame colour -> rt_sslr (colour, confidence) + rt_sslr_data (hit, roughness)
+		C.r_ComputePass("sslr_render");
+		sslr_gbuffer(C);
+		C.r_dx10Texture("s_image", "$user$generic_temp");
+		C.r_End();
+		break;
+
+	case 1: // spatial resolve: rt_sslr + rt_sslr_data -> rt_sslr_temp
+		C.r_ComputePass("sslr_filter");
+		sslr_gbuffer(C);
+		C.r_dx10Texture("s_image", r2_RT_sslr);
+		C.r_dx10Texture("s_refl", r2_RT_sslr_data);
+		C.r_End();
+		break;
+
+	case 2: // temporal: rt_sslr_temp + history rt_sslr_old -> rt_sslr
+		C.r_ComputePass("sslr_temporal");
+		sslr_gbuffer(C);
+		C.r_dx10Texture("s_image", r2_RT_sslr_temp);
+		C.r_dx10Texture("s_refl", r2_RT_sslr_old);
+		C.r_End();
+		break;
+	}
+}

@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "../xrRender/resourcemanager.h"
 #include "blender_light_occq.h"
+#include "blender_sslr.h"
 #include "blender_light_mask.h"
 #include "blender_light_direct.h"
 #include "blender_light_point.h"
@@ -427,6 +428,9 @@ CRenderTarget::CRenderTarget()
 	b_ssfx_ssr = xr_new<CBlender_ssfx_ssr>(); // SSR
 	b_ssfx_volumetric_blur = xr_new<CBlender_ssfx_volumetric_blur>(); // Volumetric Blur
 	b_ssfx_ao = xr_new<CBlender_ssfx_ao>(); // AO
+
+	// IX-Ray SSLR
+	b_sslr = xr_new<CBlender_sslr>();
 
 	// HDAO
 	b_hdao_cs = xr_new<CBlender_CS_HDAO>();
@@ -902,6 +906,17 @@ CRenderTarget::CRenderTarget()
 	//	}
 	//}
 
+	// IX-Ray SSLR: four full-resolution RGBA16F targets with UAVs (~66 MB at 4K)
+	if (RImplementation.o.sslr)
+	{
+		u32 w = Device.dwWidth, h = Device.dwHeight;
+		rt_sslr.create(r2_RT_sslr, w, h, D3DFMT_A16B16G16R16F, 1, true);
+		rt_sslr_old.create(r2_RT_sslr_old, w, h, D3DFMT_A16B16G16R16F, 1, true);
+		rt_sslr_data.create(r2_RT_sslr_data, w, h, D3DFMT_A16B16G16R16F, 1, true);
+		rt_sslr_temp.create(r2_RT_sslr_temp, w, h, D3DFMT_A16B16G16R16F, 1, true);
+		s_sslr.create(b_sslr);
+	}
+
 	// HDAO
 	if (RImplementation.o.ssao_hdao && RImplementation.o.ssao_ultra)
 	{
@@ -1364,6 +1379,7 @@ CRenderTarget::~CRenderTarget()
 	xr_delete(b_sunshafts);
 
 	xr_delete(b_hdao_cs);
+	xr_delete(b_sslr);
 	if (RImplementation.o.dx10_msaa)
 	{
 		xr_delete(b_hdao_msaa_cs);

@@ -63,6 +63,7 @@ public:
 	IBlender* b_smaa;
 	// compute shader for hdao
 	IBlender* b_hdao_cs;
+	IBlender* b_sslr = nullptr; // IX-Ray SSLR
 	IBlender* b_hdao_msaa_cs;
 
 	// [SSS Stuff]
@@ -230,6 +231,13 @@ private:
 	ref_shader s_sunshafts;
 	// SSAO
 	ref_rt rt_ssao_temp;
+
+	// IX-Ray SSLR (see r4_rendertarget_phase_sslr.cpp)
+	ref_rt rt_sslr;
+	ref_rt rt_sslr_old;
+	ref_rt rt_sslr_data;
+	ref_rt rt_sslr_temp;
+	ref_shader s_sslr;
 	ref_rt rt_half_depth;
 	ref_shader s_ssao;
 	ref_shader s_ssao_msaa[8];
@@ -404,6 +412,7 @@ public:
 	void phase_occq();
 	void phase_ssao();
 	void phase_hdao();
+	void phase_sslr(); // IX-Ray SSLR
 	void phase_downsamp();
 	void phase_wallmarks();
 	void phase_smap_direct(light* L, u32 sub_phase);

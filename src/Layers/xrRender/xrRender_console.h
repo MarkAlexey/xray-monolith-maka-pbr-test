@@ -168,6 +168,13 @@ extern ECORE_API float ps_r2_sun_depth_far_bias; // -0.0001f
 extern ECORE_API float ps_r2_sun_depth_near_scale; // 1.00001f
 extern ECORE_API float ps_r2_sun_depth_near_bias; // -0.0001f
 extern ECORE_API float ps_r2_sun_lumscale; // 0.5f
+
+// IX-Ray SSLR
+extern ECORE_API int ps_r4_sslr_enable;
+extern ECORE_API float ps_r4_sslr_intensity;
+extern ECORE_API float ps_r4_sslr_temporal;
+extern ECORE_API float ps_r4_sslr_max_dist;
+extern ECORE_API int ps_r4_sslr_skip_ssfx_ssr;
 extern ECORE_API float ps_r2_sun_lumscale_hemi; // 1.0f
 extern ECORE_API float ps_r2_sun_lumscale_amb; // 1.0f
 extern ECORE_API Fvector3 ps_r2_sun_lumscale_color;

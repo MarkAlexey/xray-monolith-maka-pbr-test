@@ -25,6 +25,8 @@
 
 #include "common.h"
 #include "lmodel.h"	// Enhanced Shaders' lmodel.h brings its pseudo-PBR material conversion
+#include "ixray_brdf.h"	// shared IX-Ray BRDF and cubemap remap (also used by patched Enhanced Shaders)
+#include "sslr_apply.h"	// IX-Ray SSLR consumer (no-op unless r4_sslr_reflections 1)
 
 #ifdef PBR_GBUFFER
 
@@ -157,26 +159,10 @@ pbr_material pbr_load_unified( float2 tc, float2 pos2d, uint iSample, float4 alb
 //////////////////////////////////////////////////////////////////////////////////////////
 // Direct lighting (metalic_roughness_light.hlsli)
 
-float pbr_distribution_ggx( float NdotH, float roughness )
-{
-	float alpha		= roughness * roughness;
-	float alpha2	= alpha * alpha + 1e-6;
-	float divider	= NdotH * NdotH * ( alpha2 - 1.0 ) + 1.0;
-	return alpha2 * rcp( divider * divider );
-}
-
-float pbr_geometry_smith( float NdotL, float NdotV, float roughness )
-{
-	float r = roughness + 1.0;
-	float k = r * r * 0.125;
-	return rcp( lerp( NdotL, 1.0, k ) ) * rcp( lerp( NdotV, 1.0, k ) );
-}
-
-float3 pbr_fresnel_schlick( float3 F0, float cosine )
-{
-	float F90 = min( 1.0, dot( F0, 16.66667 ) );
-	return lerp( F0, F90, pow( 1.0 - cosine, 5.0 ) );
-}
+// Thin wrappers over ixray_brdf.h, kept so existing callers and patches still compile
+float  pbr_distribution_ggx( float NdotH, float roughness )				{ return ixr_D_GGX( NdotH, roughness ); }
+float  pbr_geometry_smith( float NdotL, float NdotV, float roughness )	{ return ixr_G_Smith( NdotL, NdotV, roughness ); }
+float3 pbr_fresnel_schlick( float3 F0, float cosine )					{ return ixr_F_Schlick( F0, cosine ); }
 
 // Radiance reaching the eye from one light, linear. color is the light colour as the engine
 // sends it (gamma space); attenuation and shadows are applied by the caller.
@@ -189,11 +175,7 @@ float3 pbr_direct( pbr_material M, float3 color, float3 L, float3 N, float3 V )
 	float NdotV	= max( 0.0, dot( N, -V ) );
 	float HdotV	= max( 0.0, dot( H, V ) );
 
-	float  D	= pbr_distribution_ggx( NdotH, M.roughness );
-	float  G	= pbr_geometry_smith( NdotL, NdotV, M.roughness );
-	float3 F	= pbr_fresnel_schlick( M.specular, HdotV );
-
-	float3 brdf	= lerp( M.diffuse, 0.25 * D * G, F );
+	float3 brdf	= ixr_brdf( M.diffuse, M.specular, M.roughness, NdotL, NdotH, NdotV, HdotV );
 	return pbr_to_linear( color ) * NdotL * brdf;
 }
 
@@ -272,42 +254,18 @@ uniform float4	L_sky_rotation;	// x = cos, y = sin of the skybox rotation around
 float3 pbr_sky_coords( float3 w )
 {
 	float2 cs	= dot( L_sky_rotation.xy, L_sky_rotation.xy ) > 0.5 ? L_sky_rotation.xy : float2( 1.0, 0.0 );
-	float3 p	= float3( w.x * cs.x - w.z * cs.y, w.y, w.x * cs.y + w.z * cs.x );
-	p			/= max( abs( p.x ), max( abs( p.y ), abs( p.z ) ) );
-	p.y			= max( p.y * 2.0 - 1.0, -1.0 );
-	return p;
+	return ixr_sky_dir( w, cs );	// rotation + unfuck() + horizon clamp (IXR_SKY_CLAMP_HORIZON)
 }
 
 // World direction -> hemisphere cubemap coordinates for reflections, the same "fake remapping"
 // the legacy hmodel() uses for its reflections
 float3 pbr_env_coords( float3 w )
 {
-	w			/= max( abs( w.x ), max( abs( w.y ), abs( w.z ) ) );
-	if( w.y < 0.999 )
-		w.y		= w.y * 2.0 - 1.0;
-	return w;
+	return ixr_env_dir( w );	// unfuck(); identical to the old guarded remap (y = 1 maps to 1 either way)
 }
 
 // Split-sum environment BRDF, fitted for height-correlated Smith (IX-Ray)
-float2 pbr_env_brdf_approx( float NdotV, float roughness )
-{
-	NdotV = min( NdotV, 0.998 );
-
-	float nsqr = NdotV * NdotV;
-	float rsqr = roughness * roughness;
-
-	float4 fac = float4( 0.0187, 1.0133, 1.0000, 1.0000 ) +
-	float4( 1.9496, -2.4717, -0.0333, 2.0508 ) * NdotV +
-	float4( 1.2265, -1.2172, -1.3097, 0.2342 ) * roughness +
-	float4( -7.6907, 3.4300, 0.5972, -26.9406 ) * NdotV * roughness +
-	float4( 18.3314, 1.4794, 19.3537, 11.1429 ) * nsqr +
-	float4( -0.2894, 0.5564, 1.5052, 7.0828 ) * rsqr +
-	float4( -19.3056, -2.2456, -28.2302, 18.5470 ) * nsqr * roughness +
-	float4( 7.0144, -1.8934, 1.3307, 50.6469 ) * NdotV * rsqr +
-	float4( 1.5728, 1.3618, 15.2939, -63.3557 ) * nsqr * rsqr;
-
-	return saturate( fac.xy / fac.zw );
-}
+float2 pbr_env_brdf_approx( float NdotV, float roughness ) { return ixr_env_brdf_approx( NdotV, roughness ); }
 
 #ifdef PBR_ES
 // Enhanced Shaders' hemisphere lighting (its hmodel.h, by KennShade): the hemisphere cubemaps
@@ -432,17 +390,15 @@ float3 pbr_ambient_ex( pbr_material M, float3 P, float3 N, float hemi, float occ
 	float NdotV	= max( 0.0, dot( N, -V ) );
 
 	float3 diffuse	= pbr_to_linear( pbr_diffuse_irradiance( N, hemi ) ) * M.diffuse * diffuse_scale;
-	float3 specular	= pbr_to_linear( pbr_specular_irradiance( R, hemi, M.roughness ) );
+	// IX-Ray SSLR replaces the cubemap reflection where its rays hit something (gamma space,
+	// before linearisation; see sslr_apply.h). P is the unnormalised view position.
+	float3 specular	= pbr_to_linear( sslr_blend( pbr_specular_irradiance( R, hemi, M.roughness ), P ) );
 #if defined(PBR_UNIFIED) && defined(SSFX_NEWGLOSS)
 	// SSS "Improved gloss & wet surfaces": flora reflects a quarter of the environment
 	specular		*= M.flora ? 0.25 : 1.0;
 #endif
 
-	float2 brdf	= pbr_env_brdf_approx( NdotV, M.roughness );
-	float  F90	= min( 1.0, dot( M.specular, 16.66667 ) );
-	float3 F	= M.specular * brdf.x + F90 * brdf.y;
-
-	return occ * lerp( diffuse, specular, F );
+	return occ * lerp( diffuse, specular, ixr_env_F( M.specular, NdotV, M.roughness ) );
 }
 
 float3 pbr_ambient( pbr_material M, float3 P, float3 N, float hemi, float occ )

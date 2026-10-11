@@ -104,6 +104,10 @@ void CRenderTarget::phase_combine()
 		m_blur_scale.set(scale, -scale).div(12.f);
 	}
 
+	// IX-Ray SSLR: needs Matrix_previous (just updated) and last frame's $user$generic_temp;
+	// must run before combine_1, which reads the result as s_refl
+	phase_sslr();
+
 	{
 		// Disable when rendering SecondViewport
 		if (!Device.m_SecondViewport.IsSVPFrame())
@@ -334,7 +338,9 @@ void CRenderTarget::phase_combine()
 	else
 		HW.pContext->CopyResource(rt_Generic_temp->pTexture->surface_get(), rt_Generic_0_r->pTexture->surface_get());
 
-	if (RImplementation.o.ssfx_ssr && !Device.m_SecondViewport.IsSVPFrame())
+	// With IX-Ray SSLR on, r4_sslr_skip_ssfx_ssr 1 drops the SSS SSR pass (the compatibility
+	// patch already masks it to HUD pixels; this saves its cost when HUD reflections do not matter)
+	if (RImplementation.o.ssfx_ssr && !Device.m_SecondViewport.IsSVPFrame() && !(RImplementation.o.sslr && ps_r4_sslr_skip_ssfx_ssr))
 	{
 		PIX_EVENT(phase_ssfx_ssr);
 		ssfx_PrevPos_Requiered = true;
