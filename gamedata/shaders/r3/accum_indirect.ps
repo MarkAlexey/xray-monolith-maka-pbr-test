@@ -29,7 +29,7 @@ float4 main ( float4 tc:TEXCOORD0, float4 pos2d : SV_Position ) : SV_Target
 
 #ifdef PBR_GBUFFER
 	// IX-Ray PBR pixel: linear radiance, diffuse only (this is a bounce light)
-	pbr_material pm = pbr_load( GLD_P(tcProj, pos2d, ISAMPLE), gbd.C );
+	pbr_material pm = pbr_load_unified( GLD_P(tcProj, pos2d, ISAMPLE), float4( gbd.C, gbd.gloss ), gbd.mtl );
 	[branch] if( pm.enabled )
 		return float4( pbr_to_linear( Ldynamic_color.xyz ) * att * light * hemi * pm.diffuse, 0 );
 #endif

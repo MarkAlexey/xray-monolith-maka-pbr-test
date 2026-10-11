@@ -79,9 +79,17 @@ _out main ( _input I, uint iSample : SV_SAMPLEINDEX )
 #endif
 
 #ifdef PBR_GBUFFER
-	// IX-Ray PBR: the accumulator already holds linear radiance for PBR pixels
-	pbr_material pm = pbr_load( GLD_P(I.tc0, I.pos2d, ISAMPLE), D.rgb );
+	// IX-Ray PBR: the accumulator already holds linear radiance for PBR pixels (with unified
+	// lighting, for every pixel)
+	float pbr_m = P.w;
+#ifdef USE_R2_STATIC_SUN
+	pbr_m = xmaterial;
+#endif
+	pbr_material pm = pbr_load_unified( GLD_P(I.tc0, I.pos2d, ISAMPLE), D, pbr_m );
 	float3 pbr_light = L.rgb;
+#ifdef PBR_ES
+	pbr_light += L.a * pbr_to_linear( D.rgb );	// Enhanced Shaders keeps self-illumination in alpha
+#endif
 #endif
 
      // static sun
@@ -141,6 +149,9 @@ _out main ( _input I, uint iSample : SV_SAMPLEINDEX )
 	float3 color;
 
 #ifdef PBR_GBUFFER
+#ifdef PBR_UNIFIED
+	pm = pbr_load_unified( GLD_P(I.tc0, I.pos2d, ISAMPLE), D, pbr_m );	// with this pass's gloss tweaks
+#endif
 	[branch] if( pm.enabled )
 	{
 		// IX-Ray PBR: ambient (IBL) + direct light in linear space, back to gamma for the rest
@@ -155,9 +166,9 @@ _out main ( _input I, uint iSample : SV_SAMPLEINDEX )
 #	elif PBR_DEBUG_VIEW == 2
 		color = pbr_occ * pm.ao;
 #	elif PBR_DEBUG_VIEW == 3
-		color = pbr_dbg_s.y;
+		color = pm.legacy ? pm.roughness : pbr_dbg_s.y;
 #	elif PBR_DEBUG_VIEW == 4
-		color = pbr_dbg_s.x;
+		color = pm.legacy ? 0.0 : pbr_dbg_s.x;
 #	elif PBR_DEBUG_VIEW == 5
 		color = pbr_to_gamma( pbr_amb );
 #	elif PBR_DEBUG_VIEW == 6

@@ -58,10 +58,10 @@ float4 main( p_volume I, float4 pos2d : SV_Position ) : SV_Target
 
 #ifdef PBR_GBUFFER
 		// IX-Ray PBR pixel: linear radiance, no separate specular
-		pbr_material pm = pbr_load( GLD_P(tcProj, pos2d, ISAMPLE), gbd.C );
+		pbr_material pm = pbr_load_unified( GLD_P(tcProj, pos2d, ISAMPLE), _C, m );
 		[branch] if( pm.enabled )
 		{
-			float3 pbr_light = pbr_light_local( pm, gbd.P, gbd.N, Ldynamic_pos, Ldynamic_color.rgb );
+			float3 pbr_light = pbr_light_local( pm, gbd.P, _N.xyz, Ldynamic_pos, Ldynamic_color.rgb );
 			return float4( pbr_light * s * pbr_to_linear( lightmap.rgb ), 0 );
 		}
 #endif

@@ -325,6 +325,36 @@ What the merged shaders do with PBR pixels:
 - With Enhanced Shaders, PBR pixels skip the Enhanced Shaders lighting but are combined
   correctly: both write linear light to the accumulator.
 
+### Unified lighting with Enhanced Shaders
+
+With Enhanced Shaders installed, PBR and its pseudo-PBR conversion work as one lighting model
+instead of two:
+
+- Legacy textures get Enhanced Shaders' pseudo-PBR material: albedo, specular colour and
+  roughness guessed from the old gloss channel and material, with Enhanced Shaders' own
+  functions and `pbr_settings.h`. Mods that tune that conversion (the SSS Enhanced Shaders
+  patch, "Improved gloss & wet surfaces", Atmospherics) still apply.
+- Every pixel, legacy or PBR, is then lit by the IX-Ray lighting: the same direct light
+  model for the sun and all local lights, and the same image-based ambient and sky
+  reflections in `combine_1`. A PBR object next to a legacy one no longer looks like it comes
+  from a different renderer.
+- The ambient light is calibrated the way Enhanced Shaders does it (its hemisphere "ambient
+  cube" and roughness-blurred reflections), so weathers made for Enhanced Shaders keep their
+  brightness.
+- Flora keeps Enhanced Shaders' translucency (or the SSS Flora Fixes version of it), SSS AO
+  and SSS indirect light still apply, and self-illumination from Enhanced Shaders' emissive
+  shaders is kept.
+
+It switches on by itself when Enhanced Shaders is present; without Enhanced Shaders nothing
+changes. To go back to Enhanced Shaders' own lighting for legacy textures, uncomment
+`#define PBR_UNIFIED_LIGHTING 0` in `pbr_ixray.h`. The PBR debug views now also work on
+legacy pixels (view 3 shows the converted roughness), which helps when tuning
+`pbr_settings.h`.
+
+Enhanced Shaders replaces some files PBR needs (`accum_sun.ps`, `accum_indirect.ps` and,
+without SSS, the other light shaders, `combine_1.ps`, `sload.h` and `deffer_base_bump.ps`), so
+the compatibility patch now has an "ES" folder for them.
+
 ### How it was checked
 
 The C++ files of the four renderers and the engine, plus the xrGame files that changed or
@@ -333,6 +363,9 @@ include a changed header, were syntax-checked with clang on upstream's MT branch
 merged shaders were compiled with DXC on top of vanilla, this branch's `gamedata` and the SSS
 modules, with and without the motion-vector main file and the PBR, MSAA, static sun,
 parallax, detail and debug-view variants, and compared against plain SSS on upstream's
-shaders. Enhanced Shaders itself was not available, so the Enhanced Shaders variant was
-compiled with stand-ins for its files. As with everything here, it has not been built with
+shaders. The unified lighting was compiled the same way for vanilla, SSS alone, Enhanced
+Shaders alone, Enhanced Shaders with SSS (including its Enhanced Shaders modules) and that
+setup with Atmospherics and Beef's NVGs, with unified lighting on and off; the only errors
+left are ones the original files have too (Enhanced Shaders' `combine_1` with the static
+sun). As with everything here, it has not been built with
 MSVC or run.

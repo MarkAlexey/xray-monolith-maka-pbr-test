@@ -14,7 +14,9 @@
 //  - For those pixels the accumulator holds linear radiance (albedo and BRDF included, no
 //    separate specular in alpha), and combine_1 adds IBL ambient and converts the result
 //    back to the gamma space the rest of the pipeline expects.
-//  - Everything else keeps the legacy lighting model untouched.
+//  - Everything else keeps the legacy lighting model untouched, unless Enhanced Shaders is
+//    installed: then legacy textures get Enhanced Shaders' pseudo-PBR material and go through
+//    this lighting too (see PBR_UNIFIED_LIGHTING below).
 //
 // View-space conventions used here (same as IX-Ray):
 //  V = normalize(P)         eye -> point
@@ -22,8 +24,15 @@
 //////////////////////////////////////////////////////////////////////////////////////////
 
 #include "common.h"
+#include "lmodel.h"	// Enhanced Shaders' lmodel.h brings its pseudo-PBR material conversion
 
 #ifdef PBR_GBUFFER
+
+// Enhanced Shaders (and the SSS / Atmospherics edits of it) is installed when its
+// pbr_settings.h and its material table are loaded
+#if defined(ALBEDO_BOOST) && defined(MAT_FLORA_ELIPSON)
+#	define PBR_ES
+#endif
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // Options. Uncomment to change them for every PBR texture (shaders recompile on restart).
@@ -46,6 +55,20 @@
 // 6 = direct light only
 // #define PBR_DEBUG_VIEW 1
 
+// Unified lighting, only with Enhanced Shaders installed. 1 (default): legacy textures get
+// Enhanced Shaders' pseudo-PBR material (its own conversion and pbr_settings.h, so mods that
+// tune it still apply) and are lit by this IX-Ray lighting together with real PBR textures,
+// with the ambient light calibrated like Enhanced Shaders'. 0: legacy textures keep Enhanced
+// Shaders' own lighting and only PBR textures use this one.
+// #define PBR_UNIFIED_LIGHTING 0
+
+#ifndef PBR_UNIFIED_LIGHTING
+#	define PBR_UNIFIED_LIGHTING 1
+#endif
+#if defined(PBR_ES) && PBR_UNIFIED_LIGHTING
+#	define PBR_UNIFIED
+#endif
+
 #ifndef PBR_GAMMA
 #	define PBR_GAMMA 2.2
 #endif
@@ -62,6 +85,8 @@ float3 pbr_to_gamma( float3 c ) { return pow( abs( c ), 1.0 / PBR_GAMMA ); }
 struct pbr_material
 {
 	bool	enabled;	// false: legacy pixel, use the old lighting model
+	bool	legacy;		// unified lighting: a legacy texture with a converted material
+	bool	flora;		// unified lighting: legacy flora (gets Enhanced Shaders' translucency)
 	float	roughness;
 	float	ao;
 	float	sss;
@@ -75,6 +100,8 @@ pbr_material pbr_load( float2 tc, float2 pos2d, uint iSample, float3 albedo )
 
 	pbr_material M;
 	M.enabled	= S.w > 0.25;
+	M.legacy	= false;
+	M.flora		= false;
 	M.roughness	= max( 0.02, S.y );
 	M.ao		= S.z;
 	M.sss		= saturate( S.w * 2.0 - 1.0 );
@@ -83,6 +110,47 @@ pbr_material pbr_load( float2 tc, float2 pos2d, uint iSample, float3 albedo )
 	M.specular	= lerp( (float3)PBR_F0_DIELECTRIC, lin, S.x );
 	M.diffuse	= lin * ( 1.0 - S.x );
 
+	return M;
+}
+
+#ifdef PBR_UNIFIED
+// Enhanced Shaders' pseudo-PBR material for a legacy pixel, with the same conversion its
+// lmodel.h / hmodel.h use (calc_* from the installed pbr_brdf.h). m is the material id the
+// lighting shader uses (xmaterial with the static sun).
+pbr_material pbr_from_legacy( float4 alb_gloss, float m )
+{
+#ifdef SSFX_NEWGLOSS
+	// SSS "Improved gloss & wet surfaces": terrain is treated as a non-metal
+	if( abs( m - 0.95 ) <= 0.04 )
+		m = 0.0;
+#endif
+	float3 albedo	= calc_albedo( alb_gloss, m );
+	float3 specular	= calc_specular( alb_gloss, m );
+	float  rough	= calc_rough( alb_gloss, m );
+	calc_foliage( albedo, specular, rough, alb_gloss, m );
+
+	pbr_material M;
+	M.enabled	= true;
+	M.legacy	= true;
+	M.flora		= abs( m - MAT_FLORA ) <= MAT_FLORA_ELIPSON;
+	M.roughness	= max( 0.02, rough );	// perceptual roughness, as in IX-Ray
+	M.ao		= 1.0;
+	M.sss		= 0.0;
+	M.diffuse	= albedo;	// already linear, metals included
+	M.specular	= specular;
+	return M;
+}
+#endif
+
+// Material for any pixel: PBR textures as above; with unified lighting, legacy textures get
+// the converted material, so every pixel takes the PBR path.
+pbr_material pbr_load_unified( float2 tc, float2 pos2d, uint iSample, float4 alb_gloss, float m )
+{
+	pbr_material M = pbr_load( tc, pos2d, iSample, alb_gloss.rgb );
+#ifdef PBR_UNIFIED
+	[branch] if( !M.enabled )
+		M = pbr_from_legacy( alb_gloss, m );
+#endif
 	return M;
 }
 
@@ -142,6 +210,20 @@ float3 pbr_translucency( pbr_material M, float3 color, float3 L, float3 N )
 	return pbr_to_linear( color * saturate( 3.5 * sss + 0.1 ) ) * M.sss * M.diffuse;
 }
 
+// Enhanced Shaders' flora translucency (SSS() from the installed common_brdf.h, including the
+// SSS Flora Fixes version), for legacy flora under unified lighting. L and V as above.
+float3 pbr_legacy_translucency( pbr_material M, float3 color, float3 L, float3 N, float3 V )
+{
+#ifdef PBR_UNIFIED
+	[branch] if( M.flora )
+	{
+		float3 subsurface = SSS( N, -V, -L );
+		return pbr_to_linear( color ) * subsurface * M.diffuse;
+	}
+#endif
+	return 0;
+}
+
 // IX-Ray GetLightAttention() with falloff 2, for point and spot lights
 float pbr_attenuation( float3 light_to_point, float inv_range_sqr )
 {
@@ -155,7 +237,10 @@ float3 pbr_light_local( pbr_material M, float3 P, float3 N, float4 light_pos, fl
 {
 	float3 L2P	= P - light_pos.xyz;
 	float3 L	= normalize( L2P );
-	return pbr_direct( M, color, L, normalize( N ), normalize( P ) ) * pbr_attenuation( L2P, light_pos.w );
+	N			= normalize( N );
+	float3 V	= normalize( P );
+	return ( pbr_direct( M, color, L, N, V ) + pbr_legacy_translucency( M, color, L, N, V ) ) *
+		pbr_attenuation( L2P, light_pos.w );
 }
 
 // Sun without shadows (shadow goes through pbr_to_linear() in the caller, as in IX-Ray)
@@ -163,7 +248,9 @@ float3 pbr_light_sun( pbr_material M, float3 P, float3 N, float3 light_dir, floa
 {
 	N = normalize( N );
 	float3 L = normalize( light_dir );
-	return pbr_direct( M, color, L, N, normalize( P ) ) + pbr_translucency( M, color, L, N );
+	float3 V = normalize( P );
+	return pbr_direct( M, color, L, N, V ) + pbr_translucency( M, color, L, N ) +
+		pbr_legacy_translucency( M, color, L, N, V );
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////
@@ -222,6 +309,22 @@ float2 pbr_env_brdf_approx( float NdotV, float roughness )
 	return saturate( fac.xy / fac.zw );
 }
 
+#ifdef PBR_ES
+// Enhanced Shaders' hemisphere lighting (its hmodel.h, by KennShade): the hemisphere cubemaps
+// sampled as a Valve-style ambient cube on their most blurred mip, so PBR and legacy surfaces
+// get the same ambient brightness as Enhanced Shaders gives them.
+float3 pbr_es_ambient_cube( TextureCube cube, float3 nw, float3 nr )
+{
+	const float eps	= 0.001;
+	float3 n2		= nw * nw;
+	float3 c		= 0;
+	c	+= n2.x * cube.SampleLevel( smp_linear, float3( nr.x, eps, eps ), CUBE_MIPS ).rgb;
+	c	+= n2.y * cube.SampleLevel( smp_linear, float3( eps, nr.y, eps ), CUBE_MIPS ).rgb;
+	c	+= n2.z * cube.SampleLevel( smp_linear, float3( eps, eps, nr.z ), CUBE_MIPS ).rgb;
+	return c;
+}
+#endif
+
 // Diffuse irradiance in the same (gamma) space as the legacy hmodel(), so matte PBR and legacy
 // surfaces under the same sky end up equally bright.
 float3 pbr_diffuse_irradiance( float3 N, float hemi )
@@ -230,10 +333,19 @@ float3 pbr_diffuse_irradiance( float3 N, float hemi )
 #ifdef USE_NORMAL_HEMI_DISTRIBUTION
 	hemi		= min( hemi, nw.y * 0.375 + 0.375 );
 #endif
+#ifdef PBR_ES
+	nw			= normalize( nw );
+	float3 nr	= pbr_env_coords( nw );
+	nr			= normalize( nr );
+	float3 e0	= pbr_es_ambient_cube( env_s0, nw, nr );
+	float3 e1	= pbr_es_ambient_cube( env_s1, nw, nr );
+	return env_color.rgb * lerp( e0, e1, env_color.w ) * hemi + L_ambient.rgb;
+#else
 	float3 e0	= env_s0.SampleLevel( smp_rtlinear, nw, 0 ).rgb;
 	float3 e1	= env_s1.SampleLevel( smp_rtlinear, nw, 0 ).rgb;
 	float3 env	= env_color.rgb * lerp( e0, e1, env_color.w );
 	return env * env * hemi + L_ambient.rgb;
+#endif
 }
 
 // Specular irradiance from the sky cubemaps, blurred by roughness through the mip chain.
@@ -283,10 +395,18 @@ float3 pbr_specular_irradiance( float3 R, float hemi, float roughness )
 	float3 a1	= sky_s1.SampleLevel( smp_linear, sc, avg1 ).rgb;
 	float3 sky_avg	= lerp( a0, a1, env_color.w ) * L_sky_color.rgb;
 
+#ifdef PBR_ES
+	// Enhanced Shaders: hemisphere cubemap blurred by roughness through its mips, not squared
+	float  emip	= CUBE_MIPS - ( 1.0 - roughness ) * CUBE_MIPS;
+	float3 e0	= env_s0.SampleLevel( smp_linear, ec, emip ).rgb;
+	float3 e1	= env_s1.SampleLevel( smp_linear, ec, emip ).rgb;
+	float3 env	= env_color.rgb * lerp( e0, e1, env_color.w );
+#else
 	float3 e0	= env_s0.SampleLevel( smp_rtlinear, ec, 0 ).rgb;
 	float3 e1	= env_s1.SampleLevel( smp_rtlinear, ec, 0 ).rgb;
 	float3 env	= env_color.rgb * lerp( e0, e1, env_color.w );
 	env			*= env;
+#endif
 
 	// Below the horizon the reflection is the ground, not the sky: fade to the hemisphere
 	// cubemap, which is what the legacy lighting reflects there
@@ -295,25 +415,39 @@ float3 pbr_specular_irradiance( float3 R, float hemi, float roughness )
 	float scale	= pbr_luminance( env ) / max( pbr_luminance( sky_avg ), 1e-4 );
 	sky			*= min( scale, PBR_REFLECTION_SCALE_MAX );
 
+#ifdef PBR_ES
+	return lerp( sky, env, env_blend ) * hemi + L_ambient.rgb;	// Enhanced Shaders adds the ambient colour
+#else
 	return lerp( sky, env, env_blend ) * hemi;
+#endif
 }
 
 // Linear ambient radiance (IX-Ray AmbientLightingImpl). occ = SSAO * material AO.
-float3 pbr_ambient( pbr_material M, float3 P, float3 N, float hemi, float occ )
+// diffuse_scale multiplies the diffuse part only (SSS indirect light).
+float3 pbr_ambient_ex( pbr_material M, float3 P, float3 N, float hemi, float occ, float3 diffuse_scale )
 {
 	N			= normalize( N );
 	float3 V	= normalize( P );
 	float3 R	= reflect( V, N );
 	float NdotV	= max( 0.0, dot( N, -V ) );
 
-	float3 diffuse	= pbr_to_linear( pbr_diffuse_irradiance( N, hemi ) ) * M.diffuse;
+	float3 diffuse	= pbr_to_linear( pbr_diffuse_irradiance( N, hemi ) ) * M.diffuse * diffuse_scale;
 	float3 specular	= pbr_to_linear( pbr_specular_irradiance( R, hemi, M.roughness ) );
+#if defined(PBR_UNIFIED) && defined(SSFX_NEWGLOSS)
+	// SSS "Improved gloss & wet surfaces": flora reflects a quarter of the environment
+	specular		*= M.flora ? 0.25 : 1.0;
+#endif
 
 	float2 brdf	= pbr_env_brdf_approx( NdotV, M.roughness );
 	float  F90	= min( 1.0, dot( M.specular, 16.66667 ) );
 	float3 F	= M.specular * brdf.x + F90 * brdf.y;
 
 	return occ * lerp( diffuse, specular, F );
+}
+
+float3 pbr_ambient( pbr_material M, float3 P, float3 N, float hemi, float occ )
+{
+	return pbr_ambient_ex( M, P, N, hemi, occ, 1.0 );
 }
 
 #endif	//	HMODEL_H
