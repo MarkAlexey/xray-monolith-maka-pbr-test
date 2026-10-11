@@ -125,7 +125,9 @@ public:
 protected:
 	SkeletonWMVec wallmarks;
 	u32 wm_frame;
-
+	u32 CurrentFrame;
+	Fmatrix	Matrix_Prev;
+	Fmatrix Matrix_Temp;
 
 	// Globals
 	CInifile* pUserData;

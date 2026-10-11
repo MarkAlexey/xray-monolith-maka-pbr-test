@@ -50,10 +50,13 @@ void light::vis_prepare()
     bool skiptest = false;
     if (ps_r2_ls_flags.test(R2FLAG_EXP_DONT_TEST_UNSHADOWED) && !flags.bShadow) skiptest = true;
     if (ps_r2_ls_flags.test(R2FLAG_EXP_DONT_TEST_SHADOWED) && flags.bShadow) skiptest = true;
+#ifdef USE_DX11
+    //if (ps_ssfx_volumetric.x > 0 && flags.bShadow) skiptest = true; // Temp Fix
+#endif
 
-    const float distance = Device.vCameraPosition.distance_to(SpatialComponent->spatial.sphere.P);
+    vis.distance = Device.vCameraPosition.distance_to(SpatialComponent->spatial.sphere.P);
 
-    if (skiptest || distance <= (SpatialComponent->spatial.sphere.R * 1.01f + safe_area + (SpatialComponent->spatial.sphere.R * 0.1f))) // small error
+    if (skiptest || vis.distance <= (SpatialComponent->spatial.sphere.R * 1.01f + safe_area + (SpatialComponent->spatial.sphere.R * 0.1f))) // small error
     {
         // small error
         vis.visible = true;

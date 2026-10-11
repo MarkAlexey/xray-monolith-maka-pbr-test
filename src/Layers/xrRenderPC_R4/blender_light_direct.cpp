@@ -31,7 +31,7 @@ void CBlender_accum_direct::Compile(CBlender_Compile& C)
 		C.r_Pass("accum_sun", "accum_sun_near_nomsaa_nominmax", false, TRUE, FALSE, blend, D3DBLEND_ONE, dest);
 
 		C.r_CullMode(D3DCULL_NONE);
-		C.PassSET_ZB(TRUE,FALSE,TRUE); // force inverted Z-Buffer
+		C.PassSET_ZB(TRUE, FALSE, TRUE); // force inverted Z-Buffer
 
 		C.r_dx10Texture("s_position", r2_RT_P);
 		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
@@ -42,6 +42,9 @@ void CBlender_accum_direct::Compile(CBlender_Compile& C)
 		C.r_dx10Texture("s_lmap", r2_sunmask);
 		C.r_dx10Texture("s_smap", r2_RT_smap_depth);
 		C.r_dx10Texture("s_smap_minmax", r2_RT_smap_depth_minmax);
+
+		//C.r_dx10Texture("s_hud_mask", r2_RT_ssfx_hud);
+		C.r_dx10Texture("s_ssfx_sss", r2_RT_ssfx_sss);
 
 		C.r_dx10Sampler("smp_nofilter");
 		C.r_dx10Sampler("smp_material");
@@ -65,6 +68,9 @@ void CBlender_accum_direct::Compile(CBlender_Compile& C)
 		C.r_dx10Texture("s_accumulator", r2_RT_accum);
 		C.r_dx10Texture("s_lmap", r2_sunmask);
 		C.r_dx10Texture("s_smap", r2_RT_smap_depth);
+
+		//C.r_dx10Texture("s_hud_mask", r2_RT_ssfx_hud);
+		C.r_dx10Texture("s_ssfx_sss", r2_RT_ssfx_sss);
 
 		C.r_dx10Sampler("smp_nofilter");
 		C.r_dx10Sampler("smp_material");
@@ -103,7 +109,7 @@ void CBlender_accum_direct::Compile(CBlender_Compile& C)
 		//	FVF::TL2uv
 		C.r_Pass("accum_sun", "accum_sun_near_nomsaa_minmax", false, TRUE, FALSE, blend, D3DBLEND_ONE, dest);
 		C.r_CullMode(D3DCULL_NONE);
-		C.PassSET_ZB(TRUE,FALSE,TRUE); // force inverted Z-Buffer
+		C.PassSET_ZB(TRUE, FALSE, TRUE); // force inverted Z-Buffer
 
 		C.r_dx10Texture("s_position", r2_RT_P);
 		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
@@ -114,6 +120,8 @@ void CBlender_accum_direct::Compile(CBlender_Compile& C)
 		C.r_dx10Texture("s_lmap", r2_sunmask);
 		C.r_dx10Texture("s_smap", r2_RT_smap_depth);
 		C.r_dx10Texture("s_smap_minmax", r2_RT_smap_depth_minmax);
+
+		//C.r_dx10Texture("s_hud_mask", r2_RT_ssfx_hud);
 
 		C.r_dx10Sampler("smp_nofilter");
 		C.r_dx10Sampler("smp_material");
@@ -166,7 +174,7 @@ void CBlender_accum_direct_msaa::Compile(CBlender_Compile& C)
 		//C.r_Pass			("null",			"accum_sun_near",	false,	TRUE,	FALSE,blend,D3DBLEND_ONE,dest);
 		C.r_Pass("accum_sun", "accum_sun_near_msaa_nominmax", false, TRUE, FALSE, blend, D3DBLEND_ONE, dest);
 		C.r_CullMode(D3DCULL_NONE);
-		C.PassSET_ZB(TRUE,FALSE,TRUE); // force inverted Z-Buffer
+		C.PassSET_ZB(TRUE, FALSE, TRUE); // force inverted Z-Buffer
 
 		C.r_dx10Texture("s_position", r2_RT_P);
 		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
@@ -176,6 +184,9 @@ void CBlender_accum_direct_msaa::Compile(CBlender_Compile& C)
 		C.r_dx10Texture("s_accumulator", r2_RT_accum);
 		C.r_dx10Texture("s_lmap", r2_sunmask);
 		C.r_dx10Texture("s_smap", r2_RT_smap_depth);
+
+		//C.r_dx10Texture("s_hud_mask", r2_RT_ssfx_hud);
+		C.r_dx10Texture("s_ssfx_sss", r2_RT_ssfx_sss);
 
 		C.r_dx10Sampler("smp_nofilter");
 		C.r_dx10Sampler("smp_material");
@@ -199,6 +210,9 @@ void CBlender_accum_direct_msaa::Compile(CBlender_Compile& C)
 		C.r_dx10Texture("s_accumulator", r2_RT_accum);
 		C.r_dx10Texture("s_lmap", r2_sunmask);
 		C.r_dx10Texture("s_smap", r2_RT_smap_depth);
+
+		//C.r_dx10Texture("s_hud_mask", r2_RT_ssfx_hud);
+		C.r_dx10Texture("s_ssfx_sss", r2_RT_ssfx_sss);
 
 		C.r_dx10Sampler("smp_nofilter");
 		C.r_dx10Sampler("smp_material");
@@ -243,7 +257,7 @@ void CBlender_accum_direct_msaa::Compile(CBlender_Compile& C)
 		//	FVF::TL2uv
 		C.r_Pass("accum_sun", "accum_sun_near_msaa_minmax", false, TRUE, FALSE, blend, D3DBLEND_ONE, dest);
 		C.r_CullMode(D3DCULL_NONE);
-		C.PassSET_ZB(TRUE,FALSE,TRUE); // force inverted Z-Buffer
+		C.PassSET_ZB(TRUE, FALSE, TRUE); // force inverted Z-Buffer
 
 		C.r_dx10Texture("s_position", r2_RT_P);
 		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
@@ -254,6 +268,8 @@ void CBlender_accum_direct_msaa::Compile(CBlender_Compile& C)
 		C.r_dx10Texture("s_lmap", r2_sunmask);
 		C.r_dx10Texture("s_smap", r2_RT_smap_depth);
 		C.r_dx10Texture("s_smap_minmax", r2_RT_smap_depth_minmax);
+
+		//C.r_dx10Texture("s_hud_mask", r2_RT_ssfx_hud);
 
 		C.r_dx10Sampler("smp_nofilter");
 		C.r_dx10Sampler("smp_material");
@@ -340,7 +356,7 @@ void CBlender_accum_direct_volumetric_sun_msaa::Compile(CBlender_Compile& C)
 	{
 	case 0: // near pass - enable Z-test to perform depth-clipping
 		C.r_Pass("accum_sun", "accum_volumetric_sun_msaa", false, false, false, true, D3DBLEND_ONE, D3DBLEND_ONE, false,
-		         0);
+			0);
 		C.r_dx10Texture("s_smap", r2_RT_smap_depth);
 		C.r_dx10Texture("s_position", r2_RT_P);
 		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR

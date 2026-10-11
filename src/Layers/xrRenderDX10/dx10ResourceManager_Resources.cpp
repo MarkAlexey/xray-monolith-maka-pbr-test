@@ -159,6 +159,7 @@ SVS* CResourceManager::_CreateVS(LPCSTR _name)
 	else
 	{
 		SVS* _vs = xr_new<SVS>();
+		_vs->skinning = m_skinning;
 		_vs->dwFlags |= xr_resource_flagged::RF_REGISTERED;
 		m_vs.insert(mk_pair(_vs->set_name(name), _vs));
 		//_vs->vs				= NULL;

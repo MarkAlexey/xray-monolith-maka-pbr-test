@@ -35,6 +35,10 @@ light::light()
 	for (int f=0; f<6; f++) decor_object[f] = nullptr;
 	m_parent = nullptr;
 	virtual_size = 0.1f;
+	omnipart_num = 0;
+	sss_id = -1;
+	sss_refresh = 0;
+    sss_remove_latency = 0;
 
 
 #if (RENDER==R_R2) || (RENDER==R_R3) || (RENDER==R_R4)
@@ -69,6 +73,8 @@ light::~light()
 #endif // (RENDER==R_R2) || (RENDER==R_R3) || (RENDER==R_R4)
 	ignore_object = nullptr;
 	for (int f=0; f<6; f++) decor_object[f] = nullptr;
+    if (sss_on_light_destroy)
+        sss_on_light_destroy(this);
 }
 
 void light::destroy(bool deffered)
@@ -539,6 +545,8 @@ void light::export_()
 					L->SpatialComponent->spatial.sector = SpatialComponent->spatial.sector;
 					L->set_range(range);
 					L->set_color(color);
+					L->omnipart_num = f;
+					L->omipart_parent = omnipart[0];
 
 					// Holger - do we need to export msaa stuff as well ?
 #if	(RENDER==R_R3) || (RENDER==R_R4)
@@ -589,6 +597,7 @@ void light::export_()
 			break;
 		case IRender_Light::SPOT:
 			{
+				this->set_volumetric_intensity(m_volumetric_intensity);
 				vis_prepare();
 
 				if (vis.pending && !vis.visible)
@@ -642,6 +651,7 @@ float light::get_LOD()
 {
 	if (!flags.bShadow) return 1;
 	float distSQ = Device.vCameraPosition.distance_to_sqr(SpatialComponent->spatial.sphere.P) + EPS;
+	distance = distSQ;
 	float ssa = ps_r2_slight_fade * SpatialComponent->spatial.sphere.R / distSQ;
 	float lod = _sqrt(clampr((ssa - r_ssaGLOD_end) / (r_ssaGLOD_start - r_ssaGLOD_end), 0.f, 1.f));
 	return lod;

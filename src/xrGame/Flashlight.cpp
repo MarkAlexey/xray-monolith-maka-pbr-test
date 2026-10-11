@@ -88,6 +88,8 @@ BOOL CFlashlight::net_Spawn(CSE_Abstract* DC)
 	light_render->set_shadow(true);
 	light_omni->set_shadow(false);
 
+	light_render->set_is_playerlight(true); // SSS23: Is a player light
+
 	return TRUE;
 }
 

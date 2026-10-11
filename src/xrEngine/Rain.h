@@ -78,6 +78,7 @@ private:
 	// Sounds
 	ref_sound snd_Ambient;
 	float rain_volume;
+	float rain_hemi = 0.0f;
 	float rain_volume_mult = 1.0f;   // set once at rain onset by COnRainSound; 1.0 = vanilla
 
 	// Utilities
@@ -85,6 +86,7 @@ private:
 	void p_destroy();
 
 	// SSS
+	CPerlinNoise1D* RainPerlin;
 
 	void p_remove(Particle* P, Particle*& LST);
 	void p_insert(Particle* P, Particle*& LST);
@@ -97,6 +99,7 @@ private:
 	void Hit(Fvector& pos);
 	BOOL RayPick(const Fvector& s, const Fvector& d, float& range, collide::rq_target tgt);
 	void RenewItem(Item& dest, float height, BOOL bHit);
+	void Prepare(Fvector2& offset, Fvector3& axis, float Wind_Vel, float Wind_Dir);
 public:
 	CEffect_Rain();
 	~CEffect_Rain();
@@ -112,6 +115,7 @@ public:
 	}
 
 	float GetRainVolume() { return rain_volume; }
+	float GetRainHemi() { return rain_hemi; }
 	void UpdateItems();
 };
 

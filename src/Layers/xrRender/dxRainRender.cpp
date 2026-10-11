@@ -5,14 +5,14 @@
 
 //	Warning: duplicated in rain.cpp
 static const int max_desired_items = 2500;
-static const float source_radius = 12.5f;
-static const float source_offset = 40.f;
-static const float max_distance = source_offset * 1.25f;
+static const float source_radius = 15;//12.5f;
+static const float source_offset = 20.f; // 40
+static const float max_distance = source_offset * 1.5f; //1.25f;
 static const float sink_offset = -(max_distance - source_offset);
 static const float drop_length = 5.f;
 static const float drop_width = 0.30f;
 static const float drop_angle = 3.0f;
-static const float drop_max_angle = deg2rad(10.f);
+static const float drop_max_angle = deg2rad(35.f); //10
 static const float drop_max_wind_vel = 20.0f;
 static const float drop_speed_min = 40.f;
 static const float drop_speed_max = 80.f;
@@ -38,6 +38,11 @@ dxRainRender::dxRainRender()
 	hGeom_Rain.create(FVF::F_LIT, RCache.Vertex.Buffer(), RCache.QuadIB);
 	hGeom_Drops.create(D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1, RCache.Vertex.Buffer(), RCache.Index.Buffer());
 
+#if defined(USE_DX11)
+	if (RImplementation.o.ssfx_rain)
+		SH_Splash.create("effects\\rain_splash", "fx\\fx_rain");
+#endif
+
 	FS.r_close(F);
 }
 
@@ -61,7 +66,25 @@ void dxRainRender::Render(CEffect_Rain& owner)
 
 	float _drop_len = drop_length;
 	float _drop_width = drop_width;
+	float _drop_speed = 1.0f;
+	ref_shader& _splash_SH = DM_Drop->shader;
+	static shared_str s_shader_setup = "ssfx_rain_setup";
+
 	int rain_max_particles = max_desired_items;
+	float rain_radius = source_radius;
+
+	// SSS Rain shader is available
+#if defined(USE_DX11)
+	if (RImplementation.o.ssfx_rain)
+	{
+		_drop_len = ps_ssfx_rain_1.x;
+		_drop_width = ps_ssfx_rain_1.y;
+		_drop_speed = ps_ssfx_rain_1.z;
+		_splash_SH = SH_Splash;
+		rain_max_particles = ps_ssfx_rain_drops_setup.x;
+		rain_radius = ps_ssfx_rain_drops_setup.y;
+	}
+#endif
 
 	u32 desired_items = iFloor(0.01f * (1.f + factor * r_rain_k) * float(rain_max_particles));
 	u32 render_items = _min(desired_items, (u32)owner.items.size());
@@ -146,6 +169,7 @@ void dxRainRender::Render(CEffect_Rain& owner)
 		RCache.Render(D3DPT_TRIANGLELIST, vOffset, 0, vCount, 0, vCount / 2);
 		//HW.pDevice->SetRenderState	(D3DRS_CULLMODE,D3DCULL_CCW);
 		RCache.set_CullMode(CULL_CCW);
+		RCache.set_c(s_shader_setup, ps_ssfx_rain_2); // Alpha, Brigthness, Refraction, Reflection
 	}
 
 	// Particles
@@ -155,7 +179,8 @@ void dxRainRender::Render(CEffect_Rain& owner)
 	{
 		float dt = Device.fTimeDelta;
 		_IndexStream& _IS = RCache.Index;
-		RCache.set_Shader(DM_Drop->shader);
+		RCache.set_Shader(_splash_SH);
+		RCache.set_c(s_shader_setup, ps_ssfx_rain_3); // Alpha, Refraction
 
 		Fmatrix mXform, mScale;
 		int pcount = 0;

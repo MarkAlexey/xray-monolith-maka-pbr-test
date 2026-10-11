@@ -248,6 +248,7 @@ namespace R_dsgraph
 		// Anomaly
 		mapDSGraphItems<float, false> mapCamAttached;
 		mapSorted<float, true, false, false, false> mapCamAttachedSorted;
+		mapDSGraphItems<float, false> mapWater;
 #ifdef USE_DX11
 		mapDSGraphItems<float, true> mapScopeHUDSorted;
 		mapDSGraphItems<float, false> mapScopeHUD;
@@ -366,6 +367,10 @@ namespace R_dsgraph
 			clear_static<free>();
 			clear_hud<free>();
 			clear_lods<free>();
+			if constexpr (free)
+				mapWater.clear_and_free();
+			else
+				mapWater.clear();
 		}
 	};
 };

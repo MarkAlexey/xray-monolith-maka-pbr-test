@@ -11,6 +11,7 @@
 #include "../xrRender/r__dsgraph_manager.h"
 #endif //(RENDER==R_R2) || (RENDER==R_R3) || (RENDER==R_R4)
 
+extern Fvector4 ps_ssfx_volumetric;
 class CObject;
 
 class light :
@@ -41,6 +42,18 @@ public:
 	u32 frame_render;
 	light* m_parent;
 	u8 m_moving_frames;
+
+	int omnipart_num;
+	int sss_id;
+	int sss_refresh;
+    int sss_remove_latency;
+	s8 sss_priority;
+	bool sss_is_playerlight;
+    xr_delegate<void(light*)> sss_on_light_destroy;
+
+	light* omipart_parent;
+	float distance;
+	float distance_lpos;
 
 #if RENDER!=R_R1 && !XRCPU_PIPE_EXPORTS
 	FixedSet<IRender_Sector*> m_sectors;
@@ -93,6 +106,7 @@ public:
 		bool		visible;		// visible/invisible
 		bool		pending;		// test is still pending
 		u16			smap_ID;
+		float		distance;
 	}				vis;
 
 	union			_xform	{
@@ -137,12 +151,15 @@ public:
 	virtual void set_shadow(bool b);
 	virtual void set_volumetric(bool b)
 	{
+		if (ps_ssfx_volumetric.x > 0)
+			b = true;
+
 		flags.bVolumetric = b;
 	}
 
 	virtual void set_volumetric_quality(float fValue) { m_volumetric_quality = fValue; }
-	virtual void set_volumetric_intensity(float fValue) { m_volumetric_intensity = fValue; }
-	virtual void set_volumetric_distance(float fValue) { m_volumetric_distance = fValue; }
+	virtual void set_volumetric_intensity(float fValue) { m_volumetric_intensity = ps_ssfx_volumetric.y; }
+	virtual void set_volumetric_distance(float fValue) { m_volumetric_distance = 1.0f; }
 
 	virtual void set_position(const Fvector& P, const float eps = EPS);
 	virtual void set_rotation(const Fvector& D, const Fvector& R, const float eps = EPS);
@@ -168,6 +185,8 @@ public:
 
 	virtual void set_decor_object(CObject* O, int index = 0) { decor_object[index] = O; };
 	virtual CObject* get_decor_object(int index = 0) { return decor_object[index]; };
+
+	virtual void set_is_playerlight(bool b) { sss_is_playerlight = b; };
 
 	virtual void spatial_move();
 	virtual Fvector spatial_sector_point();

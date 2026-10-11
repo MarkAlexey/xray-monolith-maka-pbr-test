@@ -82,6 +82,19 @@ public:
 	Fmatrix mFullTransformHud;
 	Fmatrix mFullTransformCam;
 
+	Fmatrix mView_prev;
+	Fmatrix mViewHud_prev;
+	Fmatrix mViewCam_prev;
+	Fmatrix mProject_prev;
+	Fmatrix mProjectHud_prev;
+	Fmatrix mProjectCam_prev;
+	Fmatrix mFullTransform_prev;
+	Fmatrix mFullTransformHud_prev;
+	Fmatrix mFullTransformCam_prev;
+
+	Fvector4 wind_anim_prev;
+	Fvector4 wind_anim_saved;
+
 	// Copies of corresponding members. Used for synchronization.
 	Fvector vCameraPosition_saved;
 

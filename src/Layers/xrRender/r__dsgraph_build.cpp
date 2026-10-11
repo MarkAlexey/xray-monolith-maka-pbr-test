@@ -124,6 +124,17 @@ void CDSGraphManager::r_dsgraph_insert_dynamic(dxRender_Visual *pVisual, Fmatrix
 
 		case 1: {
 			RGraph.mapHUD.emplace_back(EPS, SSA, val_pObject, pVisual, xform, sh, i_mask[CDSGraphManager::fl_hud]);
+
+			// SSS: Deprecated
+			/*if (!sh->passes[0]->ps->hud_disabled)
+			{
+				HUDMask_Node* N2 = HUDMask.insertInAnyWay(EPS);
+				N2->val.ssa = SSA;
+				N2->val.pObject = RI.val_pObject;
+				N2->val.pVisual = pVisual;
+				N2->val.Matrix = *RI.val_pTransform;
+				N2->val.se = sh;
+			}*/
 			return;
 		}
 
@@ -164,6 +175,19 @@ void CDSGraphManager::r_dsgraph_insert_dynamic(dxRender_Visual *pVisual, Fmatrix
 				RGraph.mapCamAttached.emplace_back(distSQ, SSA, val_pObject, pVisual, xform, sh, i_mask[CDSGraphManager::fl_cam]);
 			else
 				RGraph.mapHUD.emplace_back(distSQ, SSA, val_pObject, pVisual, xform, sh, i_mask[CDSGraphManager::fl_hud]);
+
+			/*
+#if RENDER==R_R4
+			if (RImplementation.o.ssfx_core && !sh->passes[0]->ps->hud_disabled)
+			{
+				HUDMask_Node* N2 = val_bCamAttached ? HUDMaskCamAttached.insertInAnyWay(distSQ) : HUDMask.insertInAnyWay(distSQ);
+				N2->val.ssa = SSA;
+				N2->val.pObject = RI.val_pObject;
+				N2->val.pVisual = pVisual;
+				N2->val.Matrix = *RI.val_pTransform;
+				N2->val.se = sh;
+			}
+#endif*/
 
 #if RENDER!=R_R1
 			if (sh->flags.bEmissive)
@@ -314,6 +338,15 @@ void CDSGraphManager::r_dsgraph_insert_static(dxRender_Visual *pVisual)
 	u32 shader_priority = sh->flags.iPriority / 2;
 	if (!i_mask[shader_priority])
 		return;
+
+	// Water rendering
+#if RENDER==R_R4
+	if (sh->flags.isWater && RImplementation.o.ssfx_water)
+	{
+		RGraph.mapWater.emplace_back(distSQ, SSA, nullptr, pVisual, &Fidentity, sh, false);
+		return;
+	}
+#endif
 
 	// strict-sorting selection
 	if (sh->flags.bStrictB2F)

@@ -49,6 +49,7 @@ void CHudInitializer::SetHudMode()
 	Device.mFullTransform.set(Device.mFullTransformHud);
 
 	Device.m_pRender->SetCacheXform(Device.mView, Device.mProject);
+	Device.m_pRender->SetCacheXform_prev(Device.mViewHud_prev, Device.mProjectHud_prev);
 }
 
 void CHudInitializer::SetCamMode()
@@ -58,6 +59,7 @@ void CHudInitializer::SetCamMode()
 	Device.mFullTransform.set(Device.mFullTransformCam);
 
 	Device.m_pRender->SetCacheXform(Device.mView, Device.mProject);
+	Device.m_pRender->SetCacheXform_prev(Device.mViewCam_prev, Device.mProjectCam_prev);
 }
 
 void CHudInitializer::SetDefaultMode()
@@ -67,4 +69,5 @@ void CHudInitializer::SetDefaultMode()
 	Device.mFullTransform.set(mFullTransform_saved);
 
 	Device.m_pRender->SetCacheXform(Device.mView, Device.mProject);
+	Device.m_pRender->SetCacheXform_prev(Device.mView_prev, Device.mProject_prev);
 }

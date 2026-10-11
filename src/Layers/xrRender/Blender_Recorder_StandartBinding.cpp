@@ -28,6 +28,12 @@ BIND_DECLARE(wv);
 BIND_DECLARE(vp);
 BIND_DECLARE(wvp);
 
+BIND_DECLARE(v_prev);
+BIND_DECLARE(p_prev);
+BIND_DECLARE(wv_prev);
+BIND_DECLARE(vp_prev);
+BIND_DECLARE(wvp_prev);
+
 #define DECLARE_TREE_BIND(c)	\
 	class cl_tree_##c: public R_constant_setup	{virtual void setup(R_constant* C) {RCache.tree.set_c_##c(C);} };	\
 	static cl_tree_##c	tree_binder_##c
@@ -524,8 +530,26 @@ class cl_hemi_color : public R_constant_setup
 
 static cl_hemi_color binder_hemi_color;
 
-// IX-Ray PBR: sky colour of the current weather, used to tint sky reflections (w = blend factor)
 class cl_sky_color : public R_constant_setup
+{
+	u32 marker;
+	Fvector4 result;
+
+	virtual void setup(R_constant* C)
+	{
+		if (marker != Device.dwFrame)
+		{
+			CEnvDescriptor& desc = *g_pGamePersistent->Environment().CurrentEnv;
+			result.set(desc.sky_color.x, desc.sky_color.y, desc.sky_color.z, desc.sky_rotation);
+		}
+		RCache.set_c(C, result);
+	}
+};
+static cl_sky_color binder_sky_color;
+
+// IX-Ray PBR: sky colour of the current weather, used to tint sky reflections (w = blend factor).
+// SSS binds "sky_color" separately (w = sky rotation).
+class cl_pbr_sky_color : public R_constant_setup
 {
 	virtual void setup(R_constant* C)
 	{
@@ -534,7 +558,7 @@ class cl_sky_color : public R_constant_setup
 	}
 };
 
-static cl_sky_color binder_sky_color;
+static cl_pbr_sky_color binder_pbr_sky_color;
 
 // IX-Ray PBR: rotation of the skybox around Y (x = cos, y = sin, z = angle), so sky reflections
 // line up with the sky that is drawn
@@ -690,6 +714,53 @@ static class cl_near_far_plane : public R_constant_setup
 	}
 } binder_near_far_plane;
 
+// Screen Space Shaders Stuff
+extern Fvector4 ps_ssfx_floravariation;
+extern Fvector4 ps_ssfx_fog;
+extern Fvector4 ps_ssfx_motionblur;
+
+extern Fvector4 ps_ssfx_pom;
+extern Fvector4 ps_ssfx_terrain_pom;
+
+extern Fvector4 ps_ssfx_bloom_1;
+extern Fvector4 ps_ssfx_bloom_2;
+extern Fvector4 ps_ssfx_il_setup1;
+
+extern float ps_ssfx_hud_hemi;
+extern Fvector4 ps_ssfx_il;
+extern Fvector4 ps_ssfx_il_setup1;
+extern Fvector4 ps_ssfx_ao;
+extern Fvector4 ps_ssfx_ao_setup1;
+extern Fvector4 ps_ssfx_water;
+extern Fvector4 ps_ssfx_water_setup1;
+extern Fvector4 ps_ssfx_water_setup2;
+
+extern Fvector4 ps_ssfx_volumetric;
+extern Fvector4 ps_ssfx_ssr_2;
+extern Fvector4 ps_ssfx_terrain_offset;
+
+extern Fvector3 ps_ssfx_shadow_bias;
+extern Fvector4 ps_ssfx_lut;
+extern Fvector4 ps_ssfx_wind_grass;
+extern Fvector4 ps_ssfx_wind_trees;
+
+extern Fvector4 ps_ssfx_florafixes_1;
+extern Fvector4 ps_ssfx_florafixes_2;
+
+extern float ps_ssfx_gloss_factor;
+extern Fvector3 ps_ssfx_gloss_minmax;
+
+extern Fvector4 ps_ssfx_wetsurfaces_1;
+extern Fvector4 ps_ssfx_wetsurfaces_2;
+
+extern int ps_ssfx_is_underground;
+extern Fvector4 ps_ssfx_lightsetup_1;
+extern Fvector4 ps_ssfx_hud_drops_1;
+extern Fvector4 ps_ssfx_hud_drops_2;
+extern Fvector4 ps_ssfx_blood_decals;
+extern Fvector4 ps_ssfx_wpn_dof_1;
+extern float ps_ssfx_wpn_dof_2;
+
 //Sneaky debug stuff
 extern Fvector4 ps_dev_param_1;
 extern Fvector4 ps_dev_param_2;
@@ -764,6 +835,352 @@ static class dev_param_8 : public R_constant_setup
 	}
 }    dev_param_8;
 
+static class ssfx_wpn_dof_1 : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_wpn_dof_1.x, ps_ssfx_wpn_dof_1.y, ps_ssfx_wpn_dof_1.z, ps_ssfx_wpn_dof_1.w);
+	}
+}    ssfx_wpn_dof_1;
+
+static class ssfx_wpn_dof_2 : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_wpn_dof_2, 0, 0, 0);
+	}
+}    ssfx_wpn_dof_2;
+
+static class ssfx_blood_decals : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_blood_decals);
+	}
+}    ssfx_blood_decals;
+
+static class ssfx_hud_drops_1 : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_hud_drops_1);
+	}
+}    ssfx_hud_drops_1;
+
+static class ssfx_hud_drops_2 : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_hud_drops_2);
+	}
+}    ssfx_hud_drops_2;
+
+static class ssfx_lightsetup_1 : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_lightsetup_1);
+	}
+}    ssfx_lightsetup_1;
+
+static class ssfx_is_underground : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_is_underground, 0, 0, 0);
+	}
+}    ssfx_is_underground;
+
+static class ssfx_wetsurfaces_1 : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_wetsurfaces_1);
+	}
+}    ssfx_wetsurfaces_1;
+
+static class ssfx_wetsurfaces_2 : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_wetsurfaces_2);
+	}
+}    ssfx_wetsurfaces_2;
+
+static class ssfx_gloss : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_gloss_minmax.x, ps_ssfx_gloss_minmax.y, ps_ssfx_gloss_factor, 0);
+	}
+}    ssfx_gloss;
+
+static class ssfx_florafixes_1 : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_florafixes_1);
+	}
+}    ssfx_florafixes_1;
+
+static class ssfx_florafixes_2 : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_florafixes_2);
+	}
+}    ssfx_florafixes_2;
+
+static class ssfx_wind_grass : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_wind_grass);
+	}
+}    ssfx_wind_grass;
+
+static class ssfx_wind_trees : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_wind_trees);
+	}
+}    ssfx_wind_trees;
+
+static class ssfx_wind_anim : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, g_pGamePersistent->Environment().wind_anim);
+	}
+}    ssfx_wind_anim;
+
+static class ssfx_wind_anim_prev : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, Device.wind_anim_prev);
+	}
+}    ssfx_wind_anim_prev;
+
+static class ssfx_lut : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_lut);
+	}
+}    ssfx_lut;
+
+static class ssfx_shadow_bias : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_shadow_bias.x, ps_ssfx_shadow_bias.y, 0, 0);
+	}
+}    ssfx_shadow_bias;
+
+static class ssfx_terrain_offset : public R_constant_setup
+{
+	virtual void setup(R_constant * C)
+	{
+		RCache.set_c(C, ps_ssfx_terrain_offset);
+	}
+}    ssfx_terrain_offset;
+
+static class ssfx_ssr_2 : public R_constant_setup
+{
+	virtual void setup(R_constant * C)
+	{
+		RCache.set_c(C, ps_ssfx_ssr_2);
+	}
+}    ssfx_ssr_2;
+
+static class ssfx_volumetric : public R_constant_setup
+{
+	virtual void setup(R_constant * C)
+	{
+		RCache.set_c(C, ps_ssfx_volumetric);
+	}
+}    ssfx_volumetric;
+
+static class ssfx_water : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_water);
+	}
+}    ssfx_water;
+
+static class ssfx_water_setup1 : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_water_setup1);
+	}
+}    ssfx_water_setup1;
+
+static class ssfx_water_setup2 : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_water_setup2);
+	}
+}    ssfx_water_setup2;
+
+static class ssfx_ao : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_ao);
+	}
+}    ssfx_ao;
+
+static class ssfx_ao_setup1 : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_ao_setup1);
+	}
+}    ssfx_ao_setup1;
+
+static class ssfx_il : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_il);
+	}
+}    ssfx_il;
+
+static class ssfx_il_setup1 : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_il_setup1);
+	}
+}    ssfx_il_setup1;
+
+static class ssfx_hud_hemi : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_hud_hemi, 0, 0, 0);
+	}
+}    ssfx_hud_hemi;
+
+static class ssfx_issvp : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, Device.m_SecondViewport.IsSVPFrame(), 0, 0, 0);
+	}
+}    ssfx_issvp;
+
+static class ssfx_bloom_1 : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		Fvector4 BloomSetup = { 0,0,0,0 };
+		if (ps_ssfx_bloom_use_presets)
+		{
+			BloomSetup.x = g_pGamePersistent->Environment().CurrentEnv->bloom_threshold;
+			BloomSetup.y = g_pGamePersistent->Environment().CurrentEnv->bloom_exposure;
+			BloomSetup.w = g_pGamePersistent->Environment().CurrentEnv->bloom_sky_intensity;
+		}
+		else
+		{
+			BloomSetup.x = ps_ssfx_bloom_1.x;
+			BloomSetup.y = ps_ssfx_bloom_1.y;
+			BloomSetup.w = ps_ssfx_bloom_1.w;
+		}
+
+		RCache.set_c(C, BloomSetup);
+	}
+}    ssfx_bloom_1;
+
+static class ssfx_bloom_2 : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_bloom_2);
+	}
+}    ssfx_bloom_2;
+
+static class ssfx_terrain_pom : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_terrain_pom);
+	}
+}    ssfx_terrain_pom;
+
+static class ssfx_pom : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_pom);
+	}
+}    ssfx_pom;
+
+static class ssfx_jitter : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		float JitterX = 0;
+		float JitterY = 0;
+
+#if defined(USE_DX11)
+		if (ps_ssfx_taa.x > 0 && RImplementation.o.ssfx_taa)
+		{
+			static Fvector2 TAA_Offset[4] = 
+			{
+				{  0.0f, -1.0f },
+				{ -1.0f,  0.0f },
+				{  1.0f,  0.0f },
+				{  0.0f,  1.0f }
+			};
+
+			JitterX = TAA_Offset[ Device.dwFrame % 4 ].x / Device.dwWidth;
+			JitterY = TAA_Offset[ Device.dwFrame % 4 ].y / Device.dwHeight;
+		}
+#endif
+
+		RCache.set_c(C, JitterX * ps_ssfx_taa.y, JitterY * ps_ssfx_taa.y, ps_ssfx_taa.x, ps_ssfx_taa.w);
+
+	}
+}    ssfx_jitter;
+
+static class ssfx_fTimeDelta : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, Device.fTimeDelta, (float)Device.dwFrame, 0, 0);
+	}
+}    ssfx_fTimeDelta;
+
+static class ssfx_motionblur : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_motionblur);
+	}
+}    ssfx_motionblur;
+
+static class ssfx_fog : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_fog);
+	}
+}    ssfx_fog;
+
+static class ssfx_floravariation : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_ssfx_floravariation);
+	}
+}    ssfx_floravariation;
+
 extern Fvector4 ps_vignette_control;
 static class vignette_control : public R_constant_setup
 {
@@ -791,6 +1208,7 @@ public:
 
 // one binder per lane so the pass table dedup, which compares handler pointers, still matches
 static xr_vector<bus_binder*> bus_binders;
+
 // Standart constant-binding
 void CBlender_Compile::SetMapping()
 {
@@ -803,6 +1221,12 @@ void CBlender_Compile::SetMapping()
 	r_Constant("m_VP", &binder_vp);
 	r_Constant("m_WVP", &binder_wvp);
 	r_Constant("m_inv_V", &binder_inv_v);
+
+	r_Constant("m_v_prev", &binder_v_prev);
+	r_Constant("m_p_prev", &binder_p_prev);
+	r_Constant("m_wv_prev", &binder_wv_prev);
+	r_Constant("m_vp_prev", &binder_vp_prev);
+	r_Constant("m_wvp_prev", &binder_wvp_prev);
 
 	r_Constant("m_xform_v", &tree_binder_m_xform_v);
 	r_Constant("m_xform", &tree_binder_m_xform);
@@ -847,7 +1271,7 @@ void CBlender_Compile::SetMapping()
 	r_Constant("L_sun_dir_e", &binder_sun0_dir_e);
 	//	r_Constant				("L_lmap_color",	&binder_lm_color);
 	r_Constant("L_hemi_color", &binder_hemi_color);
-	r_Constant("L_sky_color", &binder_sky_color); // IX-Ray PBR
+	r_Constant("L_sky_color", &binder_pbr_sky_color); // IX-Ray PBR
 	r_Constant("L_sky_rotation", &binder_sky_rotation); // IX-Ray PBR
 	r_Constant("L_ambient", &binder_amb_color);
 #endif
@@ -880,6 +1304,51 @@ void CBlender_Compile::SetMapping()
 
 	// PDA
 	r_Constant("pda_params", &binder_pda_params);
+
+	// Screen Space Shaders	
+	r_Constant("ssfx_floravariation", &ssfx_floravariation);
+	r_Constant("ssfx_fog", &ssfx_fog);
+	r_Constant("ssfx_timedelta", &ssfx_fTimeDelta);
+	r_Constant("ssfx_motionblur", &ssfx_motionblur);
+	r_Constant("ssfx_jitter", &ssfx_jitter);
+	r_Constant("ssfx_pom", &ssfx_pom);
+
+	r_Constant("ssfx_terrain_pom", &ssfx_terrain_pom);
+	r_Constant("ssfx_bloom_1", &ssfx_bloom_1);
+	r_Constant("ssfx_bloom_2", &ssfx_bloom_2);
+
+	r_Constant("ssfx_issvp", &ssfx_issvp);
+	r_Constant("ssfx_hud_hemi", &ssfx_hud_hemi);
+	r_Constant("ssfx_il_setup", &ssfx_il);
+	r_Constant("ssfx_il_setup2", &ssfx_il_setup1);
+	r_Constant("ssfx_ao_setup", &ssfx_ao);
+	r_Constant("ssfx_ao_setup2", &ssfx_ao_setup1);
+	r_Constant("ssfx_water", &ssfx_water);
+	r_Constant("ssfx_water_setup1", &ssfx_water_setup1);
+	r_Constant("ssfx_water_setup2", &ssfx_water_setup2);
+
+	r_Constant("ssfx_volumetric", &ssfx_volumetric);
+	r_Constant("ssfx_ssr_2", &ssfx_ssr_2);
+	r_Constant("ssfx_terrain_offset", &ssfx_terrain_offset);
+	r_Constant("ssfx_shadow_bias", &ssfx_shadow_bias);
+	r_Constant("ssfx_wind_anim", &ssfx_wind_anim);
+	r_Constant("ssfx_wind_anim_prev", &ssfx_wind_anim_prev);
+	r_Constant("sky_color", &binder_sky_color);
+	r_Constant("ssfx_wpn_dof_1", &ssfx_wpn_dof_1);
+	r_Constant("ssfx_wpn_dof_2", &ssfx_wpn_dof_2);
+	r_Constant("ssfx_blood_decals", &ssfx_blood_decals);
+	r_Constant("ssfx_hud_drops_1", &ssfx_hud_drops_1);
+	r_Constant("ssfx_hud_drops_2", &ssfx_hud_drops_2);
+	r_Constant("ssfx_lightsetup_1", &ssfx_lightsetup_1);
+	r_Constant("ssfx_is_underground", &ssfx_is_underground);
+	r_Constant("ssfx_wetsurfaces_1", &ssfx_wetsurfaces_1);
+	r_Constant("ssfx_wetsurfaces_2", &ssfx_wetsurfaces_2);
+	r_Constant("ssfx_gloss", &ssfx_gloss);
+	r_Constant("ssfx_florafixes_1", &ssfx_florafixes_1);
+	r_Constant("ssfx_florafixes_2", &ssfx_florafixes_2);
+	r_Constant("ssfx_wsetup_grass", &ssfx_wind_grass);
+	r_Constant("ssfx_wsetup_trees", &ssfx_wind_trees);
+	r_Constant("ssfx_lut", &ssfx_lut);
 
 	// Shader stuff
 	r_Constant("shader_param_1", &dev_param_1);

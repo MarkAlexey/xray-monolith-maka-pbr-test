@@ -1,4 +1,4 @@
-# README-Claude — about the `clean-renderer`, `pbr` and `pbr-mt` branches
+# README-Claude — about the `clean-renderer`, `pbr`, `pbr-mt` and `pbr-mt-sss` branches
 
 **The changes on this branch were made by MarkAlexey together with an AI (Claude, by
 Anthropic).** The code changes, the commit messages and this document were
@@ -270,4 +270,69 @@ merged tree, so that MT code which still used one could be fixed. Then the C++ f
 renderers and the engine, plus every xrGame file that changed or includes a changed header, were
 syntax-checked with clang on upstream's MT branch and on `pbr-mt`, and the error lists compared
 (see the commit message for the numbers). As with everything here, it has not been built with
+MSVC or run.
+
+## The `pbr-mt-sss` branch
+
+`pbr-mt-sss` is `pbr-mt` with the engine side of Screen Space Shaders (SSS) put back, so that
+SSS and the PBR materials can be used together. It is the MT branch as upstream has it, minus
+Heatvision and HDR10, plus PBR. Heatvision and HDR10 stay removed because PBR and SSS need the
+render target slots and the output path they used.
+
+### What changed compared to `pbr-mt`
+
+- **SSS engine support is back**, as it is on upstream's MT branch: motion vectors and the
+  previous-frame matrices, the SSS render targets and blur/bloom/SMAA/SSAO passes, screen-space
+  shadows for the sun and local lights, the SSS rain, grass, wind and water features, and the
+  `ssfx_*` console variables and their shader defines. The grass shadow settings are back in
+  the graphics options menu.
+- **G-buffer layout.** The deferred pass now writes four targets:
+
+  | Slot | Target | Contents |
+  |---|---|---|
+  | 0 | `rt_Position` | position, normal, material |
+  | 1 | `rt_Color` | albedo, gloss |
+  | 2 | `rt_Surface` | PBR: metalness, roughness, AO, PBR flag/subsurface |
+  | 3 | `rt_ssfx_motion_vectors` | SSS motion vectors |
+
+  Upstream used slot 2 for Heatvision. Pixels drawn with a legacy texture write 0 to slot 2, so
+  they stay on the old lighting path.
+- **Sky constants.** SSS binds `sky_color` (w = sky rotation) and PBR binds `L_sky_color` and
+  `L_sky_rotation`. Both are registered and they do not affect each other.
+
+### Shaders: the SSS compatibility patch
+
+The shaders in this repository's `gamedata` are still the vanilla-based PBR shaders, so PBR
+works without SSS. SSS 23.5.1 replaces several of the files PBR needs (`gbuffer_stage.h`,
+`sload.h`, `combine_1.ps`, `accum_sun_near.ps`, `accum_sun_far.ps`, `accum_base.ps`,
+`accum_omni_unshadowed.ps`, and in the motion-vector main file `deffer_base_bump.ps` and
+`deffer_base_aref_bump.ps`). If you use SSS, install the **SSS 23.5.1 PBR compatibility
+patch** (distributed separately). It holds those files with the PBR code merged into the SSS
+versions, in folders named after the SSS modules they belong to. Install each one directly
+after its SSS module, so it overrides it. Without the patch the SSS files win, PBR textures are
+decoded as legacy textures and look wrong, and everything else renders as plain SSS.
+
+What the merged shaders do with PBR pixels:
+
+- SSS screen-space shadows darken PBR surfaces for the sun and local lights, as they do legacy ones.
+- With SSS AO on, its AO replaces the engine AO in the PBR ambient term, as it does for
+  legacy pixels. The SSS HUD hemi boost is applied too.
+- The SSS parallax (POM) and simple parallax read the PBR height from the PBR bump texture.
+- SSS Indirect Light is not applied to PBR pixels. The PBR ambient term has no separate diffuse
+  part to apply it to.
+- SSR is added on top of the PBR image-based specular, so very smooth PBR surfaces can look
+  more reflective than intended while SSR is on.
+- With Enhanced Shaders, PBR pixels skip the Enhanced Shaders lighting but are combined
+  correctly: both write linear light to the accumulator.
+
+### How it was checked
+
+The C++ files of the four renderers and the engine, plus the xrGame files that changed or
+include a changed header, were syntax-checked with clang on upstream's MT branch and on
+`pbr-mt-sss`, and the error lists were compared (see the commit message for the numbers). The
+merged shaders were compiled with DXC on top of vanilla, this branch's `gamedata` and the SSS
+modules, with and without the motion-vector main file and the PBR, MSAA, static sun,
+parallax, detail and debug-view variants, and compared against plain SSS on upstream's
+shaders. Enhanced Shaders itself was not available, so the Enhanced Shaders variant was
+compiled with stand-ins for its files. As with everything here, it has not been built with
 MSVC or run.

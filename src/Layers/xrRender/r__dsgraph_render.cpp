@@ -215,7 +215,16 @@ void CDSGraphManager::r_dsgraph_render_hud()
 
 #if defined(USE_DX11) //  Redotix99: for 3D Shader Based Scopes 		
 	if (scope_3D_fake_enabled)
+	{
+		RCache.set_RT(RImplementation.Target->rt_ssfx_temp->pRT, 3); // Render scope_3D to any buffer
+
 		r_dsgraph_render_graph_sorted(RGraph.mapScopeHUD);
+
+		if (!RImplementation.o.ssfx_motionvectors)
+			RCache.set_RT(NULL, 3);
+		else
+			RCache.set_RT(RImplementation.Target->rt_ssfx_motion_vectors->pRT, 3);
+	}
 #endif
 
 	if (RGraph.mapCamAttached.size())
@@ -339,6 +348,63 @@ void CDSGraphManager::r_dsgraph_render_emissive(bool clear, bool renderHUD)
 
 	RImplementation.rmNormal();
 #endif
+}
+
+void CDSGraphManager::r_dsgraph_render_water_ssr()
+{
+#ifdef USE_DX11
+	PROF_EVENT("r_dsgraph_render_water_ssr");
+	std::sort(RGraph.mapWater.begin(), RGraph.mapWater.end());
+	for (auto& N : RGraph.mapWater)
+	{
+		dxRender_Visual* V = N.pVisual;
+		VERIFY(V);
+
+		RCache.set_Shader(RImplementation.Target->s_ssfx_water_ssr);
+
+		RCache.set_xform_world(*N.pMatrix);
+		RImplementation.apply_object(N.pObject);
+		RImplementation.apply_lmaterial();
+
+		RCache.set_c("cam_pos", RImplementation.Target->Position_previous.x, RImplementation.Target->Position_previous.y, RImplementation.Target->Position_previous.z, 0.0f);
+
+		// Previous matrix data
+		RCache.set_c("m_current", RImplementation.Target->Matrix_current);
+		RCache.set_c("m_previous", RImplementation.Target->Matrix_previous);
+
+		V->Render(calcLOD(N.ssa, V->vis.sphere.R));
+	}
+#endif
+}
+
+void CDSGraphManager::r_dsgraph_render_water()
+{
+	PROF_EVENT("r_dsgraph_render_water_ssr");
+    std::sort(RGraph.mapWater.begin(), RGraph.mapWater.end());
+    for (auto& N : RGraph.mapWater)
+	{
+		dxRender_Visual* V = N.pVisual;
+		VERIFY(V);
+
+#ifdef USE_DX11
+		if (RImplementation.o.ssfx_water)
+		{
+			RCache.set_Shader(RImplementation.Target->s_ssfx_water);
+		}
+#endif
+
+		RCache.set_xform_world(*N.pMatrix);
+		RImplementation.apply_object(N.pObject);
+		RImplementation.apply_lmaterial();
+
+		// Wind settings
+		float WindDir = g_pGamePersistent->Environment().CurrentEnv->wind_direction;
+		float WindVel = g_pGamePersistent->Environment().CurrentEnv->wind_velocity;
+		RCache.set_c("wind_setup", WindDir, WindVel, 0, 0);
+
+		V->Render(calcLOD(N.ssa, V->vis.sphere.R));
+	}
+	RGraph.mapWater.clear();
 }
 
 //////////////////////////////////////////////////////////////////////////

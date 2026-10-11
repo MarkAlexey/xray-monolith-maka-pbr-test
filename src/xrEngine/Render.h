@@ -76,6 +76,7 @@ public:
 	virtual void set_color(float r, float g, float b) = 0;
 	virtual void set_hud_mode(bool b) = 0;
 	virtual bool get_hud_mode() = 0;
+	virtual void set_is_playerlight(bool b) = 0;
 	virtual vis_data& get_homdata() = 0;
 
 	virtual void	set_occq_mode						(bool b)							= 0;
@@ -293,7 +294,7 @@ public:
 
 public:
 	// options
-	bool hud_loading; // set while loading HUD models; read by script set_shader bookkeeping
+	bool hud_loading;
 	s32 m_MSAASample;
 
 	BENCH_SEC_SCRAMBLEMEMBER1

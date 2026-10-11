@@ -108,6 +108,8 @@ public:
 	void r_dsgraph_render_ScopeSorted();
 #endif
 	void r_dsgraph_render_cam_ui();
+	void r_dsgraph_render_water_ssr();
+	void r_dsgraph_render_water();
 
 	void r_dsgraph_capture(bool lights = false, bool dynamic = false, CObject* O = nullptr);
 	void r_dsgraph_capture_lights();
