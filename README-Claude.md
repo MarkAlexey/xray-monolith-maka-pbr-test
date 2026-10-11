@@ -440,10 +440,25 @@ Install its folders last, after ES and all SSS modules, then delete the shader c
 
 ### How it was checked
 
-Not built with MSVC and not run. The three compute shaders were compiled with DXC (legacy HLSL,
-cs_6_0, which is stricter than the game's FXC cs_5_0 in most respects) at default and reduced
-quality settings. The patched Enhanced Shaders `lmodel.h`/`hmodel.h`/`pbr_brdf.h` were compiled
-with DXC through a stub `common.h` (vanilla Anomaly shaders were not available), with every
-`ES_IXRAY_*` option, with and without `USE_SSLR_REFLECTIONS`, and the compiled output checked
-for `s_refl` being bound only when SSLR is on. The SSS-side patched files were not compiled.
-The C++ was reviewed against the existing HDAO compute path it is modelled on; no compiler run.
+Not built with MSVC and not run. Shaders were compiled with DXC (legacy HLSL 2016, SM 6.0
+profiles; the game uses FXC with SM 5.0, so this catches syntax, type and identifier errors but
+cannot promise FXC accepts every line) using `tools/check_shaders.py`, which overlays shader
+folders like Mod Organizer and diffs errors against a baseline. Three stacks, on unpacked
+vanilla Anomaly 1.5.3 shaders, before and after this change, each with five define sets
+(plain, SSLR, MSAA, static sun + SSLR, HDAO + SSLR) plus the engine's `SSFX_*` defines:
+
+| Stack | Shaders | Result |
+|---|---|---|
+| vanilla + this repo | `combine_1`, `accum_*`, `deffer_base_bump`, `sslr_*.cs` | no errors |
+| + Enhanced Shaders 1.10 + compat patch | `combine_1`, `accum_*`, `deffer_base_bump` | no new errors |
+| + SSS 23.5 (main, SSR, SSR water, AO, SSS, IL, shadows, flora, gloss, ES patch) + compat patch | the above plus `ssfx_ssr_combine`, `ssfx_ssr_gloss`, `ssfx_ssr`, `ssfx_water_ssr`, `water` | no new errors |
+
+Errors that exist before and after: Enhanced Shaders' `combine_1` with the static sun (its own
+bug), and SSS's `[unroll(expr)]` with a non-literal count in `ssfx_ssr` / `ssfx_water_ssr`,
+which FXC accepts and DXC does not.
+
+The compiled output was also checked for what it binds: `combine_1` binds `s_refl` only with
+`USE_SSLR_REFLECTIONS`, in all three stacks (PBR path on vanilla, Enhanced Shaders `hmodel()` with
+ES and with ES + SSS); `ssfx_ssr_combine` reads `s_position` for the HUD mask only with SSLR on.
+
+The C++ was reviewed against the existing HDAO compute path it is modelled on; it was not compiled.
