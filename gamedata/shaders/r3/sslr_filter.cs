@@ -89,5 +89,5 @@ void main( uint3 DTid : SV_DispatchThreadID )
 	o.rgb	= sum_cw > 0.0 ? sum_c.rgb / sum_cw : center.rgb;
 	o.a		= sum_aw > 0.0 ? sum_a / sum_aw : 0.0;
 
-	u_sslr_temp[DTid.xy] = saturate( o );
+	u_sslr_temp[DTid.xy] = float4( max( o.rgb, 0.0 ), saturate( o.a ) );	// colour is HDR, not clamped to 1
 }

@@ -38,6 +38,7 @@ Texture2D		s_surface;		// G-buffer: PBR material (x metal, y rough, z AO, w flag
 Texture2D		s_diffuse;		// G-buffer: albedo, gloss
 Texture2D		s_image;		// pass input (see each pass)
 Texture2D		s_refl;			// pass input (see each pass)
+Texture2D		s_tonemap;		// exposure (luminance adaptation), x = tonemap scale
 
 SamplerState	smp_nofilter;
 SamplerState	smp_rtlinear;
@@ -107,6 +108,32 @@ float sslr_roughness( float4 surface, float gloss )
 
 	float r = lerp( SSLR_LEGACY_ROUGH_HIGH, SSLR_LEGACY_ROUGH_LOW, saturate( gloss ) );
 	return max( 0.02, r * r );
+}
+
+// Inverse of combine_1's tonemap(): the 8-bit colour in $user$generic_temp back to the
+// pre-tonemap gamma-space colour combine_1 computed (see SSLR_HDR_DECODE).
+float3 sslr_untonemap( float3 low )
+{
+#if SSLR_HDR_DECODE
+	float scale = max( s_tonemap.Load( int3( 0, 0, 0 ) ).x, 1e-4 );
+	low = saturate( low );
+#	ifdef MONOLITH_ES
+	// ES: low = gamma( (x / (x + 1)) / (w / (w + 1)) ), x = linear(colour) * linear(scale)
+	const float w = SSLR_TM_WHITE_ES;
+	float3 y = min( pow( low, 2.2 ) * ( w / ( w + 1.0 ) ), 0.9999 );
+	float3 x = y / ( 1.0 - y );
+	float3 c = pow( x, 1.0 / 2.2 ) / scale;
+#	else
+	// vanilla: low = x (1 + x / W^2) / (1 + x), x = colour * scale; solve the quadratic
+	const float a = 1.0 / ( SSLR_TM_WHITE_VANILLA * SSLR_TM_WHITE_VANILLA );
+	float3 b = 1.0 - low;
+	float3 x = ( -b + sqrt( b * b + 4.0 * a * low ) ) / ( 2.0 * a );
+	float3 c = x / scale;
+#	endif
+	return min( c, SSLR_HDR_MAX );
+#else
+	return low;
+#endif
 }
 
 bool sslr_is_sky( float z )	{ return z <= SSLR_SKY_EPS; }

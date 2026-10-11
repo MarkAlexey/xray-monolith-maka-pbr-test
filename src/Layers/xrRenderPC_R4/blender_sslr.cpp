@@ -26,6 +26,7 @@ void CBlender_sslr::Compile(CBlender_Compile& C)
 		C.r_ComputePass("sslr_render");
 		sslr_gbuffer(C);
 		C.r_dx10Texture("s_image", "$user$generic_temp");
+		C.r_dx10Texture("s_tonemap", r2_RT_luminance_cur); // exposure, to undo combine_1's tonemap
 		C.r_End();
 		break;
 

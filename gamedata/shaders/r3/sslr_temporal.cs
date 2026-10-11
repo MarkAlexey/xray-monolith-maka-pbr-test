@@ -65,5 +65,5 @@ void main( uint3 DTid : SV_DispatchThreadID )
 		current		= lerp( current, hist, weight );
 	}
 
-	u_sslr[DTid.xy] = saturate( current );
+	u_sslr[DTid.xy] = float4( max( current.rgb, 0.0 ), saturate( current.a ) );	// colour is HDR, not clamped to 1
 }

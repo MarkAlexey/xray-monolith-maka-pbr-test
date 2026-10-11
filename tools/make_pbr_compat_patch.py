@@ -18,6 +18,8 @@ What the patch does
     - Point/spot attenuation uses IX-Ray's falloff (same as PBR textures).
     - Reflection directions go through ixr_env_dir() (the "unfuck" cubemap remap).
     - The IX-Ray SSLR result replaces the cubemap reflection where its rays hit.
+    - HDR reflections: cubemap highlights above a knee are expanded (hdr_ibl.h), so bright sky
+      openings reflect brighter than "white", like an HDR environment map.
   Screen Space Shaders:
     - screenspace_common.h: SSFX_calc_sky / SSFX_calc_env (water, SSR sky fallback) use the
       unfuck remap instead of SSS's perspective/altitude hack and unremapped env lookup.
@@ -244,7 +246,8 @@ def patch_hmodel(text, what):
         '#include "pbr_cubemap_check.h"\n',
         '#include "pbr_cubemap_check.h"\n'
         '#include "ixray_brdf.h"\t' + BANNER + "unfuck() cubemap remap\n"
-        '#include "sslr_apply.h"\t' + BANNER + "IX-Ray SSLR (no-op unless r4_sslr_reflections 1)\n",
+        '#include "sslr_apply.h"\t' + BANNER + "IX-Ray SSLR (no-op unless r4_sslr_reflections 1)\n"
+        '#include "hdr_ibl.h"\t' + BANNER + "HDR highlights from the 8-bit cubemaps\n",
         what,
     )
     text = replace_once(
@@ -258,6 +261,14 @@ def patch_hmodel(text, what):
         r"\tfloat3 vreflectRemap = vreflect;\n.*?//fake remapping[^\n]*\n",
         "\t" + BANNER + "unfuck() remap (ixray_brdf.h); same as ES's fake remap plus a zero guard\n"
         "\tfloat3 vreflectRemap = ixr_env_dir(vreflect);\n",
+        what,
+    )
+    text = replace_once(
+        text,
+        "\tfloat3\te1s\t\t= env_s1.SampleLevel( smp_base, vreflectRemap, RoughMip );\n",
+        "\tfloat3\te1s\t\t= env_s1.SampleLevel( smp_base, vreflectRemap, RoughMip );\n"
+        "\te0s = hdr_ibl_expand_gamma(e0s);\t" + BANNER + "HDR reflections (hdr_ibl.h)\n"
+        "\te1s = hdr_ibl_expand_gamma(e1s);\n",
         what,
     )
     text = replace_once(

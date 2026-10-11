@@ -27,6 +27,7 @@
 #include "lmodel.h"	// Enhanced Shaders' lmodel.h brings its pseudo-PBR material conversion
 #include "ixray_brdf.h"	// shared IX-Ray BRDF and cubemap remap (also used by patched Enhanced Shaders)
 #include "sslr_apply.h"	// IX-Ray SSLR consumer (no-op unless r4_sslr_reflections 1)
+#include "hdr_ibl.h"	// HDR highlights reconstructed from the 8-bit cubemaps
 
 #ifdef PBR_GBUFFER
 
@@ -347,22 +348,25 @@ float3 pbr_specular_irradiance( float3 R, float hemi, float roughness )
 
 	float3 s0	= sky_s0.SampleLevel( smp_linear, sc, lod0 ).rgb;
 	float3 s1	= sky_s1.SampleLevel( smp_linear, sc, lod1 ).rgb;
-	float3 sky	= lerp( s0, s1, env_color.w ) * L_sky_color.rgb;
+	// HDR reflections: the 8-bit sky's highlights are expanded (hdr_ibl.h). The blurred average
+	// below is expanded the same way, so the brightness match keeps the overall level and the
+	// highlights end up brighter than the average, as in an HDR environment map.
+	float3 sky	= hdr_ibl_expand_gamma( lerp( s0, s1, env_color.w ) ) * L_sky_color.rgb;
 
 	float3 a0	= sky_s0.SampleLevel( smp_linear, sc, avg0 ).rgb;
 	float3 a1	= sky_s1.SampleLevel( smp_linear, sc, avg1 ).rgb;
-	float3 sky_avg	= lerp( a0, a1, env_color.w ) * L_sky_color.rgb;
+	float3 sky_avg	= hdr_ibl_expand_gamma( lerp( a0, a1, env_color.w ) ) * L_sky_color.rgb;
 
 #ifdef PBR_ES
 	// Enhanced Shaders: hemisphere cubemap blurred by roughness through its mips, not squared
 	float  emip	= CUBE_MIPS - ( 1.0 - roughness ) * CUBE_MIPS;
 	float3 e0	= env_s0.SampleLevel( smp_linear, ec, emip ).rgb;
 	float3 e1	= env_s1.SampleLevel( smp_linear, ec, emip ).rgb;
-	float3 env	= env_color.rgb * lerp( e0, e1, env_color.w );
+	float3 env	= env_color.rgb * hdr_ibl_expand_gamma( lerp( e0, e1, env_color.w ) );
 #else
 	float3 e0	= env_s0.SampleLevel( smp_rtlinear, ec, 0 ).rgb;
 	float3 e1	= env_s1.SampleLevel( smp_rtlinear, ec, 0 ).rgb;
-	float3 env	= env_color.rgb * lerp( e0, e1, env_color.w );
+	float3 env	= env_color.rgb * hdr_ibl_expand_gamma( lerp( e0, e1, env_color.w ) );
 	env			*= env;
 #endif
 

@@ -87,6 +87,26 @@
 #	define SSLR_LEGACY_ROUGH_LOW 0.35
 #endif
 
+// HDR: the colour SSLR reads ($user$generic_temp) is combine_1's tonemapped 8-bit output.
+// 1 = invert that tonemap (vanilla curve, or Enhanced Shaders' when the engine reports ES via
+// MONOLITH_ES) and divide by the exposure, so reflected highlights keep their pre-tonemap
+// brightness, like the cubemap reflection (hdr_ibl.h). 0 = use the tonemapped colour.
+// Caveat: values the tonemap clipped are lost. Recoverable maximum, divided by the exposure:
+// 1.7 for vanilla (gamma space), 11.2 linear (about 3.0 in gamma space) for Enhanced Shaders.
+#ifndef SSLR_HDR_DECODE
+#	define SSLR_HDR_DECODE 1
+#endif
+#ifndef SSLR_TM_WHITE_VANILLA
+#	define SSLR_TM_WHITE_VANILLA 1.7		// common_functions.h tonemap(), fWhiteIntensity
+#endif
+#ifndef SSLR_TM_WHITE_ES
+#	define SSLR_TM_WHITE_ES 11.2		// Enhanced Shaders tonemap(), fWhiteIntensity
+#endif
+// Upper limit of a decoded SSLR sample (gamma space), against fireflies in the resolve
+#ifndef SSLR_HDR_MAX
+#	define SSLR_HDR_MAX 8.0
+#endif
+
 // Debug output written into the reflection itself (combine shows it on every pixel that
 // receives SSLR): 0 = off, 1 = hit confidence as grey, 2 = raw hit colour at full strength
 #ifndef SSLR_DEBUG

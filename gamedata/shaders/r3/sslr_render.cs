@@ -2,7 +2,7 @@
 // Monolith: IX-Ray SSLR pass 1/3 - trace
 //
 // Inputs:  s_position, s_surface, s_diffuse (G-buffer), s_image = previous frame colour
-// Outputs: u_sslr      rgb = reflected colour (gamma), a = hit confidence (0 = miss)
+// Outputs: u_sslr      rgb = reflected colour (gamma, pre-tonemap HDR), a = hit confidence (0 = miss)
 //          u_sslr_data xyz = view-space hit position, w = roughness of this pixel
 //
 // One VNDF-jittered ray per pixel, marched in screen space with perspective-correct depth,
@@ -144,7 +144,7 @@ void main( uint3 DTid : SV_DispatchThreadID )
 		}
 		conf		*= sslr_edge_fade( puv ) > 0.0 ? 1.0 : 0.0;
 
-		result.rgb	= s_image.SampleLevel( smp_rtlinear, puv, 0 ).rgb;
+		result.rgb	= sslr_untonemap( s_image.SampleLevel( smp_rtlinear, puv, 0 ).rgb );	// HDR, see SSLR_HDR_DECODE
 		result.a	= saturate( conf );
 	}
 

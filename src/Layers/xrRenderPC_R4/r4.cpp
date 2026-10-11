@@ -524,6 +524,9 @@ void CRender::create()
 	o.sslr = (ps_r4_sslr_enable != 0) && !o.dx10_msaa && FS.exist(fn, "$game_shaders$", "r3\\sslr_render", ".cs");
 	Msg("- IX-Ray SSLR %s", o.sslr ? "ON" : (ps_r4_sslr_enable && o.dx10_msaa ? "OFF (MSAA)" : "OFF"));
 
+	// Enhanced Shaders present: tells engine-owned shaders which tonemap curve combine_1 uses
+	o.es_installed = FS.exist(fn, "$game_shaders$", "r3\\pbr_settings", ".h") ? 1 : 0;
+
 	// IX-Ray single-pass cascaded sun (r4_rendertarget_accum_csm.cpp)
 	o.sun_csm = (ps_r4_sun_csm != 0) && !o.dx10_msaa && !o.sunfilter && o.HW_smap && FS.exist(fn, "$game_shaders$", "r3\\accum_sun_csm", ".ps");
 	Msg("- IX-Ray CSM %s", o.sun_csm ? "ON" : "OFF");
@@ -1847,6 +1850,16 @@ HRESULT CRender::shader_compile(
 		def_it++;
 	}
 	sh_name[len] = '0' + char(o.ssfx_core);
+	++len;
+
+	// Enhanced Shaders present (sslr_untonemap() picks ES's tonemap curve)
+	if (o.es_installed)
+	{
+		defines[def_it].Name = "MONOLITH_ES";
+		defines[def_it].Definition = "1";
+		def_it++;
+	}
+	sh_name[len] = '0' + char(o.es_installed);
 	++len;
 
 	// IX-Ray SSLR: consumers (pbr_ixray.h, patched ES hmodel.h) read s_refl only with this define

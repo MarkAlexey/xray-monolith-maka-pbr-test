@@ -508,3 +508,31 @@ vanilla + ES + SSS (main, AO, SSS, SSR, IL, New Shadow & Light Features, flora, 
 + compat patch, and vanilla + SSS without ES, with and without `MONOLITH_SSFX_CORE`, sunmask,
 `SUN_QUALITY` 2/3 and the debug view; each binds the expected resources (`s_ssfx_sss` only with
 SSS). The C++ was not compiled.
+
+## HDR reflections
+
+"HDR" here means reflections that keep highlight energy: the bright sky between branches
+reflects much brighter than the rest, and the tonemapper and bloom shape it, instead of
+everything clipping to a flat grey "white". The output pipeline is unchanged:
+`combine_1`'s `tonemap()` (vanilla and Enhanced Shaders) already takes values above 1, compresses
+them with a soft curve and sends the excess to bloom. What was missing was HDR input:
+
+- **Cubemaps** (`hdr_ibl.h`). Anomaly's sky and hemisphere cubemaps are 8-bit, so their highlight
+  range is reconstructed: linear luminance above `HDR_IBL_KNEE` (0.6) follows a bounded
+  inverse-Reinhard curve up to `HDR_IBL_PEAK` (6x) at white; below the knee nothing changes, the
+  slope is continuous at the knee, and hue is kept. Applied to PBR/unified sky reflections in
+  `pbr_ixray.h` (to the blurred average too, so the existing brightness match keeps the overall
+  level and only the highlights rise), and through the compatibility patch to Enhanced Shaders'
+  reflection lookups in `hmodel.h`. `HDR_IBL_ENABLE 0` turns it off.
+- **SSLR** (`sslr_untonemap()`, `SSLR_HDR_DECODE`). SSLR reads `combine_1`'s tonemapped 8-bit
+  output; it now inverts that exact curve (vanilla's, or Enhanced Shaders' when the engine
+  reports ES with the new define `MONOLITH_ES`) and divides by the exposure (`s_tonemap`), so
+  reflected surfaces keep their pre-tonemap brightness. The SSLR targets are 16-bit float and no
+  longer clamp colour to 1. Both inverses were checked numerically to round-trip exactly up to
+  the curve's clip point.
+
+Limits: the cubemap range is a reconstruction, not real HDR data, so clouds clipped to white in a
+sky texture get bright too; expansion happens after mip filtering, so rough reflections get less
+boost than a true HDR map would give; SSLR cannot recover what the tonemap clipped (above 1.7 for
+vanilla, 11.2 linear for Enhanced Shaders, times the exposure). A full IX-Ray-style HDR output
+pipeline (linear float scene buffer, tonemap moved to `combine_2`) is not part of this.

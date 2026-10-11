@@ -47,6 +47,7 @@ public:
 		u32 ssfx_hud_raindrops : 1;
 		u32 ssfx_ssr : 1;
 		u32 sslr : 1; // IX-Ray SSLR (r4_sslr_reflections, no MSAA)
+		u32 es_installed : 1; // Enhanced Shaders present (r3\pbr_settings.h)
 		u32 sun_csm : 1; // IX-Ray single-pass cascaded sun (r4_sun_csm, no MSAA)
 		u32 ssfx_terrain : 1;
 		u32 ssfx_volumetric : 1;
