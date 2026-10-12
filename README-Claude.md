@@ -676,3 +676,11 @@ Builds `<name>.dds`, `<name>_bump.dds` (R height, G normal Y, A normal X) and `<
 Writes uncompressed DDS with renormalised, Toksvig-widened mips, or BC through texconv. `--dry-run`
 prints per-channel statistics and warns when a "roughness" map looks like gloss. See the header
 for caveats (normal Y convention, height channel = 5 cm position offset, never sRGB).
+
+## gbuffer_stage.h under SSS
+
+`gamedata/shaders/r3/gbuffer_stage.h` in this repository is the vanilla-shader version (no motion
+vectors, no TAA unjitter). SSS ships its own; the compatibility patch now generates SSS's file with
+the PBR material target added (`99 - PBR compat - SSS (00 - MAIN FILE)`). The exe's copy must never
+sit above SSS: SSS shaders then fail with `undeclared identifier 'ssfx_jitter'` (ssfx_taa.ps) and
+lose the velocity target.

@@ -21,6 +21,10 @@ What the patch does
     - HDR reflections: cubemap highlights above a knee are expanded (hdr_ibl.h), so bright sky
       openings reflect brighter than "white", like an HDR environment map.
   Screen Space Shaders:
+    - gbuffer_stage.h: SSS's G-buffer layout (motion vectors in target 3, TAA unjitter) with
+      the PBR material target in target 2 (Heatvision's old slot). Without it the PBR material
+      is never written under SSS (PBR_GBUFFER undefined), and the exe's own gbuffer_stage.h
+      must NOT be used over SSS: it lacks ssfx_jitter / velocity and breaks SSS's shaders.
     - screenspace_common.h: SSFX_calc_sky / SSFX_calc_env (water, SSR sky fallback) use the
       unfuck remap instead of SSS's perspective/altitude hack and unremapped env lookup.
     - ssfx_ssr_combine.ps: with SSLR on and ES installed, SSS SSR is suppressed on non-HUD
@@ -28,7 +32,7 @@ What the patch does
     - deffer_base_hud_*bump.ps (MV main file, HUD Raindrops): first-person models with PBR
       textures are written to the G-buffer as PBR (pbr_hud.h). SSS compiles every weapon and
       hand with these shaders, which never wrote the PBR material, so PBR weapons rendered as
-      legacy (white plastic). Needs the SSS 23.5.1 PBR compatibility patch's gbuffer_stage.h.
+      legacy (white plastic). Needs the patched gbuffer_stage.h above.
 
 Install order (Mod Organizer priority / JSGME order), after everything else:
   ES 1.10 -> SSS 23.5 modules (incl. "00 - PATCH - [ Enhanced Shaders 1.10 ]") -> this patch.
@@ -379,8 +383,69 @@ def patch_hud(text, what):
     return text
 
 
+GBUFFER_PBR_DECL = """
+// Monolith: IX-Ray PBR. On DX11 (SM_5) the G-buffer has a third target, s_surface:
+//   x = metalness, y = roughness, z = ambient occlusion,
+//   w = 0 for legacy pixels, 0.5 + 0.5 * subsurface for PBR pixels.
+// Every shader that writes f_deffer through pack_gbuffer() writes zero there, so only
+// textures marked "PBR (metallic/roughness)" in their THM switch to the PBR lighting model.
+// It takes render target 2, which Monolith used for Heatvision (removed on this branch);
+// SSS motion vectors stay in target 3.
+#if defined(SM_5) && !defined(PBR_DISABLE)
+#	define PBR_GBUFFER
+#endif
+
+#ifdef PBR_GBUFFER
+#	ifdef USE_MSAA
+		Texture2DMS<float4> s_surface;
+#	else
+		Texture2D s_surface;
+#	endif
+#endif
+"""
+
+GBUFFER_LOAD_SURFACE = """
+#ifdef PBR_GBUFFER
+//Unpacking stage for the PBR material target
+float4 gbuffer_load_surface( float2 tc : TEXCOORD, float2 pos2d, uint iSample )
+{
+#ifndef USE_MSAA
+	return s_surface.Sample( smp_nofilter, tc );
+#else
+	return s_surface.Load( int3( pos2d, 0 ), iSample );
+#endif
+}
+#endif
+"""
+
+
+def patch_gbuffer_stage(text, what):
+    """SSS's gbuffer_stage.h (motion vectors, TAA unjitter) + the PBR material target.
+
+    The exe's own gamedata/shaders/r3/gbuffer_stage.h is written for vanilla shaders: no
+    screenspace_mvectors.h, no velocity target, no TAA unjitter. SSS replaces that file with
+    its own, so with SSS installed the PBR edits have to be applied to SSS's copy. Using the
+    exe's copy over SSS breaks every SSS shader that needs ssfx_jitter or O.velocity
+    (first one in the log: ssfx_taa.ps, "undeclared identifier 'ssfx_jitter'").
+    """
+    text = replace_once(text, '#include "screenspace_mvectors.h"\n',
+                        '#include "screenspace_mvectors.h"\n' + GBUFFER_PBR_DECL, what)
+    text = regex_once(text, r"[ \t]*float4[ \t]+H[ \t]*:[ \t]*SV_Target2;[^\n]*\n",
+                      "#ifdef PBR_GBUFFER\n\tfloat4 surface : SV_Target2; //X - Metalness, Y - Roughness, "
+                      "Z - AO, W - PBR flag/SSS (0 = legacy)\n#endif\n", what, flags=0)
+    # Heatvision is gone on this branch; nothing else in SSS reads L_hotness
+    text = regex_once(text, r"// HeatVision\nuniform float4 L_hotness;\n\n?", "", what, flags=0)
+    text = regex_once(text, r"[ \t]*// HeatVision\n[ \t]*if \(L_hotness\.x > 0\.0\)\n[^\n]*\n[ \t]*else\n[^\n]*\n",
+                      "#ifdef PBR_GBUFFER\n\tres.surface = float4( 0.0, 0.0, 0.0, 0.0 ); "
+                      "// legacy lighting; PBR shaders overwrite it\n#endif\n", what, flags=0)
+    text = regex_once(text, r"(\n)(gbuffer_data gbuffer_load_data\( float2 tc : TEXCOORD, float2 pos2d \)\n)",
+                      lambda m: m.group(1) + GBUFFER_LOAD_SURFACE.lstrip("\n") + "\n" + m.group(2), what, flags=0)
+    return text
+
+
 # (source, path in archive, output key, patch function)
 JOBS = [
+    ("sss", SSS_MAIN + "/gbuffer_stage.h", "sss_main", patch_gbuffer_stage),
     ("es", ES_PBR + "/pbr_brdf.h", "es", patch_pbr_brdf),
     ("es", ES_PBR + "/lmodel.h", "es", patch_lmodel),
     ("es", ES_PBR + "/hmodel.h", "es", patch_hmodel),
