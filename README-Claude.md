@@ -667,3 +667,12 @@ To check a PBR weapon in game, set `PBR_DEBUG_VIEW` in `pbr_ixray.h`: 4 (metalne
 metal parts white; black means the pixels are still not PBR (THM material not "PBR
 (metallic/roughness)", or no PBR `gbuffer_stage.h`). 3 (roughness) should be dark on polished
 metal; if it is bright, the roughness channel holds gloss (smoothness) and must be inverted.
+
+## PBR texture packer (tools/pack_pbr_textures.py)
+
+Builds `<name>.dds`, `<name>_bump.dds` (R height, G normal Y, A normal X) and `<name>_bump#.dds`
+(R metal, G roughness, B subsurface, A AO) from separate maps, including Call of Duty exports:
+`--gloss` inverts gloss to roughness, `--nog` reads the packed CoD normal (R gloss, G Y, B Z, A X).
+Writes uncompressed DDS with renormalised, Toksvig-widened mips, or BC through texconv. `--dry-run`
+prints per-channel statistics and warns when a "roughness" map looks like gloss. See the header
+for caveats (normal Y convention, height channel = 5 cm position offset, never sRGB).
