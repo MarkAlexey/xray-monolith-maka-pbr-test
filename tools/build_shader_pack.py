@@ -12,6 +12,23 @@ the right order, flattened into a single mod:
     4. PBR compat patch                     (generated from YOUR ES/SSS copies by
                                              make_pbr_compat_patch.py, or --compat)
 
+Optional (--beef, --atmospherics), placed where they have to go:
+
+    repo -> Beef's NVGs -> ES -> Beef's ES sky2.ps -> SSS (+ SSS's Beef patch) -> Atmospherics -> compat
+
+    Beef's NVGs: its night_vision.h must win over the exe's copy (an older one without
+      shader_param_8; SSS's NVG code and Atmospherics' sky2.ps do not compile with it).
+      Its combine_1.ps, combine_2_naa.ps and pp_blur.ps are left out: SSS 23.5 already has
+      Beef's NVG code in its own versions (enabled by "00 - PATCH - [ Beefs NVGs ]", added
+      automatically), and Beef's copies would remove SSS's AO/IL/fog/SSR and PBR ambient
+      handling from combine_1. Its sky2.ps comes from "Beef's NVGs - Patch (ES AND SSR)",
+      Beef's ES-compatible version (byte-identical to the one Atmospherics ships).
+    Atmospherics: settings headers for SSS/ES, sky2.ps, shadow.h (cloud-shadow floor),
+      pbr_settings.h (ES pseudo-PBR tuning). None of them touches the G-buffer, lighting,
+      gbuffer_stage.h, hmodel/lmodel/pbr_brdf or SSLR, so no compat patching is needed. It
+      goes after SSS so its settings headers win. Accepts the full mod or just its shaders
+      folder (with or without a gamedata/ level), as a folder, .zip or .7z (needs py7zr).
+
 Later layers win. Every file that more than one layer provides is listed in
 PACK_REPORT.txt with the layer that won, so you can check nothing was lost.
 
@@ -37,6 +54,12 @@ Caveats
   - The pack contains files from SSS (Ascii1457) and ES (KennShade). Fine for your own
     install; ask the authors before sharing it publicly.
   - Changing module selection in the pack means rebuilding it; re-run this script.
+  - Atmospherics' pbr_settings.h brightens and re-tunes ES's pseudo-PBR conversion of
+    legacy textures (ALBEDO_BOOST etc.). Real PBR textures are not affected, so legacy and
+    PBR materials drift apart a little; set ATMOSPHERICS_SKIP = {"pbr_settings.h"} to keep
+    the ES/SSS values that pseudo-PBR was matched against.
+  - Beef's other patch folders (Only ES / Only SSR / Arszi's) are not used: with SSS 23.5
+    they are superseded, and Arszi's patch is a script for that mod only.
 """
 
 import argparse
@@ -97,6 +120,13 @@ SSS_MODULES = [
     # "992 - ( EXTRA ) Detectors+ [ Vanilla ]",
 ]
 
+BEEF_MODULE = "Beef's NVGs"
+BEEF_ES_PATCH = "Beef's NVGs - Patch (ES AND SSR)"
+BEEF_ES_PATCH_FILES = {"sky2.ps"}                   # only this file is taken from the ES patch
+BEEF_SKIP = {"combine_1.ps", "combine_2_naa.ps", "pp_blur.ps", "sky2.ps"}  # SSS/ES integrate these
+SSS_BEEF_PATCH = "00 - PATCH - [ Beefs NVGs ]"      # inserted after the SSS ES patch with --beef
+ATMOSPHERICS_SKIP = set()                           # e.g. {"pbr_settings.h"}, see caveats
+
 INCLUDE_REPO_SHADERS = True     # this branch's gamedata/shaders (needed: ixray_brdf.h, sslr_*)
 SHADERS_ONLY = False            # True = only gamedata/shaders from every layer
 SKIP_NAMES = {"Thumbs.db", "desktop.ini", ".DS_Store"}
@@ -112,6 +142,16 @@ class Source:
 
     def __init__(self, path):
         self.path = path
+        self.tmp = None
+        if os.path.isfile(path) and path.lower().endswith(".7z"):
+            try:
+                import py7zr
+            except ImportError:
+                sys.exit(f"error: {path}: .7z needs py7zr (pip install py7zr) or extract it first")
+            self.tmp = tempfile.mkdtemp(prefix="pbr_7z_")
+            with py7zr.SevenZipFile(path) as z:
+                z.extractall(self.tmp)
+            self.path = path = self.tmp
         if os.path.isfile(path):
             self.zip = zipfile.ZipFile(path)
             self.names = {n.replace("\\", "/"): n for n in self.zip.namelist() if not n.endswith("/")}
@@ -130,7 +170,7 @@ class Source:
     def files(self, module):
         """Yield (path relative to the module, reader) for every file of the module"""
         if self.zip:
-            pre = self.root + module.rstrip("/") + "/"
+            pre = self.root + ("" if module == "." else module.rstrip("/") + "/")
             found = False
             for n, real in self.names.items():
                 if n.startswith(pre):
@@ -148,6 +188,19 @@ class Source:
                     yield os.path.relpath(full, base).replace(os.sep, "/"), (lambda full=full: open(full, "rb").read())
 
 
+def gamedata_module(src):
+    """(module, prefix) for a source that is one mod: its gamedata level may be missing"""
+    if src.zip:
+        names = [n[len(src.root):] for n in src.names]
+        if any(n.lower().startswith("gamedata/") for n in names):
+            return ".", ""
+        return ".", "gamedata/"
+    for d in os.listdir(src.path):
+        if d.lower() == "gamedata":
+            return ".", ""
+    return ".", "gamedata/"
+
+
 def keep(rel):
     parts = rel.split("/")
     if parts[-1] in SKIP_NAMES:
@@ -163,6 +216,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--es", required=True, help="Enhanced Shaders 1.10 zip or extracted folder")
     ap.add_argument("--sss", required=True, help="Screen Space Shaders 23.5 zip or extracted folder")
+    ap.add_argument("--beef", help="Beef's NVGs zip or extracted folder (optional)")
+    ap.add_argument("--atmospherics", help="Atmospherics (or just its shaders) folder/zip/7z (optional)")
     ap.add_argument("--compat", help="existing compat patch folder/zip (default: generate it)")
     ap.add_argument("--out", default="pbr_shader_pack")
     ap.add_argument("--zip", action="store_true", help="also write <out>.zip")
@@ -183,21 +238,38 @@ def main():
         a.compat = tmp
 
     es, sss, compat = Source(a.es), Source(a.sss), Source(a.compat)
-    layers = []    # (label, source, module)
+    # (label, source, module, prefix added to paths, file filter on the base name)
+    layers = []
     if INCLUDE_REPO_SHADERS:
-        layers.append(("repo", Source(REPO), "."))
-    layers += [("ES/" + m, es, m) for m in ES_MODULES]
-    layers += [("SSS/" + m, sss, m) for m in SSS_MODULES]
+        layers.append(("repo", Source(REPO), ".", "", None))
+    beef = Source(a.beef) if a.beef else None
+    if beef:
+        layers.append(("Beef/" + BEEF_MODULE, beef, BEEF_MODULE, "", lambda n: n.lower() not in BEEF_SKIP))
+    layers += [("ES/" + m, es, m, "", None) for m in ES_MODULES]
+    if beef:
+        layers.append(("Beef/" + BEEF_ES_PATCH, beef, BEEF_ES_PATCH, "", lambda n: n.lower() in BEEF_ES_PATCH_FILES))
+    sss_mods = list(SSS_MODULES)
+    if beef and SSS_BEEF_PATCH not in sss_mods:
+        anchor = "00 - PATCH - [ Enhanced Shaders 1.10 ]"
+        sss_mods.insert(sss_mods.index(anchor) + 1 if anchor in sss_mods else 0, SSS_BEEF_PATCH)
+    layers += [("SSS/" + m, sss, m, "", None) for m in sss_mods]
+    if a.atmospherics:
+        atm = Source(a.atmospherics)
+        mod, prefix = gamedata_module(atm)
+        layers.append(("Atmospherics", atm, mod, prefix, lambda n: n.lower() not in {s.lower() for s in ATMOSPHERICS_SKIP}))
     if compat.zip:
         cmods = sorted({n[len(compat.root):].split("/", 1)[0] for n in compat.names if n[len(compat.root):].startswith("99 ")})
     else:
         cmods = sorted(d for d in os.listdir(a.compat) if d.startswith("99 "))
-    layers += [("compat/" + m, compat, m) for m in cmods]
+    layers += [("compat/" + m, compat, m, "", None) for m in cmods]
 
     winner, history, missing = {}, {}, []
-    for label, src, mod in layers:
+    for label, src, mod, prefix, flt in layers:
         try:
             for rel, reader in src.files(mod):
+                rel = prefix + rel
+                if flt and not flt(rel.rsplit("/", 1)[-1]):
+                    continue
                 if label == "repo" and not rel.lower().startswith("gamedata/shaders/"):
                     continue                          # the exe's other gamedata is not part of the pack
                 if not keep(rel):
@@ -216,11 +288,11 @@ def main():
     for rel, _, label in winner.values():
         by_layer[label] = by_layer.get(label, 0) + 1
     print(f"{len(winner)} files from {len(layers)} layers; {len(overridden)} provided by more than one layer")
-    for label, _, _ in layers:
+    for label, *_ in layers:
         print(f"  {by_layer.get(label, 0):5d} winning  {label}")
 
     report = ["PBR shader pack - merge report", "", "Layers, lowest priority first:"]
-    report += [f"  {l}" for l, _, _ in layers]
+    report += [f"  {l[0]}" for l in layers]
     report += ["", "Files provided by more than one layer (last one wins):"]
     for k in sorted(overridden):
         report.append(f"  {winner[k][0]}\n      {' -> '.join(overridden[k])}")

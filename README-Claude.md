@@ -691,3 +691,11 @@ Flattens this branch's shaders, ES 1.10, SSS 23.5 (module list in the settings b
 generated compat patch into one gamedata folder, with PACK_REPORT.txt listing every overridden
 file. `--shaders-only` keeps only gamedata/shaders. The compat patch now also patches SSS module
 94's own pbr_brdf.h / lmodel.h (they override the ES patch's copies in a normal SSS install).
+
+## Beef's NVGs and Atmospherics
+
+Neither touches a file PBR changed, so the compat patch needs nothing for them; the order does matter:
+exe gamedata -> Beef's NVGs (main folder only) -> ES -> SSS (+ its Beef patch) -> Atmospherics -> compat.
+The exe ships an older `night_vision.h` (no `shader_param_8`); Beef's must win or SSS's NVG code and
+Atmospherics' `sky2.ps` do not compile. Beef's `combine_1`/`combine_2_naa`/`pp_blur` must lose to SSS's
+(SSS 23.5 already integrates Beef's NVG). `build_shader_pack.py --beef --atmospherics` does this.
