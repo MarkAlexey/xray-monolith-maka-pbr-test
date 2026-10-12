@@ -37,6 +37,18 @@ void CBackend::OnFrameEnd()
 	//#endif
 }
 
+#ifdef USE_DX11
+void CBackend::unbind_CS_textures()
+{
+	for (u32 i = 0; i < mtMaxComputeShaderTextures; ++i)
+	{
+		textures_cs[i] = 0;
+		SRVSManager.SetCSResource(i, nullptr);
+	}
+	SRVSManager.Apply();
+}
+#endif
+
 void CBackend::OnFrameBegin()
 {
 	//#ifndef DEDICATED_SERVER

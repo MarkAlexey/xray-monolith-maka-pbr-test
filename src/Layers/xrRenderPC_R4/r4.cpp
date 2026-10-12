@@ -155,7 +155,10 @@ static class cl_sslr_params : public R_constant_setup
 {
 	virtual void setup(R_constant* C)
 	{
-		RCache.set_c(C, ps_r4_sslr_intensity, ps_r4_sslr_temporal, ps_r4_sslr_max_dist, float(Device.dwFrame % 1024));
+		// Second viewport (scope PiP): SSLR is only traced for the main camera, so its result
+		// does not match this view; intensity 0 keeps the cubemap reflection there
+		const float intensity = Device.m_SecondViewport.IsSVPFrame() ? 0.f : ps_r4_sslr_intensity;
+		RCache.set_c(C, intensity, ps_r4_sslr_temporal, ps_r4_sslr_max_dist, float(Device.dwFrame % 1024));
 	}
 } binder_sslr_params;
 

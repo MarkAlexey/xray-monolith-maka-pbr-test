@@ -17,6 +17,8 @@ Usage (paths are examples):
       --baseline-layers vanilla/shaders/r3 repo_old/gamedata/shaders/r3 "ES/.../r3" \
       --shaders combine_1.ps accum_sun.ps sslr_render.cs
   --dry-run prints the compile matrix without compiling.
+  --define NAME[=VALUE] (repeatable) adds a define to every compile: the engine adds some only
+  when a mod is installed (MONOLITH_ES with Enhanced Shaders, MONOLITH_SSFX_CORE with SSS).
   --show-bindings NAME[,NAME] prints which of these resources each compiled shader binds
   (e.g. s_refl, to confirm an #ifdef'd path is really compiled in).
 """
@@ -66,10 +68,13 @@ def overlay(dst, layers):
                 shutil.copy(os.path.join(root, f), os.path.join(dst, rel, f))
 
 
+EXTRA_DEFINES = []  # --define
+
+
 def compile_one(dxc, d, shader, defines, bindings):
     ext = shader.rsplit(".", 1)[-1]
     args = [dxc, "-T", PROFILES[ext], "-E", "main", "-HV", "2016", "-Gec"]
-    for k in ENGINE_DEFINES + defines:
+    for k in ENGINE_DEFINES + EXTRA_DEFINES + defines:
         args += ["-D", k]
     asm = os.path.join(d, "__out.asm")
     args += [shader, "-Fc", asm]
@@ -103,17 +108,21 @@ def main():
     ap.add_argument("--layers", nargs="+", required=True, help="shader folders, lowest priority first")
     ap.add_argument("--baseline-layers", nargs="+", help="same, for the baseline to diff against")
     ap.add_argument("--shaders", nargs="+", required=True)
+    ap.add_argument("--define", action="append", default=[], help="extra define for every compile, NAME or NAME=VALUE")
     ap.add_argument("--show-bindings", default="", help="comma-separated resource names to report")
     ap.add_argument("--json", help="write full results here")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
 
     a.dxc = os.path.abspath(a.dxc)
+    EXTRA_DEFINES.extend(d if "=" in d else d + "=1" for d in a.define)
     bindings = [b for b in a.show_bindings.split(",") if b]
     if a.dry_run:
         print("layers:", *a.layers, sep="\n  ")
         if a.baseline_layers:
             print("baseline:", *a.baseline_layers, sep="\n  ")
+        if a.define:
+            print("extra defines:", " ".join(a.define))
         for sh in a.shaders:
             for ds in DEFINE_SETS:
                 print(f"  would compile {sh} [{' '.join(ds) or '-'}]")

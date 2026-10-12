@@ -274,6 +274,13 @@ public:
 	IC void set_Constants(ref_ctable& C) { set_Constants(&*C); }
 
 	void set_Textures(STextureList* T);
+#ifdef USE_DX11
+	// Monolith: unbind every compute-shader SRV through the state caches. Use this after a
+	// dispatch instead of a raw CSSetShaderResources(..., nullptr): the raw call leaves
+	// textures_cs[] and SRVSManager believing the old views are bound, so the next pass that
+	// binds the same texture is skipped and reads null.
+	void unbind_CS_textures();
+#endif
 	IC void set_Textures(ref_texture_list& T) { set_Textures(&*T); }
 
 #ifdef _EDITOR

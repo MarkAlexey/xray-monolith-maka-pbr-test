@@ -38,3 +38,6 @@ compressor/mod/
 # emacs temp file
 \#*\#
 *~
+# Python bytecode from tools/
+__pycache__/
+*.pyc

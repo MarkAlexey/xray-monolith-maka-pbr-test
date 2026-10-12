@@ -15,8 +15,9 @@
 // Known limitations (also documented in sslr_common.h):
 //   - Disabled with MSAA (the G-buffer is multisampled there; the shaders read it with Load
 //     on sample 0 only, which would alias at edges). RImplementation.o.sslr is false then.
-//   - Not run for the second viewport (scope picture-in-picture): that frame reuses the main
-//     frame's result, so scope reflections can lag by a frame.
+//   - Not run for the second viewport (scope picture-in-picture). Its camera differs, so the
+//     main view's result would land in the wrong places: binder_sslr_params (r4.cpp) sets the
+//     intensity to 0 on those frames and the scope picture keeps cubemap reflections only.
 //   - IX-Ray's offscreen cubemap fallback (VSLR) is not ported; misses fall back to the
 //     cubemap reflection in the consumer.
 
@@ -42,14 +43,16 @@ void CRenderTarget::phase_sslr()
 	const UINT groupsX = (w + 7u) / 8u;
 	const UINT groupsY = (h + 7u) / 8u;
 
-	// History is garbage after a reset, a resolution change or a skipped frame: clear it
-	static u32 last_frame = u32(-1);
-	if (last_frame == u32(-1) || Device.dwFrame - last_frame > 1)
+	// History is invalid on the first frame after the targets were (re)created (game start,
+	// vid_restart, resolution change: the CRenderTarget and this member are new) or after a
+	// gap of several frames (menu, loading). A gap of 2 is normal: with a scope's second
+	// viewport active, main-view frames alternate with second-viewport frames.
+	if (sslr_history_frame == u32(-1) || Device.dwFrame - sslr_history_frame > 2)
 	{
 		FLOAT zero[4] = { 0.f, 0.f, 0.f, 0.f };
 		HW.pContext->ClearRenderTargetView(rt_sslr_old->pRT, zero);
 	}
-	last_frame = Device.dwFrame;
+	sslr_history_frame = Device.dwFrame;
 
 	const Fvector4 screen = { float(w), float(h), 1.f / float(w), 1.f / float(h) };
 
@@ -61,7 +64,6 @@ void CRenderTarget::phase_sslr()
 	HW.pContext->OMSetRenderTargets(8, nullrtv, nullptr);
 
 	ID3D11UnorderedAccessView* nulluav[2] = { nullptr, nullptr };
-	ID3D11ShaderResourceView* nullsrv[16] = {};
 	UINT counts[2] = { 0, 0 };
 
 	auto dispatch = [&](u32 element, ID3D11UnorderedAccessView* const* uavs, UINT nuav)
@@ -74,7 +76,9 @@ void CRenderTarget::phase_sslr()
 		HW.pContext->CSSetUnorderedAccessViews(0, nuav, uavs, counts);
 		RCache.Compute(groupsX, groupsY, 1);
 		HW.pContext->CSSetUnorderedAccessViews(0, nuav, nulluav, counts);
-		HW.pContext->CSSetShaderResources(0, 16, nullsrv);
+		// Through the state caches: the next pass binds the same G-buffer textures, and a raw
+		// unbind would make RCache skip them (R_Backend.h, unbind_CS_textures)
+		RCache.unbind_CS_textures();
 	};
 
 	{

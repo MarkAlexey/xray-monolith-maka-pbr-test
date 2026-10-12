@@ -1,0 +1,15 @@
+// check_cpp.py shim for MSVC <hash_map> (stdext). Not used by the real build.
+#pragma once
+#include <unordered_map>
+#include <functional>
+namespace stdext {
+template <class K, class P = std::less<K>> class hash_compare {
+public:
+	enum { bucket_size = 4, min_buckets = 8 };
+	size_t operator()(const K& k) const { return std::hash<K>()(k); }
+	bool operator()(const K& a, const K& b) const { return P()(a, b); }
+};
+template <class K, class V, class Tr = hash_compare<K>, class A = std::allocator<std::pair<const K, V>>>
+class hash_map : public std::unordered_map<K, V> { public: using std::unordered_map<K, V>::unordered_map; };
+}
+namespace std { using stdext::hash_map; }

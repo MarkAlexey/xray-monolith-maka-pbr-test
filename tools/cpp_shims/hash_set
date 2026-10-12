@@ -1,0 +1,9 @@
+// check_cpp.py shim for MSVC <hash_set> (stdext). Not used by the real build.
+#pragma once
+#include <unordered_set>
+#include "hash_map"
+namespace stdext {
+template <class K, class Tr = hash_compare<K>, class A = std::allocator<K>>
+class hash_set : public std::unordered_set<K> { public: using std::unordered_set<K>::unordered_set; };
+}
+namespace std { using stdext::hash_set; }

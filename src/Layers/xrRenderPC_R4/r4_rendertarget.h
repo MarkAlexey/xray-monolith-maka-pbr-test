@@ -245,6 +245,7 @@ private:
 	ref_rt rt_sslr_data;
 	ref_rt rt_sslr_temp;
 	ref_shader s_sslr;
+	u32 sslr_history_frame = u32(-1); // frame the SSLR history was last written, -1 = invalid
 	ref_rt rt_half_depth;
 	ref_shader s_ssao;
 	ref_shader s_ssao_msaa[8];

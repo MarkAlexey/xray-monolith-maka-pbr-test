@@ -208,9 +208,9 @@ bright.
 - Rain does not make PBR surfaces wet, and tessellation displacement still reads the legacy
   height channel.
 - Reflections sample the sky cubemaps the same way the skybox is drawn (its rotation and its
-  stretched upper half) and fade to the hemisphere cubemap below the horizon. There are no
-  screen-space reflections or contact shadows (IX-Ray's versions of those depend on systems
-  Monolith does not have).
+  stretched upper half) and fade to the hemisphere cubemap below the horizon. IX-Ray's
+  screen-space reflections were ported later (see "IX-Ray SSLR" below); its contact shadows
+  were not.
 - Lighting is IX-Ray's, not a match for the legacy look: light falloff, specular highlights and
   the ambient reflections differ by design.
 
@@ -320,8 +320,9 @@ What the merged shaders do with PBR pixels:
 - The SSS parallax (POM) and simple parallax read the PBR height from the PBR bump texture.
 - SSS Indirect Light is not applied to PBR pixels. The PBR ambient term has no separate diffuse
   part to apply it to.
-- SSR is added on top of the PBR image-based specular, so very smooth PBR surfaces can look
-  more reflective than intended while SSR is on.
+- SSS SSR used to be added on top of the PBR image-based specular. With IX-Ray SSLR on (see
+  below) and the generated patch installed, SSS SSR is limited to the HUD and SSLR replaces it
+  everywhere else, so reflections no longer stack.
 - With Enhanced Shaders, PBR pixels skip the Enhanced Shaders lighting but are combined
   correctly: both write linear light to the accumulator.
 
@@ -407,8 +408,8 @@ What differs from IX-Ray, and why:
 
 Console: `r4_sslr_reflections 0/1` (needs a game restart; `vid_restart` does not re-read renderer options), `r4_sslr_intensity`, `r4_sslr_temporal`,
 `r4_sslr_max_dist`, `r4_sslr_skip_ssfx_ssr`. Compile-time settings and a debug view are in
-`gamedata\shaders\r3\sslr_settings.h`. SSLR is off with MSAA and is not run for the second
-viewport. Pixels closer than `SSLR_HUD_DEPTH` (1.2 m) are treated as HUD and skipped.
+`gamedata\shaders\r3\sslr_settings.h`. SSLR is off with MSAA. It is not traced for a scope's
+second viewport, and its intensity is 0 there, so the scope picture keeps cubemap reflections. Pixels closer than `SSLR_HUD_DEPTH` (1.2 m) are treated as HUD and skipped.
 
 ### One BRDF for PBR and pseudo-PBR
 
@@ -425,7 +426,19 @@ ES's material guessing (`calc_albedo/specular/rough`, `pbr_settings.h`) is untou
 hemisphere lookups, ES's reflection lookup, and SSS's `SSFX_calc_sky`/`SSFX_calc_env` (water
 and SSR sky fallback), which used an ad-hoc perspective/altitude hack and an unremapped lookup.
 
-### The SSS 23.5 / ES 1.10 compatibility patch
+### The SSS 23.5 / ES 1.10 compatibility patch (generated)
+
+This is a second patch, separate from the "SSS 23.5.1 PBR compatibility patch" described in the
+`pbr-mt-sss` section above:
+
+| Patch | Files | Purpose |
+|---|---|---|
+| SSS 23.5.1 PBR compatibility patch (distributed separately) | `gbuffer_stage.h`, `sload.h`, `combine_1.ps`, `accum_*`, `deffer_base_*bump.ps` | PBR textures work under SSS / ES at all |
+| generated patch (this section) | `pbr_brdf.h`, `lmodel.h`, `hmodel.h`, `screenspace_common.h`, `ssfx_ssr_combine.ps` | IX-Ray BRDF for Enhanced Shaders, SSLR, cubemap remap, HDR reflections |
+
+The file sets do not overlap, so both can be installed: SSS modules, then the PBR compatibility
+patch, then the generated patch. Without the PBR compatibility patch, everything here still
+works for legacy (pseudo-PBR) textures; PBR textures are then decoded as legacy under SSS.
 
 `tools/make_pbr_compat_patch.py` builds it from your own SSS and ES archives (this repository
 does not redistribute them). Every edit is anchored on exact text; with a different SSS/ES
@@ -500,8 +513,9 @@ one shadow map per array slice (2 x 64 MB at `r2_smap_size 4096` with 32-bit dep
 
 Not ported from IX-Ray: its cascade sizes (15/40/160 m; Monolith keeps the configurable
 `ssfx_shadow_cascades`), its normal-based "far shadow" fade beyond the last cascade, and its
-HUD contact shadows. Under SSS, PBR textures are still lit as legacy by this pass too, because
-SSS's `gbuffer_stage.h` replaces the PBR one, the same limitation as the legacy sun shaders.
+HUD contact shadows. Under SSS without the SSS 23.5.1 PBR compatibility patch, PBR textures are
+lit as legacy by this pass too, because SSS's `gbuffer_stage.h` replaces the PBR one; that is
+the same limitation the legacy sun shaders have.
 
 Checked: `accum_sun_csm.ps`/`.vs` compile with DXC on vanilla, vanilla + ES + compat patch,
 vanilla + ES + SSS (main, AO, SSS, SSR, IL, New Shadow & Light Features, flora, gloss, ES patch)
@@ -536,3 +550,57 @@ sky texture get bright too; expansion happens after mip filtering, so rough refl
 boost than a true HDR map would give; SSLR cannot recover what the tonemap clipped (above 1.7 for
 vanilla, 11.2 linear for Enhanced Shaders, times the exposure). A full IX-Ray-style HDR output
 pipeline (linear float scene buffer, tonemap moved to `combine_2`) is not part of this.
+
+## Cleanup after the ports
+
+Fixes found by reviewing the SSLR, CSM and HDR commits as a whole:
+
+- **Compute-shader texture bindings.** `SRVSManager.ResetDeviceState()` reset the pixel, vertex,
+  geometry, hull and domain shader view caches every frame but not the compute one. Together
+  with raw `CSSetShaderResources(..., nullptr)` unbinds (HDAO, and SSLR as first written),
+  `RCache` believed views were still bound and skipped re-binding them: SSLR's resolve and
+  temporal passes, and SSLR right after HDAO, would have read null G-buffer textures. The cache
+  now resets the compute stage, and both passes unbind through the new
+  `CBackend::unbind_CS_textures()`.
+- **HDAO** leaked a reference to every render-target view it saved with `OMGetRenderTargets`,
+  once per frame. They are released now.
+- **SSLR history** validity is a `CRenderTarget` member instead of a function-local `static`,
+  so it resets with the render targets on `vid_restart`. A two-frame gap (main view alternating
+  with a scope's second viewport) no longer clears the history every frame.
+- **SSLR in a scope's second viewport** is disabled (intensity 0) instead of showing the main
+  view's reflections in the wrong places.
+- **Cloud shadows**: only the wind scroll is computed once per frame; the matrix is rebuilt per
+  call, because it depends on the camera of the view being lit.
+- `tools/check_shaders.py` takes `--define` for stack-dependent engine defines (`MONOLITH_ES`,
+  `MONOLITH_SSFX_CORE`).
+- New `tools/check_cpp.py`: C++ syntax check of engine code on Linux, diffed against a baseline
+  commit (details below).
+
+### C++ syntax check (`tools/check_cpp.py`)
+
+The engine builds only with MSVC, so until now the C++ of these ports had only been reviewed by
+eye. `check_cpp.py` runs `clang++ -fsyntax-only` on a case-folded mirror of the tree (Windows
+include paths are case-insensitive and use backslashes), with the mingw-w64 Windows and C++
+headers, the repository's DirectX SDK headers, and small stand-ins for MSVC-only library
+headers in `tools/cpp_shims/` (Concurrency Runtime, `stdext` hash containers; check-only, never
+built). Each changed `.cpp` is checked at the baseline commit and at the change, under R4
+(`USE_DX11`) and, for shared renderer files, R3 (`USE_DX10`), and only errors that are new are
+reported. clang reports plenty of errors MSVC would not (dependent-base lookups in
+`xr_resource.h` and similar); they are identical before and after and cancel out. Two
+environment-only patterns are handled explicitly: `L#x` wide stringizing (`PIX_EVENT`) is
+rewritten to standard `L"" #x` in the mirror, and console-command registrations are listed in
+`IGNORE_PATTERNS` with the reason.
+
+```
+git submodule update --init          # optick is needed by xrCore headers
+python tools/check_cpp.py --base 5dffea1 --head WORKTREE --changed
+python tools/check_cpp.py --base HEAD~1 --changed --dry-run
+```
+
+Result for everything on this branch since `5dffea1` (SSLR, CSM, HDR reflections and this
+cleanup): 20 file/renderer checks, no new errors. The check was shown to be sensitive by
+planting a misspelt member, a wrong argument count and a type mismatch in the new code; all
+three were reported. It is still not a build: no linking, templates only where instantiated,
+and anything MSVC-specific clang cannot parse is invisible to it.
+- Documentation: the two compatibility patches are told apart, and stale statements about SSR
+  were corrected.

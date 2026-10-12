@@ -74,6 +74,7 @@ void CRenderTarget::destroy_smap_csm()
 {
 	if (t_smap_csm)
 		t_smap_csm->surface_set(nullptr);
+	t_smap_csm.destroy();
 	for (auto& dsv : rt_smap_csm_dsv)
 		_RELEASE(dsv);
 	_RELEASE(t_smap_csm_surf);
@@ -97,40 +98,43 @@ void CRenderTarget::phase_smap_csm(light* L, u32 slice)
 	RCache.set_Stencil(FALSE);
 }
 
-// Cloud-shadow (sunmask) projection. Shared by the legacy cascades and the CSM pass so the
-// cloud shadows line up across the cascade boundary. Computed once per frame; the legacy code
-// advanced its scroll once per cascade, so the speed is scaled by the cascade count to keep
-// the old look.
+// Cloud-shadow (sunmask) projection, shared by the legacy cascades and the CSM pass so cloud
+// shadows line up across cascade boundaries.
+// Only the wind scroll is per frame: the legacy code advanced it once per cascade (three times
+// a frame), so it advances once per frame here, scaled by the cascade count to keep the old
+// speed. The matrix itself is rebuilt on every call because it depends on the current view
+// (Device.mInvView), which differs for a second viewport rendered in the same frame.
 Fmatrix CRenderTarget::sun_clouds_xform(light* sun)
 {
-	static Fmatrix cached;
-	static u32 cached_frame = u32(-1);
 	static float w_shift = 0;
+	static u32 shift_frame = u32(-1);
 
-	if (cached_frame == Device.dwFrame)
-		return cached;
-	cached_frame = Device.dwFrame;
-
-	Fmatrix m_xform;
-	Fvector direction = sun->direction;
-	float w_dir = g_pGamePersistent->Environment().CurrentEnv->wind_direction;
+	const float w_dir = g_pGamePersistent->Environment().CurrentEnv->wind_direction;
 	float w_speed = g_pGamePersistent->Environment().CurrentEnv->wind_velocity * 0.001f;
 	clamp(w_speed, 0.1f, 1.0f);
+
+	if (shift_frame != Device.dwFrame)
+	{
+		shift_frame = Device.dwFrame;
+		w_shift -= 0.005f * w_speed * Device.fTimeDelta * float(_max(u32(1), u32(RImplementation.m_sun_cascades.size())));
+	}
+
+	Fmatrix m_clouds_shadow;
+	Fmatrix m_xform;
 	Fvector normal;
 	normal.setHP(-w_dir, 0);
-	w_shift -= 0.005f * w_speed * Device.fTimeDelta * float(_max(u32(1), u32(RImplementation.m_sun_cascades.size())));
 	Fvector position;
 	position.set(0, 0, 0);
-	m_xform.build_camera_dir(position, direction, normal);
+	m_xform.build_camera_dir(position, sun->direction, normal);
 	Fvector localnormal;
 	m_xform.transform_dir(localnormal, normal);
 	localnormal.normalize();
-	cached.mul(m_xform, Device.mInvView);
+	m_clouds_shadow.mul(m_xform, Device.mInvView);
 	m_xform.scale(0.002f, 0.002f, 1.f);
-	cached.mulA_44(m_xform);
+	m_clouds_shadow.mulA_44(m_xform);
 	m_xform.translate(localnormal.mul(w_shift));
-	cached.mulA_44(m_xform);
-	return cached;
+	m_clouds_shadow.mulA_44(m_xform);
+	return m_clouds_shadow;
 }
 
 void CRenderTarget::accum_direct_csm()
