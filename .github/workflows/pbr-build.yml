@@ -1,0 +1,223 @@
+# PBR-Test build and release
+#
+# What it does
+#   On every push to pbr-test-s3ds-mt-sss that touches the engine, gamedata or tools (and on a
+#   manual run from the Actions tab), this workflow:
+#     1. packs gamedata/ (PBR, SSLR and CSM shaders, scripts, configs) into
+#        db/mods/00_modded_exes_gamedata.db0, exactly like upstream Modded Exes;
+#     2. builds the exes listed in the build matrix with MSBuild (DX11 and DX11-AVX by default,
+#        the only renderer PBR runs on);
+#     3. zips the user-facing tools (compat patch generator, shader pack builder, texture packer);
+#     4. publishes a GitHub Release anyone can download without a GitHub account:
+#        - push / manual "latest": the rolling pre-release "pbr-test-latest" is replaced with
+#          the new build (one release, always the newest commit);
+#        - manual "versioned": a permanent release "pbr-test-<version>" (version defaults to
+#          today's date, e.g. 2026.10.13), kept alongside the rolling one;
+#        - manual "none": build only, the files are attached to the workflow run (GitHub login
+#          needed to download those, and they expire after RETENTION_DAYS).
+#
+# Settings: the env block below and the build matrix (add "DX10" etc. if you want the other
+# renderers; they do not run PBR).
+#
+# Requirements / caveats
+#   - Forks start with Actions disabled: enable them once in the repository's Actions tab.
+#   - Settings > Actions > General > Workflow permissions must allow "Read and write" for the
+#     release step (it uses the built-in GITHUB_TOKEN, no secrets needed).
+#   - A full engine build takes a long time per configuration on GitHub's Windows runners; two
+#     configurations run in parallel. A newer push cancels a build still in progress.
+#   - Upstream's own workflow (msbuild.yml) only triggers on upstream's branch and stays inert here.
+#   - SSS / Enhanced Shaders files are NOT shipped (they belong to their authors). Users with
+#     SSS/ES generate the compatibility patch from their own copies with the tools zip.
+
+name: PBR-Test build
+
+on:
+  push:
+    branches: [ "pbr-test-s3ds-mt-sss" ]
+    paths:
+      - "src/**"
+      - "gamedata/**"
+      - "compressor/**"
+      - "tools/**"
+      - ".github/workflows/pbr-build.yml"
+      - ".github/pbr-release/**"
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "What to publish"
+        type: choice
+        options: [ "latest", "versioned", "none" ]
+        default: "latest"
+      version:
+        description: "Version for a versioned release (empty = today's date, e.g. 2026.10.13)"
+        type: string
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pbr-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SOLUTION_FILE_PATH: src/engine-vs2022.sln
+  PACK_GAMEDATA_NAME: 00_modded_exes_gamedata.db0
+  PACKAGE_NAME: STALKER-Anomaly-PBR-Test
+  LATEST_TAG: pbr-test-latest
+  RETENTION_DAYS: 3
+
+jobs:
+  pack_gamedata:
+    name: Pack gamedata
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pack gamedata into ${{ env.PACK_GAMEDATA_NAME }}
+        shell: pwsh
+        run: |
+          New-Item -Path "./compressor/gamedata" -ItemType Directory -Force | Out-Null
+          Copy-Item -Path "./gamedata/*" -Destination "./compressor/gamedata" -Recurse -Force
+          Set-Location ./compressor
+          Start-Process -FilePath "./! compress_gamedata.cmd" -Wait -NoNewWindow
+          if (-not (Test-Path gamedata.db0)) { throw "xrCompress did not produce gamedata.db0" }
+          Rename-Item -Path gamedata.db0 -NewName "${{ env.PACK_GAMEDATA_NAME }}"
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: gamedata
+          path: ./compressor/${{ env.PACK_GAMEDATA_NAME }}
+          if-no-files-found: error
+          retention-days: ${{ env.RETENTION_DAYS }}
+
+  build:
+    name: Build ${{ matrix.buildconf }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        buildconf: [ "DX11", "DX11-AVX" ]
+    steps:
+      - name: Configure pagefile
+        uses: al-cheb/configure-pagefile-action@v1.3
+        with:
+          minimum-size: 8GB
+          maximum-size: 8GB
+          disk-root: "C:"
+
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+        with:
+          msbuild-architecture: x64
+
+      - name: Build ${{ matrix.buildconf }}
+        run: msbuild /p:Configuration=${{ matrix.buildconf }} ${{ env.SOLUTION_FILE_PATH }}
+
+      - name: Collect exe and PDB
+        shell: pwsh
+        run: |
+          $bin = "./_build/_game/bin_dbg"
+          if (-not (Get-ChildItem "$bin/*.exe" -ErrorAction SilentlyContinue)) { throw "no exe in $bin" }
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item "$bin/*.exe" out/
+          Copy-Item "$bin/*.pdb" out/ -ErrorAction SilentlyContinue
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: bin-${{ matrix.buildconf }}
+          path: out/*
+          if-no-files-found: error
+          retention-days: ${{ env.RETENTION_DAYS }}
+
+  release:
+    name: Package and publish
+    needs: [ pack_gamedata, build ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download build outputs
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Version
+        id: v
+        run: |
+          date=$(date -u +'%Y.%-m.%-d')
+          echo "date=$date" >> "$GITHUB_OUTPUT"
+          echo "sha=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+          mode="${{ github.event_name == 'push' && 'latest' || inputs.release }}"
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          version="${{ inputs.version }}"
+          [ -z "$version" ] && version="$date"
+          if [ "$mode" = "versioned" ]; then
+            echo "tag=pbr-test-$version" >> "$GITHUB_OUTPUT"
+            echo "name=${{ env.PACKAGE_NAME }}_$version" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ env.LATEST_TAG }}" >> "$GITHUB_OUTPUT"
+            echo "name=${{ env.PACKAGE_NAME }}_latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Assemble packages
+        run: |
+          set -euo pipefail
+          notes=.github/pbr-release/RELEASE_NOTES.md
+          sed -e "s/{{SHA}}/${GITHUB_SHA}/g" -e "s/{{SHORT_SHA}}/${{ steps.v.outputs.sha }}/g" \
+              -e "s/{{DATE}}/${{ steps.v.outputs.date }}/g" -e "s|{{REPO}}|${GITHUB_REPOSITORY}|g" \
+              "$notes" > notes.md
+
+          mkdir -p pkg/bin pkg/db/mods
+          cp artifacts/gamedata/*.db0 pkg/db/mods/
+          for d in artifacts/bin-*; do cp "$d"/*.exe pkg/bin/; done
+          # PDBs (debug symbols, large) go in their own zip: dropped next to the exes they make
+          # crash logs readable
+          mkdir -p pdb
+          for d in artifacts/bin-*; do cp "$d"/*.pdb pdb/ 2>/dev/null || true; done
+          cp notes.md pkg/README-PBR.md
+          (cd pkg && zip -qr "../${{ steps.v.outputs.name }}.zip" .)
+          (cd pdb && zip -qr "../${{ steps.v.outputs.name }}_pdb.zip" . ) || true
+
+          mkdir -p tools_pkg/tools
+          cp tools/make_pbr_compat_patch.py tools/build_shader_pack.py tools/pack_pbr_textures.py tools_pkg/tools/
+          cp notes.md tools_pkg/README-PBR.md
+          (cd tools_pkg && zip -qr "../${{ steps.v.outputs.name }}_tools.zip" .)
+          ls -la *.zip
+
+      - name: Upload run artifact (always)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.v.outputs.name }}
+          path: "*.zip"
+          retention-days: ${{ env.RETENTION_DAYS }}
+
+      - name: Publish release
+        if: steps.v.outputs.mode != 'none'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ steps.v.outputs.tag }}"
+          if [ "${{ steps.v.outputs.mode }}" = "latest" ]; then
+            # Rolling release: replace the previous one and move its tag to this commit
+            gh release delete "$tag" --cleanup-tag --yes 2>/dev/null || true
+            title="PBR-Test latest build (${{ steps.v.outputs.date }}, ${{ steps.v.outputs.sha }})"
+            flags="--prerelease"
+          else
+            if gh release view "$tag" >/dev/null 2>&1; then
+              echo "::error::Release $tag already exists; pass another version"; exit 1
+            fi
+            title="PBR-Test ${tag#pbr-test-}"
+            flags=""
+          fi
+          gh release create "$tag" *.zip --target "$GITHUB_SHA" --title "$title" --notes-file notes.md $flags
