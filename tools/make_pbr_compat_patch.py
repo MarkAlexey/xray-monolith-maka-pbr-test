@@ -25,6 +25,10 @@ What the patch does
       unfuck remap instead of SSS's perspective/altitude hack and unremapped env lookup.
     - ssfx_ssr_combine.ps: with SSLR on and ES installed, SSS SSR is suppressed on non-HUD
       pixels (IX-Ray SSLR owns them); weapons/HUD keep SSS SSR.
+    - deffer_base_hud_*bump.ps (MV main file, HUD Raindrops): first-person models with PBR
+      textures are written to the G-buffer as PBR (pbr_hud.h). SSS compiles every weapon and
+      hand with these shaders, which never wrote the PBR material, so PBR weapons rendered as
+      legacy (white plastic). Needs the SSS 23.5.1 PBR compatibility patch's gbuffer_stage.h.
 
 Install order (Mod Organizer priority / JSGME order), after everything else:
   ES 1.10 -> SSS 23.5 modules (incl. "00 - PATCH - [ Enhanced Shaders 1.10 ]") -> this patch.
@@ -70,6 +74,8 @@ SSS_MAIN = "00 - MAIN FILE/gamedata/shaders/r3"
 SSS_ESPATCH = "00 - PATCH - [ Enhanced Shaders 1.10 ]/gamedata/shaders/r3"
 SSS_SSR = "03 - SSR/gamedata/shaders/r3"
 SSS_GLOSS = "94 - IMPROVED GLOSS & WET SURFACES - [ ES Required ]/gamedata/shaders/r3"
+SSS_MV = "00 - MAIN FILE (MV)/gamedata/shaders/r3"
+SSS_HUDRAIN = "05 - Rain - HUD Raindrops/gamedata/shaders/r3"
 
 # Output folder names (prefix sorts them after the modules they override)
 OUT = {
@@ -78,6 +84,9 @@ OUT = {
     "sss_es": "99 - PBR compat - SSS (00 - PATCH - Enhanced Shaders 1.10)",
     "sss_ssr": "99 - PBR compat - SSS (03 - SSR)",
     "sss_gloss": "99 - PBR compat - SSS (94 - IMPROVED GLOSS & WET SURFACES)",
+    # HUD Raindrops overrides the MV main file's HUD shaders; its folder sorts after the MV one
+    "sss_mv": "99 - PBR compat - SSS (00 - MAIN FILE (MV))",
+    "sss_hudrain": "99 - PBR compat - SSS (05 - Rain - HUD Raindrops)",
 }
 
 # ------------------------------------------------------------------------------------------
@@ -336,6 +345,40 @@ def patch_ssr_combine(text, what):
     )
 
 
+def patch_hud(text, what):
+    """SSS first-person (HUD) G-buffer shaders: write the IX-Ray PBR material (pbr_hud.h)."""
+    text = replace_once(
+        text,
+        '#include "sload.h"\n',
+        '#include "sload.h"\n#include "pbr_hud.h"\t' + BANNER + "PBR materials on weapons and hands\n",
+        what,
+    )
+    # Fix up the decoded surface before its normal is transformed (rain drops are added after)
+    text = regex_once(
+        text,
+        r"(\n)([ \t]*float3[ \t]+Ne[ \t]*=[ \t]*mul)",
+        lambda m: m.group(1)
+        + "#ifdef USE_PBR\n"
+        + "\tfloat4 pbr_hud = pbr_hud_decode(S, I.tcdh.xy);\t" + BANNER + "IX-Ray material, see pbr_hud.h\n"
+        + "#endif\n"
+        + m.group(2),
+        what,
+        flags=0,
+    )
+    text = regex_once(
+        text,
+        r"(\n)([ \t]*return[ \t]+O[ \t]*;)",
+        lambda m: m.group(1)
+        + "#if defined(USE_PBR) && defined(PBR_GBUFFER)\n"
+        + "\tO.surface = pbr_hud_surface(pbr_hud);\t" + BANNER + "mark the pixel PBR\n"
+        + "#endif\n"
+        + m.group(2),
+        what,
+        flags=0,
+    )
+    return text
+
+
 # (source, path in archive, output key, patch function)
 JOBS = [
     ("es", ES_PBR + "/pbr_brdf.h", "es", patch_pbr_brdf),
@@ -346,6 +389,11 @@ JOBS = [
     ("sss", SSS_GLOSS + "/hmodel.h", "sss_gloss", patch_hmodel),
     ("sss", SSS_MAIN + "/screenspace_common.h", "sss_main", patch_screenspace_common),
     ("sss", SSS_SSR + "/ssfx_ssr_combine.ps", "sss_ssr", patch_ssr_combine),
+    # -hq, _d, _d-hq and _db-hq variants #include these two
+    ("sss", SSS_MV + "/deffer_base_hud_bump.ps", "sss_mv", patch_hud),
+    ("sss", SSS_MV + "/deffer_base_hud_aref_bump.ps", "sss_mv", patch_hud),
+    ("sss", SSS_HUDRAIN + "/deffer_base_hud_bump.ps", "sss_hudrain", patch_hud),
+    ("sss", SSS_HUDRAIN + "/deffer_base_hud_aref_bump.ps", "sss_hudrain", patch_hud),
 ]
 
 README = """PBR / IX-Ray SSLR compatibility patch for SSS 23.5 + Enhanced Shaders 1.10

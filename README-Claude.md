@@ -633,3 +633,37 @@ latter).
 Checked: shaders compile with DXC on the vanilla, ES, ES + SSS and SSS-only stacks with no new
 errors, each SSLR pass binds exactly what its blender provides; C++ syntax check: no new errors.
 Not run.
+
+## PBR weapons and hands under Screen Space Shaders
+
+With SSS installed, the engine compiles every first-person model with SSS's own G-buffer
+shaders, `deffer_base_hud_*.ps` (`ResourceManager.cpp`: `HudElement` is set for HUD models
+whenever SSS is present; `blender_deffer_model.cpp` then picks `base_hud`). Those shaders never
+wrote the PBR material target, so a PBR weapon was stored as a legacy pixel. Its IX-Ray
+textures were decoded the legacy way (the height channel read as gloss, the normal channels
+swapped) and, with unified lighting, converted by Enhanced Shaders' pseudo-PBR guess: a chrome
+pistol rendered as matte white plastic. World objects were not affected.
+
+The compatibility patch now patches SSS's two real HUD shaders, `deffer_base_hud_bump.ps` and
+`deffer_base_hud_aref_bump.ps`, in both modules that ship them (`00 - MAIN FILE (MV)` and
+`05 - Rain - HUD Raindrops`; the `-hq`, `_d`, `_d-hq` and `_db-hq` variants include these). They
+call the new `pbr_hud.h`:
+
+- With a PBR-aware `sload.h` (this repository's, or the SSS 23.5.1 PBR compatibility patch's,
+  detected by `SLOAD_HEIGHT`), the surface sload() decoded is used as is.
+- With SSS's own `sload.h`, the normal, height, gloss and material are re-read from the IX-Ray
+  texture layout (no parallax offset or detail bump on this path).
+- The material is written to the G-buffer only when a PBR `gbuffer_stage.h` is installed
+  (`PBR_GBUFFER`); under SSS that is the SSS 23.5.1 PBR compatibility patch.
+
+Checked with DXC on vanilla + ES + SSS (MV main file, HUD Raindrops) + the patch, in three
+setups: SSS's own G-buffer and `sload.h` (slot 2 stays exactly SSS's output with and without
+`USE_PBR`), a PBR G-buffer stand-in with SSS's `sload.h` (legacy textures write 0, PBR textures
+write the material), and a PBR G-buffer with a PBR `sload.h` (same). All variants (`-hq`, `_d`,
+`_d-hq`, `_db-hq`, `aref`, `USE_DX_NORMAL_MAP`) compile; the MSAA alpha-to-coverage variant fails
+in unmodified SSS too (`alpha_to_coverage` undeclared).
+
+To check a PBR weapon in game, set `PBR_DEBUG_VIEW` in `pbr_ixray.h`: 4 (metalness) should show
+metal parts white; black means the pixels are still not PBR (THM material not "PBR
+(metallic/roughness)", or no PBR `gbuffer_stage.h`). 3 (roughness) should be dark on polished
+metal; if it is bright, the roughness channel holds gloss (smoothness) and must be inverted.
