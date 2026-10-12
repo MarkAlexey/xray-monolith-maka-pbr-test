@@ -699,3 +699,18 @@ exe gamedata -> Beef's NVGs (main folder only) -> ES -> SSS (+ its Beef patch) -
 The exe ships an older `night_vision.h` (no `shader_param_8`); Beef's must win or SSS's NVG code and
 Atmospherics' `sky2.ps` do not compile. Beef's `combine_1`/`combine_2_naa`/`pp_blur` must lose to SSS's
 (SSS 23.5 already integrates Beef's NVG). `build_shader_pack.py --beef --atmospherics` does this.
+
+## Upstream update: MT build 871e2491 (2026.10.11)
+
+Upstream's multithreaded branch was merged again, from `7b79d2be` to `871e2491` (154 commits),
+as one squashed commit. Heatvision stays removed: upstream's new shader-bus hotness path into it
+is left out, the bus lanes themselves are kept. Upstream's new THM-less texture descriptors
+(`<texture>.ltx` with a `[texture]` section) can also mark PBR textures: `material = pbr` (or `4`),
+plus an optional `[shaders_options]` section in the same file, e.g.
+
+    [texture]
+    bump_mode = use
+    material = pbr
+
+    [shaders_options]
+    USE_DX_NORMAL_MAP = 1

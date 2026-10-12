@@ -5,7 +5,6 @@
 #include "ETextureParams.h"
 
 class cl_dt_scaler;
-struct TH_LoadTHM;
 
 class CTextureDescrMngr
 {
@@ -33,9 +32,9 @@ private:
 	struct texture_spec
 	{
 		shared_str m_bump_name;
-		float m_material;
-		bool m_use_steep_parallax;
-		bool m_use_pbr; // material == tmPBR_Material (IX-Ray PBR packing in bump/bump#)
+		float m_material = 1.0f;
+		bool m_use_steep_parallax = false;
+		bool m_use_pbr = false; // material == tmPBR_Material (IX-Ray PBR packing in bump/bump#)
 		shader_options m_shader_options;
 	};
 
@@ -56,10 +55,10 @@ public:
 private:
 	map_TD m_texture_details;
 	map_CS m_detail_scalers;
-	mutable xrSRWLock m_texture_details_lock;
 
-	static void LoadTHM(LPCSTR initial, map_TD& s_texture_details, map_CS& s_detail_scalers, xrSRWLock& s_lock);
-	static void LoadTHMThread(void* args);
+	static void LoadTHM(LPCSTR initial, map_TD& s_texture_details, map_CS& s_detail_scalers);
+	static void LoadLTX(LPCSTR initial, map_TD& s_texture_details);
+	static void ReadShaderOptions(CInifile& ini, texture_spec& spec); // IX-Ray [shaders_options]
 
 public:
 	~CTextureDescrMngr();
