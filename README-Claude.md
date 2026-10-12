@@ -684,3 +684,10 @@ vectors, no TAA unjitter). SSS ships its own; the compatibility patch now genera
 the PBR material target added (`99 - PBR compat - SSS (00 - MAIN FILE)`). The exe's copy must never
 sit above SSS: SSS shaders then fail with `undeclared identifier 'ssfx_jitter'` (ssfx_taa.ps) and
 lose the velocity target.
+
+## Merged shader pack (tools/build_shader_pack.py)
+
+Flattens this branch's shaders, ES 1.10, SSS 23.5 (module list in the settings block) and the
+generated compat patch into one gamedata folder, with PACK_REPORT.txt listing every overridden
+file. `--shaders-only` keeps only gamedata/shaders. The compat patch now also patches SSS module
+94's own pbr_brdf.h / lmodel.h (they override the ES patch's copies in a normal SSS install).

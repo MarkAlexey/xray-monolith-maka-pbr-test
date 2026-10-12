@@ -451,6 +451,10 @@ JOBS = [
     ("es", ES_PBR + "/hmodel.h", "es", patch_hmodel),
     ("sss", SSS_ESPATCH + "/pbr_brdf.h", "sss_es", patch_pbr_brdf),
     ("sss", SSS_ESPATCH + "/lmodel.h", "sss_es", patch_lmodel),
+    # 94 ships its own pbr_brdf.h / lmodel.h too and, installed after the ES patch, they win:
+    # patch them as well, or the compat versions above would silently drop 94's changes
+    ("sss", SSS_GLOSS + "/pbr_brdf.h", "sss_gloss", patch_pbr_brdf),
+    ("sss", SSS_GLOSS + "/lmodel.h", "sss_gloss", patch_lmodel),
     ("sss", SSS_GLOSS + "/hmodel.h", "sss_gloss", patch_hmodel),
     ("sss", SSS_MAIN + "/screenspace_common.h", "sss_main", patch_screenspace_common),
     ("sss", SSS_SSR + "/ssfx_ssr_combine.ps", "sss_ssr", patch_ssr_combine),
