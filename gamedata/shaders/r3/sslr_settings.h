@@ -107,6 +107,33 @@
 #	define SSLR_HDR_MAX 8.0
 #endif
 
+// Temporal accumulation (sslr_temporal.cs)
+// Variance clipping width in standard deviations. Lower = less ghosting, more noise/flicker.
+#ifndef SSLR_TEMPORAL_GAMMA
+#	define SSLR_TEMPORAL_GAMMA 1.25
+#endif
+// Surface motion (pixels per frame) at which the history weight is halved
+#ifndef SSLR_TEMPORAL_MOTION_PX
+#	define SSLR_TEMPORAL_MOTION_PX 24.0
+#endif
+// Roughness range over which the history switches from the reflection's virtual image (mirror)
+// to the surface (rough). IX-Ray switches hard at 0.1.
+#ifndef SSLR_VIRTUAL_ROUGH_LO
+#	define SSLR_VIRTUAL_ROUGH_LO 0.08
+#endif
+#ifndef SSLR_VIRTUAL_ROUGH_HI
+#	define SSLR_VIRTUAL_ROUGH_HI 0.25
+#endif
+// Previous-frame visibility test (trace colour fetch and temporal disocclusion): allowed
+// depth difference = ABS metres + REL * depth. Too tight: holes and flicker on steep surfaces;
+// too loose: ghosts come back.
+#ifndef SSLR_REPROJ_DEPTH_TOL_ABS
+#	define SSLR_REPROJ_DEPTH_TOL_ABS 0.1
+#endif
+#ifndef SSLR_REPROJ_DEPTH_TOL_REL
+#	define SSLR_REPROJ_DEPTH_TOL_REL 0.04
+#endif
+
 // Debug output written into the reflection itself (combine shows it on every pixel that
 // receives SSLR): 0 = off, 1 = hit confidence as grey, 2 = raw hit colour at full strength
 #ifndef SSLR_DEBUG

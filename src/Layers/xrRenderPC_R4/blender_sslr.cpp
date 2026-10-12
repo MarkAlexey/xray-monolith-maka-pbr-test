@@ -22,10 +22,11 @@ void CBlender_sslr::Compile(CBlender_Compile& C)
 
 	switch (C.iElement)
 	{
-	case 0: // trace: previous frame colour -> rt_sslr (colour, confidence) + rt_sslr_data (hit, roughness)
+	case 0: // trace: last main-view frame colour -> rt_sslr (colour, confidence) + rt_sslr_data (hit, roughness)
 		C.r_ComputePass("sslr_render");
 		sslr_gbuffer(C);
-		C.r_dx10Texture("s_image", "$user$generic_temp");
+		C.r_dx10Texture("s_image", r2_RT_sslr_color);
+		C.r_dx10Texture("s_position_prev", r2_RT_sslr_pos_old); // was the hit visible there last frame
 		C.r_dx10Texture("s_tonemap", r2_RT_luminance_cur); // exposure, to undo combine_1's tonemap
 		C.r_End();
 		break;
@@ -43,6 +44,8 @@ void CBlender_sslr::Compile(CBlender_Compile& C)
 		sslr_gbuffer(C);
 		C.r_dx10Texture("s_image", r2_RT_sslr_temp);
 		C.r_dx10Texture("s_refl", r2_RT_sslr_old);
+		C.r_dx10Texture("s_hit", r2_RT_sslr_data); // hit distance, for mirror reprojection
+		C.r_dx10Texture("s_position_prev", r2_RT_sslr_pos_old); // disocclusion test
 		C.r_End();
 		break;
 	}

@@ -604,3 +604,32 @@ three were reported. It is still not a build: no linking, templates only where i
 and anything MSVC-specific clang cannot parse is invisible to it.
 - Documentation: the two compatibility patches are told apart, and stale statements about SSR
   were corrected.
+
+## SSLR ghosting fixes
+
+In-game testing showed ghosting. All of it came from SSLR's frame-to-frame state:
+
+| Cause | What it looked like | Fix |
+|---|---|---|
+| History of mirror-like reflections followed the reflecting surface | trails behind everything reflected in puddles, wet floors and glass whenever the camera moved | IX-Ray's rule: smooth reflections take their history from the virtual image of the hit point (along the view ray at view distance + hit distance), rough ones from the surface, blended by roughness (`SSLR_VIRTUAL_ROUGH_LO/HI`). A simulated wet floor gave 2.6 px of error per frame for a 5 cm strafe and 13 px for 25 cm with the old rule; the new rule is exact for flat mirrors. |
+| No disocclusion test | newly revealed surfaces inherited the reflection of whatever covered them | history is used only if the surface was visible at its previous position, checked against the previous G-buffer depth (`$user$sslr_pos_old`, tolerance `SSLR_REPROJ_DEPTH_TOL_*`) |
+| Reflected colour read from pixels that were covered last frame | the weapon (and moving NPCs) showing up in reflections, swaying with it | the hit point must have been visible at its previous pixel (same depth test), otherwise the ray counts as a miss and the cubemap shows |
+| Scope second viewport | a second, shifting picture in reflections while aiming a scope | SSLR reflects its own copy of the last main-view frame (`$user$sslr_color`) instead of `$user$generic_temp`, which a scope overwrites every other frame |
+| Loose history clamp, non-premultiplied blending | slow-fading smears and dark halos where hits meet misses | variance clipping (`SSLR_TEMPORAL_GAMMA`) inside the 3x3 min/max box; premultiplied colour in the history and in `sslr_apply.h`; history weight halves at `SSLR_TEMPORAL_MOTION_PX` of surface motion |
+
+Also: positions are now reconstructed and projected with the engine's own
+`pos_decompression_params` (exactly what `gbuffer_load_data` does) instead of `m_P`, which is
+whatever projection `RCache` last had set; a stale one would move reflections and their
+history around.
+
+Cost: one more RGBA16F and one RGBA8 full-resolution target (about 12 MB at 1080p) and two
+copies per frame.
+
+If ghosting remains, isolate it in game: `r4_sslr_temporal 0` (no SSLR history: noisier, but no
+SSLR trails), `r4_sslr_intensity 0` (no SSLR at all). If it is still there, it comes from Screen
+Space Shaders modules (TAA, motion blur, SSR on the weapon; `r4_sslr_skip_ssfx_ssr 1` drops the
+latter).
+
+Checked: shaders compile with DXC on the vanilla, ES, ES + SSS and SSS-only stacks with no new
+errors, each SSLR pass binds exactly what its blender provides; C++ syntax check: no new errors.
+Not run.

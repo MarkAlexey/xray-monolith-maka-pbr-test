@@ -1,7 +1,8 @@
 //////////////////////////////////////////////////////////////////////////////////////////
 // Monolith: IX-Ray SSLR pass 1/3 - trace
 //
-// Inputs:  s_position, s_surface, s_diffuse (G-buffer), s_image = previous frame colour
+// Inputs:  s_position, s_surface, s_diffuse (G-buffer), s_image = previous main-view frame
+//          colour ($user$sslr_color), s_position_prev = its G-buffer positions
 // Outputs: u_sslr      rgb = reflected colour (gamma, pre-tonemap HDR), a = hit confidence (0 = miss)
 //          u_sslr_data xyz = view-space hit position, w = roughness of this pixel
 //
@@ -135,13 +136,13 @@ void main( uint3 DTid : SV_DispatchThreadID )
 		conf		*= 1.0 - smoothstep( 0.8, 1.0, tb );
 		conf		*= 1.0 - smoothstep( SSLR_ROUGHNESS_CUTOFF * 0.6, SSLR_ROUGHNESS_CUTOFF, rough );
 
-		// The colour comes from last frame's image: reproject the hit point
-		float2 puv	= sslr_reproject( Ph );
-		[flatten] if( !sslr_on_screen( puv ) )
-		{
-			puv		= huv;
-			conf	*= 0.5;
-		}
+		// The colour comes from last frame's image: reproject the hit point, and only trust that
+		// pixel if the hit point was actually visible there last frame. Otherwise the fetch
+		// returns whatever covered it (most visibly the weapon, which then "ghosts" in floor and
+		// puddle reflections), so the ray counts as a miss and the cubemap shows instead.
+		float  prev_z;
+		float2 puv	= sslr_reproject( Ph, prev_z );
+		conf		*= sslr_was_visible( puv, prev_z ) ? 1.0 : 0.0;
 		conf		*= sslr_edge_fade( puv ) > 0.0 ? 1.0 : 0.0;
 
 		result.rgb	= sslr_untonemap( s_image.SampleLevel( smp_rtlinear, puv, 0 ).rgb );	// HDR, see SSLR_HDR_DECODE

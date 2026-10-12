@@ -918,7 +918,8 @@ CRenderTarget::CRenderTarget()
 	//	}
 	//}
 
-	// IX-Ray SSLR: four full-resolution RGBA16F targets with UAVs (~66 MB at 4K)
+	// IX-Ray SSLR: five full-resolution RGBA16F targets (four with UAVs) and one RGBA8
+	// (~115 MB at 4K, ~29 MB at 1080p)
 	if (RImplementation.o.sslr)
 	{
 		u32 w = Device.dwWidth, h = Device.dwHeight;
@@ -926,6 +927,10 @@ CRenderTarget::CRenderTarget()
 		rt_sslr_old.create(r2_RT_sslr_old, w, h, D3DFMT_A16B16G16R16F, 1, true);
 		rt_sslr_data.create(r2_RT_sslr_data, w, h, D3DFMT_A16B16G16R16F, 1, true);
 		rt_sslr_temp.create(r2_RT_sslr_temp, w, h, D3DFMT_A16B16G16R16F, 1, true);
+		// Copies of rt_Generic_0 / rt_Position: CopyResource needs the exact same format and size
+		// (SSLR is off with MSAA, so both sources are single-sampled here)
+		rt_sslr_color.create(r2_RT_sslr_color, w, h, D3DFMT_A8R8G8B8, 1);
+		rt_sslr_pos_old.create(r2_RT_sslr_pos_old, w, h, D3DFMT_A16B16G16R16F, 1);
 		s_sslr.create(b_sslr);
 	}
 

@@ -244,6 +244,8 @@ private:
 	ref_rt rt_sslr_old;
 	ref_rt rt_sslr_data;
 	ref_rt rt_sslr_temp;
+	ref_rt rt_sslr_color; // last main-view frame's combine_1 output (not generic_temp: scopes overwrite it)
+	ref_rt rt_sslr_pos_old; // last main-view frame's G-buffer positions
 	ref_shader s_sslr;
 	u32 sslr_history_frame = u32(-1); // frame the SSLR history was last written, -1 = invalid
 	ref_rt rt_half_depth;

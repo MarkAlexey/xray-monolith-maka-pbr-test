@@ -10,9 +10,12 @@
 //    (IX-Ray's holds NDC depth in x). All depth tests compare linear view depth.
 //  - No velocity buffer is required: hits and history are reprojected with m_previous
 //    (previous view-projection * current inverse view), which the engine already computes
-//    for SSS. Moving objects therefore ghost slightly in reflections.
-//  - s_image is the previous frame's combine output ($user$generic_temp, gamma space, 8-bit),
-//    the same buffer SSS SSR reads, so the result stays in gamma space (no LinearToGamma).
+//    for SSS. Reprojection is validated against the previous frame's G-buffer depth
+//    ($user$sslr_pos_old), so disocclusions and moved objects drop their history instead of
+//    ghosting.
+//  - s_image in the trace pass is $user$sslr_color: combine_1's output of the previous MAIN-view
+//    frame (gamma space, 8-bit). SSS's $user$generic_temp is not used because a scope's second
+//    viewport overwrites it every other frame with the scope picture.
 //  - No blue-noise texture array (Anomaly has none): interleaved gradient noise instead.
 //  - Sky / environment fallback is NOT done here: a miss writes confidence 0 and the
 //    consumer (combine_1) keeps its own cubemap reflection. That keeps the IBL calibration
@@ -39,11 +42,13 @@ Texture2D		s_diffuse;		// G-buffer: albedo, gloss
 Texture2D		s_image;		// pass input (see each pass)
 Texture2D		s_refl;			// pass input (see each pass)
 Texture2D		s_tonemap;		// exposure (luminance adaptation), x = tonemap scale
+Texture2D		s_position_prev;	// previous main-view frame's s_position ($user$sslr_pos_old)
+Texture2D		s_hit;			// temporal pass: trace data (xyz hit position, w roughness)
 
 SamplerState	smp_nofilter;
 SamplerState	smp_rtlinear;
 
-uniform float4x4	m_P;			// main camera projection
+uniform float4		pos_decompression_params;	// engine G-buffer reconstruction (r4.cpp binder)
 uniform float4x4	m_previous;		// current view space -> previous frame clip space
 uniform float4		sslr_screen;	// x = width, y = height, z = 1/width, w = 1/height
 uniform float4		sslr_params;	// x = intensity, y = temporal weight, z = max distance, w = frame index
@@ -63,29 +68,36 @@ float3 sslr_unpack_normal( float2 norm )
 	return float3( theta.y * phi.x, theta.x * phi.x, phi.y );
 }
 
-// Screen UV + linear view depth -> view-space position, using m_P directly so projection
-// offsets (TAA jitter, if any) are honoured. Assumes a perspective projection
-// (clip.w depends on z only), which is always the case for the main camera.
+// Screen UV + linear view depth -> view-space position, EXACTLY as the rest of the renderer
+// reconstructs G-buffer positions (gbuffer_load_data: P.xy = z * (pos2d * zw - xy), with
+// pos_decompression_params = (tanX, tanY, 2 tanX / W, 2 tanY / H)), which simplifies to
+// z * xy * (2 uv - 1). Earlier versions used m_P, whatever projection RCache last had set;
+// any mismatch with the G-buffer moved reflections and their history around (ghosting).
 float3 sslr_view_pos( float2 uv, float z )
 {
-	float2 ndc	= ( uv - 0.5 ) * float2( 2.0, -2.0 );
-	float  w	= m_P[3][2] * z + m_P[3][3];
-	float  x	= ( ndc.x * w - m_P[0][2] * z - m_P[0][3] ) / m_P[0][0];
-	float  y	= ( ndc.y * w - m_P[1][2] * z - m_P[1][3] ) / m_P[1][1];
-	return float3( x, y, z );
+	return float3( z * pos_decompression_params.xy * ( 2.0 * uv - 1.0 ), z );
 }
 
+// Inverse of sslr_view_pos. P.z must be > 0 (callers keep rays in front of the camera).
 float2 sslr_project( float3 P )
 {
-	float4 c = mul( m_P, float4( P, 1.0 ) );
-	return c.xy * ( float2( 0.5, -0.5 ) / c.w ) + 0.5;
+	return ( P.xy / P.z + pos_decompression_params.xy ) / ( 2.0 * pos_decompression_params.xy );
 }
 
-// Previous-frame UV of a current view-space position (static-scene reprojection)
-float2 sslr_reproject( float3 P )
+// Previous-frame UV of a current view-space position (static-scene reprojection).
+// prev_z = the point's view depth in the previous frame (clip.w of an X-Ray perspective
+// projection is view z).
+float2 sslr_reproject( float3 P, out float prev_z )
 {
 	float4 c = mul( m_previous, float4( P, 1.0 ) );
+	prev_z	 = c.w;
 	return c.xy * ( float2( 0.5, -0.5 ) / max( c.w, 1e-5 ) ) + 0.5;
+}
+
+float2 sslr_reproject( float3 P )
+{
+	float prev_z;
+	return sslr_reproject( P, prev_z );
 }
 
 bool sslr_on_screen( float2 uv )
@@ -138,6 +150,20 @@ float3 sslr_untonemap( float3 low )
 
 bool sslr_is_sky( float z )	{ return z <= SSLR_SKY_EPS; }
 bool sslr_is_hud( float z )	{ return z < SSLR_HUD_DEPTH; }
+
+// Was point P (current view space) visible at prev_uv in the previous main-view frame? Compares
+// the depth it should have had there with the previous G-buffer depth at that pixel. False when
+// it was hidden (by the weapon, an NPC, a door...), off screen, or the history is invalid
+// ($user$sslr_pos_old is cleared to 0 = sky when the history is reset).
+bool sslr_was_visible( float2 prev_uv, float prev_z )
+{
+	if( !sslr_on_screen( prev_uv ) || prev_z <= 0.0 )
+		return false;
+	float z = s_position_prev.SampleLevel( smp_nofilter, prev_uv, 0 ).z;
+	if( sslr_is_sky( z ) || sslr_is_hud( z ) )
+		return false;
+	return abs( z - prev_z ) <= SSLR_REPROJ_DEPTH_TOL_ABS + SSLR_REPROJ_DEPTH_TOL_REL * prev_z;
+}
 
 //========================================================================================
 // Noise and sampling

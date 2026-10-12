@@ -338,6 +338,12 @@ void CRenderTarget::phase_combine()
 	else
 		HW.pContext->CopyResource(rt_Generic_temp->pTexture->surface_get(), rt_Generic_0_r->pTexture->surface_get());
 
+	// IX-Ray SSLR reflects next frame's view of this image. Only main-view frames: with a scope's
+	// second viewport active, every other frame is the scope picture, and reflecting that showed
+	// a second, shifting image in reflections (r4_rendertarget_phase_sslr.cpp)
+	if (RImplementation.o.sslr && rt_sslr_color && !Device.m_SecondViewport.IsSVPFrame())
+		HW.pContext->CopyResource(rt_sslr_color->pSurface, rt_Generic_0->pSurface);
+
 	// With IX-Ray SSLR on, r4_sslr_skip_ssfx_ssr 1 drops the SSS SSR pass (the compatibility
 	// patch already masks it to HUD pixels; this saves its cost when HUD reflections do not matter)
 	if (RImplementation.o.ssfx_ssr && !Device.m_SecondViewport.IsSVPFrame() && !(RImplementation.o.sslr && ps_r4_sslr_skip_ssfx_ssr))

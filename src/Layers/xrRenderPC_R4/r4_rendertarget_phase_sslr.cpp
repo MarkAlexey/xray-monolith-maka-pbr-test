@@ -8,9 +8,13 @@
 // can read the result as s_refl.
 //
 // Passes (8x8 thread groups, full resolution):
-//   0 trace     G-buffer + $user$generic_temp (last frame) -> rt_sslr, rt_sslr_data
+//   0 trace     G-buffer + rt_sslr_color, rt_sslr_pos_old (last main-view frame)
+//                                                           -> rt_sslr, rt_sslr_data
 //   1 resolve   rt_sslr + rt_sslr_data                      -> rt_sslr_temp
-//   2 temporal  rt_sslr_temp + rt_sslr_old (history)        -> rt_sslr, then copied to rt_sslr_old
+//   2 temporal  rt_sslr_temp + rt_sslr_old (history), rt_sslr_data, rt_sslr_pos_old
+//                                                           -> rt_sslr (premultiplied)
+//   then rt_sslr -> rt_sslr_old and rt_Position -> rt_sslr_pos_old for the next frame;
+//   rt_sslr_color is refreshed in phase_combine() after combine_1.
 //
 // Known limitations (also documented in sslr_common.h):
 //   - Disabled with MSAA (the G-buffer is multisampled there; the shaders read it with Load
@@ -51,6 +55,9 @@ void CRenderTarget::phase_sslr()
 	{
 		FLOAT zero[4] = { 0.f, 0.f, 0.f, 0.f };
 		HW.pContext->ClearRenderTargetView(rt_sslr_old->pRT, zero);
+		// Depth 0 reads as sky: every previous-frame visibility test fails, so neither the
+		// colour copy nor the history is trusted until a real frame has been recorded
+		HW.pContext->ClearRenderTargetView(rt_sslr_pos_old->pRT, zero);
 	}
 	sslr_history_frame = Device.dwFrame;
 
@@ -97,8 +104,10 @@ void CRenderTarget::phase_sslr()
 		dispatch(2, uav, 1);
 	}
 
-	// Keep this frame's result as next frame's history (IX-Ray does the same copy)
+	// Keep this frame's result and G-buffer positions as next frame's history (IX-Ray copies
+	// the result too; the positions are for the visibility tests, sslr_was_visible())
 	HW.pContext->CopyResource(rt_sslr_old->pSurface, rt_sslr->pSurface);
+	HW.pContext->CopyResource(rt_sslr_pos_old->pSurface, rt_Position->pSurface);
 
 	// RCache tracks the compute shader it bound; unbind so later draws do not inherit it
 	RCache.set_CS(nullptr);
