@@ -68,7 +68,15 @@
 #ifndef PBR_UNIFIED_LIGHTING
 #	define PBR_UNIFIED_LIGHTING 1
 #endif
-#if defined(PBR_ES) && PBR_UNIFIED_LIGHTING
+// Atmospherics (2026 versions, by Hippobot) replaces Enhanced Shaders' material conversion
+// (calc_albedo / calc_specular / calc_rough) with its own per-surface BRDFs
+// (pbr_brdf_character.h, detected by its MTL_RANGE / OREN_ROUGH_LO). Unified lighting needs
+// Enhanced Shaders' functions, so it is off there: PBR textures still get this IX-Ray lighting,
+// legacy textures keep Atmospherics' own.
+#if defined(MTL_RANGE) && defined(OREN_ROUGH_LO)
+#	define PBR_ATMOS_BRDF
+#endif
+#if defined(PBR_ES) && PBR_UNIFIED_LIGHTING && !defined(PBR_ATMOS_BRDF)
 #	define PBR_UNIFIED
 #endif
 

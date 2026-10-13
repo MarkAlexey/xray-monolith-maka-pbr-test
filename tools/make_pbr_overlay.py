@@ -35,8 +35,12 @@ Per file, one of:
   done        the winner already has the PBR code (from this repository's shaders)
   stale       the winner was patched by an earlier PBR pack / compat patch. Take that pack
               out of the layers (the overlay replaces it) and run again
-  FAILED      the winner is a version the patch anchors do not match (a modpack edited it).
-              Required files (REQUIRED) stop the run; optional ones are skipped with a warning
+  FAILED      a REQUIRED file whose winner the patch anchors do not match (a modpack rewrote
+              it): the run stops
+  skipped     the same for an optional file: it is left out with a warning and the mod's own
+              version stays. Expected for lmodel.h / hmodel.h under Atmospherics 2026, which
+              brings its own BRDF (the IX-Ray BRDF for legacy textures does not apply there;
+              PBR textures still get IX-Ray lighting)
 
 Usage
   python make_pbr_overlay.py --layer <lowest mod> --layer <next> ... --out "PBR overlay" [--zip]
@@ -191,7 +195,7 @@ def main():
             patched = fn(text, f"{label}:{name}")
         except compat.PatchError as e:
             failed.append((name, str(e)))
-            report.append(f"  FAILED   {name}  <- {label}")
+            report.append(f"  {'FAILED ' if name in REQUIRED else 'skipped'}  {name}  <- {label}")
             continue
         out.append((rel, compat.encode(patched, crlf)))
         report.append(f"  patched  {name}  <- {label}")

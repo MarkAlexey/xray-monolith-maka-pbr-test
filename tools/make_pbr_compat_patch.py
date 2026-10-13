@@ -396,7 +396,8 @@ LIGHT_KINDS = {
 
 # Where the final return construct starts, most specific first (SSS, then ES)
 LIGHT_RETURN_ANCHORS = [
-    r"\n(?=#ifdef SSFX_ENHANCED_SHADERS[^\n]*\n[ \t]*return)",
+    # comment lines may sit between the #ifdef and the return (Atmospherics 2026 accum_sun_far.ps)
+    r"\n(?=#ifdef SSFX_ENHANCED_SHADERS[^\n]*\n(?:[ \t]*//[^\n]*\n)*[ \t]*return)",
     r"\n(?=[ \t]*float3 result[ \t]*=)",
     r"\n(?=[ \t]*return[ \t]+float4\([ \t]*SRGBToLinear\(Ldynamic_color)",
 ]
