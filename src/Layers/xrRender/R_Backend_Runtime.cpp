@@ -74,10 +74,8 @@ void CBackend::OnFrameBegin()
 
 void CBackend::Invalidate()
 {
-	pRT[0] = NULL;
-	pRT[1] = NULL;
-	pRT[2] = NULL;
-	pRT[3] = NULL;
+	for (auto& rt : pRT)
+		rt = NULL;
 	pZB = NULL;
 
 	decl = NULL;

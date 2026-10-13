@@ -25,11 +25,17 @@ struct f_deffer
 	float4 C : SV_Target1; //XYZ - Albedo, W - Specular
 #ifdef PBR_GBUFFER
 	float4 surface : SV_Target2; //X - Metalness, Y - Roughness, Z - AO, W - PBR flag/SSS (0 = legacy)
+	float4 H : SV_Target4; // HeatVision (R4 binds it in target 4, target 2 holds the PBR material)
+#else
+	float4 H : SV_Target2; // HeatVision (R3 binds it in target 2)
 #endif
 #ifdef EXTEND_F_DEFFER
 	uint mask : SV_COVERAGE;
 #endif
 };
+
+// HeatVision: per-object hotness (engine: RCache.hemi.set_hotness), x = hotness
+uniform float4 L_hotness;
 
 //Unpacked data struct
 struct gbuffer_data
@@ -127,6 +133,9 @@ f_deffer pack_gbuffer( float4 norm, float4 pos, float4 col, uint imask )
 #ifdef PBR_GBUFFER
 	res.surface = float4( 0.0, 0.0, 0.0, 0.0 ); // legacy lighting; PBR shaders overwrite it
 #endif
+
+	// HeatVision (same output as SSS's gbuffer_stage.h; read by the heat vision shader as s_heat)
+	res.H = L_hotness.x > 0.0 ? float4( L_hotness.x, 0.0, 0.0, 1.0 ) : float4( 0.0, 0.0, 0.0, 0.0 );
 
 #ifdef EXTEND_F_DEFFER
    res.mask = imask;

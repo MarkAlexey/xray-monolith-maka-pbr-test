@@ -154,6 +154,7 @@ public:
 
 	shared_str c_sbase;
 	shared_str c_lmaterial;
+	bool o_hotness_own = false;
 	float o_hemi;
 	float o_hemi_cube[CROS_impl::NUM_FACES];
 	float o_sun;
@@ -230,12 +231,24 @@ public:
 		o_hemi = 0.75f * LT.get_hemi();
 		//o_hemi						= 0.5f*LT.get_hemi			()	;
 		o_sun = 0.75f * LT.get_sun();
+
+		float hotness = O->GetHotness();
+		o_hotness_own = ShaderBus::object_hotness(O->renderable.bus_values, hotness);
+		RCache.hemi.set_hotness(hotness, O->GetTransparency(), 0.f, 0.f);		//--DSR-- HeatVision
+		RCache.hemi.set_glowing(														//--DSR-- SilencerOverheat
+			sil_glow_color.x,
+			sil_glow_color.y,
+			sil_glow_color.z, O->GetGlowing());
+
 		CopyMemory(o_hemi_cube, LT.get_hemi_cube(), CROS_impl::NUM_FACES*sizeof(float));
 	}
 
 	IC void apply_lmaterial()
 	{
 		RCache.bus_object.apply_static();
+		// an object's own obj_hotness skips the hot texture check, only for the draw right after apply_object
+		const bool hotness_own = o_hotness_own;
+		o_hotness_own = false;
 		R_constant* C = RCache.get_c(c_sbase); // get sampler
 		if (0 == C) return;
 		VERIFY(RC_dest_sampler == C->destination);
@@ -246,6 +259,11 @@ public:
 #ifdef	DEBUG
         if (ps_r2_ls_flags.test(R2FLAG_GLOBALMATERIAL))	mtl=ps_r2_gmaterial;
 #endif
+		if (!hotness_own && !(T && T->m_is_hot))			//--DSR-- HeatVision
+			RCache.hemi.set_hotness(0.f, 0.f, 0.f, 0.f);
+		if (!(T && T->m_is_glowing))						//--DSR-- SilencerOverheat
+			RCache.hemi.set_glowing(0.f, 0.f, 0.f, 0.f);
+
 		RCache.hemi.set_material(o_hemi, o_sun, 0, (mtl < 5 ? (mtl + .5f) / 4.f : mtl));
 		RCache.hemi.set_pos_faces(o_hemi_cube[CROS_impl::CUBE_FACE_POS_X],
 		                          o_hemi_cube[CROS_impl::CUBE_FACE_POS_Y],

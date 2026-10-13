@@ -22,7 +22,7 @@ What the patch does
       openings reflect brighter than "white", like an HDR environment map.
   Screen Space Shaders:
     - gbuffer_stage.h: SSS's G-buffer layout (motion vectors in target 3, TAA unjitter) with
-      the PBR material target in target 2 (Heatvision's old slot). Without it the PBR material
+      the PBR material target in target 2 and Heatvision moved to target 4. Without it the PBR material
       is never written under SSS (PBR_GBUFFER undefined), and the exe's own gbuffer_stage.h
       must NOT be used over SSS: it lacks ssfx_jitter / velocity and breaks SSS's shaders.
     - screenspace_common.h: SSFX_calc_sky / SSFX_calc_env (water, SSR sky fallback) use the
@@ -396,8 +396,8 @@ GBUFFER_PBR_DECL = """
 //   w = 0 for legacy pixels, 0.5 + 0.5 * subsurface for PBR pixels.
 // Every shader that writes f_deffer through pack_gbuffer() writes zero there, so only
 // textures marked "PBR (metallic/roughness)" in their THM switch to the PBR lighting model.
-// It takes render target 2, which Monolith used for Heatvision (removed on this branch);
-// SSS motion vectors stay in target 3.
+// It takes render target 2; SSS motion vectors stay in target 3 and Heatvision moves from
+// target 2 to target 4 (the PBR exes bind it there).
 #if defined(SM_5) && !defined(PBR_DISABLE)
 #	define PBR_GBUFFER
 #endif
@@ -427,24 +427,32 @@ float4 gbuffer_load_surface( float2 tc : TEXCOORD, float2 pos2d, uint iSample )
 
 
 def patch_gbuffer_stage(text, what):
-    """SSS's gbuffer_stage.h (motion vectors, TAA unjitter) + the PBR material target.
+    """SSS's gbuffer_stage.h (motion vectors, TAA unjitter, Heatvision) + the PBR material target.
 
     The exe's own gamedata/shaders/r3/gbuffer_stage.h is written for vanilla shaders: no
     screenspace_mvectors.h, no velocity target, no TAA unjitter. SSS replaces that file with
     its own, so with SSS installed the PBR edits have to be applied to SSS's copy. Using the
     exe's copy over SSS breaks every SSS shader that needs ssfx_jitter or O.velocity
     (first one in the log: ssfx_taa.ps, "undeclared identifier 'ssfx_jitter'").
+
+    Targets with the PBR G-buffer (DX11 / R4): 0 position, 1 albedo, 2 PBR material,
+    3 SSS motion vectors, 4 Heatvision. Upstream (and R3, which shares the r3 shader folder and
+    has no PBR) keeps Heatvision in target 2, so H moves to target 4 only under PBR_GBUFFER.
     """
     text = replace_once(text, '#include "screenspace_mvectors.h"\n',
                         '#include "screenspace_mvectors.h"\n' + GBUFFER_PBR_DECL, what)
     text = regex_once(text, r"[ \t]*float4[ \t]+H[ \t]*:[ \t]*SV_Target2;[^\n]*\n",
-                      "#ifdef PBR_GBUFFER\n\tfloat4 surface : SV_Target2; //X - Metalness, Y - Roughness, "
-                      "Z - AO, W - PBR flag/SSS (0 = legacy)\n#endif\n", what, flags=0)
-    # Heatvision is gone on this branch; nothing else in SSS reads L_hotness
-    text = regex_once(text, r"// HeatVision\nuniform float4 L_hotness;\n\n?", "", what, flags=0)
-    text = regex_once(text, r"[ \t]*// HeatVision\n[ \t]*if \(L_hotness\.x > 0\.0\)\n[^\n]*\n[ \t]*else\n[^\n]*\n",
-                      "#ifdef PBR_GBUFFER\n\tres.surface = float4( 0.0, 0.0, 0.0, 0.0 ); "
-                      "// legacy lighting; PBR shaders overwrite it\n#endif\n", what, flags=0)
+                      "#ifdef PBR_GBUFFER\n"
+                      "\tfloat4 surface : SV_Target2; //X - Metalness, Y - Roughness, Z - AO, W - PBR flag/SSS (0 = legacy)\n"
+                      "\tfloat4 H : SV_Target4; // HeatVision (target 2 holds the PBR material on the PBR exes)\n"
+                      "#else\n"
+                      "\tfloat4 H : SV_Target2; // HeatVision\n"
+                      "#endif\n", what, flags=0)
+    # Heatvision output stays exactly as SSS writes it (L_hotness); only the PBR target is added
+    text = regex_once(text, r"([ \t]*// HeatVision\n[ \t]*if \(L_hotness\.x > 0\.0\)\n)",
+                      lambda m: "#ifdef PBR_GBUFFER\n\tres.surface = float4( 0.0, 0.0, 0.0, 0.0 ); "
+                                "// legacy lighting; PBR shaders overwrite it\n#endif\n\n" + m.group(1),
+                      what, flags=0)
     text = regex_once(text, r"(\n)(gbuffer_data gbuffer_load_data\( float2 tc : TEXCOORD, float2 pos2d \)\n)",
                       lambda m: m.group(1) + GBUFFER_LOAD_SURFACE.lstrip("\n") + "\n" + m.group(2), what, flags=0)
     return text

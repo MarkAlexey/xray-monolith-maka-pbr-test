@@ -84,6 +84,12 @@ void CRenderTarget::u_setrt(const ref_rt& _1, const ref_rt& _2, const ref_rt& _3
 	//	RImplementation.rmNormal				();
 }
 
+void CRenderTarget::u_setrt(const ref_rt& _1, const ref_rt& _2, const ref_rt& _3, const ref_rt& _4, const ref_rt& _5, ID3DDepthStencilView* zb)
+{
+	u_setrt(_1, _2, _3, _4, zb);
+	RCache.set_RT(_5 ? _5->pRT : NULL, 4);
+}
+
 void CRenderTarget::u_setrt(const ref_rt& _1, const ref_rt& _2, const ref_rt& _3, ID3DDepthStencilView* zb)
 {
 	VERIFY(_1||zb);
@@ -412,6 +418,7 @@ CRenderTarget::CRenderTarget()
 	b_gasmask_dudv = xr_new<CBlender_gasmask_dudv>();
 	b_nightvision = xr_new<CBlender_nightvision>();
 	b_fakescope = xr_new<CBlender_fakescope>(); //crookr
+	b_heatvision = xr_new<CBlender_heatvision>(); //--DSR-- HeatVision
 	b_lut = xr_new<CBlender_lut>();
 	b_smaa = xr_new<CBlender_smaa>();
 
@@ -522,6 +529,10 @@ CRenderTarget::CRenderTarget()
 
 		rt_fakescope.create(r2_RT_scopert, w, h, D3DFMT_A8R8G8B8, 1); //crookr fakescope
 
+		//--DSR-- HeatVision_start
+		rt_Heat.create(r2_RT_heat, w, h, D3DFMT_A8R8G8B8, SampleCount);
+		//--DSR-- HeatVision_end
+
 		rt_Generic_temp.create("$user$generic_temp", w, h, D3DFMT_A8R8G8B8, RImplementation.o.dx10_msaa ? SampleCount : 1);
 
 		rt_dof.create(r2_RT_dof, w, h, D3DFMT_A8R8G8B8);
@@ -622,6 +633,8 @@ CRenderTarget::CRenderTarget()
 	s_nightvision.create(b_nightvision, "r2\\nightvision");
 
 	s_fakescope.create(b_fakescope, "r2\\fakescope"); //crookr
+
+	s_heatvision.create(b_heatvision, "r2\\heatvision"); //--DSR-- HeatVision
 	s_lut.create(b_lut, "r2\\lut");
 	// OCCLUSION
 	s_occq.create(b_occq, "r2\\occq");
@@ -1351,6 +1364,7 @@ CRenderTarget::~CRenderTarget()
 	xr_delete(b_gasmask_dudv);
 	xr_delete(b_nightvision);
 	xr_delete(b_fakescope); //crookr
+	xr_delete(b_heatvision); //--DSR-- HeatVision
 	xr_delete(b_lut);
 	xr_delete(b_smaa);
 

@@ -15,6 +15,10 @@ void CRenderTarget::phase_scene_prepare()
 		HW.pContext->ClearRenderTargetView(rt_Position->pRT, ColorRGBA);
 		HW.pContext->ClearRenderTargetView(rt_Surface->pRT, ColorRGBA); // IX-Ray PBR: zero = legacy lighting
 
+		//--DSR-- HeatVision_start
+		HW.pContext->ClearRenderTargetView(rt_Heat->pRT, ColorRGBA);
+		//--DSR-- HeatVision_end
+
 		if (!RImplementation.o.dx10_msaa)
 			HW.pContext->ClearDepthStencilView(HW.pBaseZB, D3D_CLEAR_DEPTH | D3D_CLEAR_STENCIL, 1.0f, 0);
 		else
@@ -41,9 +45,12 @@ void CRenderTarget::phase_scene_begin()
 
 	// Targets, use accumulator for temporary storage
 	{
-		// IX-Ray PBR: rt_Surface is the third target (material data for PBR textures), SSS motion vectors the fourth
-		if (RImplementation.o.albedo_wo) u_setrt(rt_Position, rt_Accumulator, rt_Surface, rt_ssfx_motion_vectors, pZB);
-		else u_setrt(rt_Position, rt_Color, rt_Surface, rt_ssfx_motion_vectors, pZB);
+		// G-buffer targets on this branch:
+		//   0 position/normal/material, 1 albedo/gloss, 2 IX-Ray PBR material (rt_Surface),
+		//   3 SSS motion vectors, 4 Heatvision (rt_Heat; upstream uses slot 2, taken by PBR here).
+		// The shaders write heat as SV_Target4 (gbuffer_stage.h).
+		if (RImplementation.o.albedo_wo) u_setrt(rt_Position, rt_Accumulator, rt_Surface, rt_ssfx_motion_vectors, rt_Heat, pZB);
+		else u_setrt(rt_Position, rt_Color, rt_Surface, rt_ssfx_motion_vectors, rt_Heat, pZB);
 	}
 
 
@@ -69,6 +76,7 @@ void CRenderTarget::phase_scene_end()
 	disable_aniso();
 
 	RCache.set_RT(NULL, 3); // Always reset the 4th RT ( Motion Vectors )
+	RCache.set_RT(NULL, 4); // and the 5th ( Heatvision ): it is read as s_heat later
 
 	if (!RImplementation.o.albedo_wo) return;
 

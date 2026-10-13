@@ -200,6 +200,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "r2", "r2", "{DC223170-1570-
 	ProjectSection(SolutionItems) = preProject
 		..\gamedata\shaders\r2\combine_2_naa.ps = ..\gamedata\shaders\r2\combine_2_naa.ps
 		..\gamedata\shaders\r2\fakescope.ps = ..\gamedata\shaders\r2\fakescope.ps
+		..\gamedata\shaders\r2\heatvision.ps = ..\gamedata\shaders\r2\heatvision.ps
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "r3", "r3", "{AAE035C4-0F51-435B-A0E0-9FC62D070877}"

@@ -728,3 +728,28 @@ uses Atmospherics' ES set (`ATMOSPHERICS_ES_MODULES`).
 file names and `#include` paths the way Windows resolves them (ES ships `ACES.H` and includes
 `"ACES.h"` and `"ACES_LMTs\..."`). Known DXC-only error: upstream's `fakescope.ps` declares
 `SV_POSITION` twice; the game's FXC accepts it.
+
+## Heatvision is back
+
+vegeta1k95's Heatvision, the silencer overheat glow and the "cold zombies" option are restored from
+upstream's MT build, including the shader-bus `obj_hotness` path. HDR10 stays removed.
+
+Heat used G-buffer target 2 upstream, which holds the PBR material here, so on R4 it moved:
+
+| Slot | Target | Contents |
+|---|---|---|
+| 0 | `rt_Position` | position, normal, material |
+| 1 | `rt_Color` | albedo, gloss |
+| 2 | `rt_Surface` | PBR material |
+| 3 | `rt_ssfx_motion_vectors` | SSS motion vectors |
+| 4 | `rt_Heat` | Heatvision (`s_heat`) |
+
+The forward and combine passes bind `rt_Heat` exactly as upstream (slots 1 and 2 there; no PBR
+target is bound in those passes). The render backend now tracks all 8 D3D11 slots, a five-target
+`u_setrt` binds the G-buffer, and `phase_scene_end` unbinds slot 4 so the heat vision pass can read it.
+
+Shaders write heat as `SV_Target4` under the PBR G-buffer and as `SV_Target2` otherwise (R3, which
+shares the `r3` shader folder). That is in this repository's `gbuffer_stage.h` (so Heatvision now also
+works without SSS) and in the SSS `gbuffer_stage.h` the compatibility patch generates, which keeps SSS's
+own heat output. The heat vision post-process itself comes from a shader mod (upstream ships only a
+stub `r2/heatvision.ps`); it reads `s_heat`, so it does not care which slot the heat was written to.

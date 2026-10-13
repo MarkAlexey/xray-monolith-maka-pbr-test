@@ -142,7 +142,7 @@ public:
 #endif
 private:
 	// Render-targets
-	ID3DRenderTargetView* pRT[4];
+	ID3DRenderTargetView* pRT[8]; // D3D11 maximum; R4 uses 0-4 in the G-buffer (4 = Heatvision)
 	ID3DDepthStencilView* pZB;
 
 	// Vertices/Indices/etc

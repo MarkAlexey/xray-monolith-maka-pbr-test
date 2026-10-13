@@ -40,6 +40,7 @@ public:
 	IBlender* b_gasmask_dudv;
 	IBlender* b_nightvision;
 	IBlender* b_fakescope; //crookr
+	IBlender* b_heatvision; //--DSR-- HeatVision
 	IBlender* b_lut;
 
 	IBlender* b_smaa;
@@ -73,6 +74,7 @@ public:
 	ref_rt rt_Generic_PingPong;
 
 	ref_rt rt_dof;
+	ref_rt rt_Heat; //--DSR-- HeatVision
 
 	ref_rt rt_blur_h_2;
 	ref_rt rt_blur_2;
@@ -130,6 +132,7 @@ private:
 	ref_shader s_gasmask_dudv;
 	ref_shader s_nightvision;
 	ref_shader s_fakescope; //crookr
+	ref_shader s_heatvision; //--DSR-- HeatVision
 
 	ref_shader s_blur;
 	ref_shader s_dof;
@@ -269,6 +272,7 @@ public:
 	void phase_gasmask_dudv();
 	void phase_nightvision();
 	void phase_fakescope(); //crookr
+	void phase_heatvision(); //--DSR-- HeatVision
 	void phase_lut();
 	void phase_smaa();
 

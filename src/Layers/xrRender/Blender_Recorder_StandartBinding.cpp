@@ -428,6 +428,64 @@ static class s3ds_param_4 : public R_constant_setup
 	}
 }    s3ds_param_4;
 
+//--DSR-- SilencerOverheat_start
+static class cl_silencer_glowing : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.hemi.set_c_glowing(C);
+	}
+} binder_silencer_glowing;
+//--DSR-- SilencerOverheat_end
+
+//--DSR-- HeatVision_start
+extern float heat_vision_mode;
+extern Fvector4 heat_vision_steps;
+extern Fvector4 heat_vision_blurring;
+extern Fvector4 heat_vision_args_1;
+extern Fvector4 heat_vision_args_2;
+
+static class cl_heatvision_hotness : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.hemi.set_c_hotness(C);
+	}
+} binder_heatvision_hotness;
+
+static class cl_heatvision_steps : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_r2_heatvision, heat_vision_steps.x, heat_vision_steps.y, heat_vision_steps.z);
+	}
+} binder_heatvision_params1;
+
+static class cl_heatvision_blurring : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, heat_vision_blurring.x, heat_vision_blurring.y, heat_vision_blurring.z, heat_vision_mode);
+	}
+} binder_heatvision_params2;
+
+static class cl_heatvision_args1 : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, heat_vision_args_1.x, heat_vision_args_1.y, heat_vision_args_1.z, heat_vision_args_1.w);
+	}
+} binder_heatvision_args1;
+
+static class cl_heatvision_args2 : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, heat_vision_args_2.x, heat_vision_args_2.y, heat_vision_args_2.z, heat_vision_args_2.w);
+	}
+} binder_heatvision_args2;
+
+//--DSR-- HeatVision_end
 
 
 #ifndef _EDITOR
@@ -1538,6 +1596,15 @@ void CBlender_Compile::SetMapping()
 	}
 
 
+
+	r_Constant("L_glowing", &binder_silencer_glowing);		//--DSR-- SilencerOverheat
+	//--DSR-- HeatVision_start
+	r_Constant("L_hotness", &binder_heatvision_hotness);
+	r_Constant("heatvision_params1", &binder_heatvision_params1);
+	r_Constant("heatvision_params2", &binder_heatvision_params2);
+	r_Constant("heatvision_params3", &binder_heatvision_args1);
+	r_Constant("heatvision_params4", &binder_heatvision_args2);
+	//--DSR-- HeatVision_end
 
 	r_Constant("vignette_control", &vignette_control);
 }
