@@ -61,6 +61,15 @@ Caveats
     legacy textures (ALBEDO_BOOST etc.). Real PBR textures are not affected, so legacy and
     PBR materials drift apart a little; set ATMOSPHERICS_SKIP = {"pbr_settings.h"} to keep
     the ES/SSS values that pseudo-PBR was matched against.
+  - --extra (repeatable): your own shader mods on top, e.g. a modpack's per-mod overrides
+    (GAMMA). They go after SSS/ES/Atmospherics and before the compat patch, in the order given
+    (later wins), so their settings headers (LUT layout, puddles, SSR, ...) match the textures
+    the modpack ships. Each accepts a folder, .zip or .7z, with or without a gamedata/ level.
+    A layer that replaces a PBR-critical file (PBR_CRITICAL) is listed after the build.
+  - Settings headers in this pack (settings_screenspace_*.h) belong to the textures of the mod
+    they come from. Installing the pack over a modpack that ships other textures (GAMMA's LUT
+    atlas, for one) without --extra breaks those effects: a LUT layout mismatch remaps every
+    colour (purple/green image).
   - Beef's other patch folders (Only ES / Only SSR / Arszi's) are not used: with SSS 23.5
     they are superseded, and Arszi's patch is a script for that mod only.
 """
@@ -142,6 +151,16 @@ BEEF_ES_PATCH_FILES = {"sky2.ps"}                   # only this file is taken fr
 BEEF_SKIP = {"combine_1.ps", "combine_2_naa.ps", "pp_blur.ps", "sky2.ps"}  # SSS/ES integrate these
 SSS_BEEF_PATCH = "00 - PATCH - [ Beefs NVGs ]"      # inserted after the SSS ES patch with --beef
 ATMOSPHERICS_SKIP = set()                           # e.g. {"pbr_settings.h"}, see caveats
+
+# Files the PBR / SSLR / Heatvision pipeline depends on. An --extra layer that ships one of these
+# is reported: it will override the PBR version (the compat patch still wins for its own files).
+PBR_CRITICAL = {
+    "gbuffer_stage.h", "sload.h", "common.h", "hmodel.h", "lmodel.h", "pbr_brdf.h",
+    "combine_1.ps", "deffer_base_bump.ps", "deffer_base_aref_bump.ps",
+    "deffer_base_hud_bump.ps", "deffer_base_hud_aref_bump.ps",
+    "accum_sun.ps", "accum_sun_near.ps", "accum_sun_far.ps", "accum_base.ps",
+    "accum_omni_unshadowed.ps", "accum_indirect.ps", "screenspace_common.h", "ssfx_ssr_combine.ps",
+}
 
 INCLUDE_REPO_SHADERS = True     # this branch's gamedata/shaders (needed: ixray_brdf.h, sslr_*)
 SHADERS_ONLY = False            # True = only gamedata/shaders from every layer
@@ -234,6 +253,7 @@ def main():
     ap.add_argument("--sss", required=True, help="Screen Space Shaders 23.5 zip or extracted folder")
     ap.add_argument("--beef", help="Beef's NVGs zip or extracted folder (optional)")
     ap.add_argument("--atmospherics", help="Atmospherics (or just its shaders) folder/zip/7z (optional)")
+    ap.add_argument("--extra", action="append", default=[], help="extra shader mod on top (repeatable, later wins)")
     ap.add_argument("--compat", help="existing compat patch folder/zip (default: generate it)")
     ap.add_argument("--out", default="pbr_shader_pack")
     ap.add_argument("--zip", action="store_true", help="also write <out>.zip")
@@ -280,6 +300,13 @@ def main():
         cmods = sorted({n[len(compat.root):].split("/", 1)[0] for n in compat.names if n[len(compat.root):].startswith("99 ")})
     else:
         cmods = sorted(d for d in os.listdir(a.compat) if d.startswith("99 "))
+    extra_labels = []
+    for i, e in enumerate(a.extra, 1):
+        src = Source(e)
+        mod, prefix = gamedata_module(src)
+        label = f"extra{i}/{os.path.basename(e.rstrip('/'))}"
+        extra_labels.append(label)
+        layers.append((label, src, mod, prefix, None))
     layers += [("compat/" + m, compat, m, "", None) for m in cmods]
 
     winner, history, missing = {}, {}, []
@@ -315,6 +342,15 @@ def main():
     report += ["", "Files provided by more than one layer (last one wins):"]
     for k in sorted(overridden):
         report.append(f"  {winner[k][0]}\n      {' -> '.join(overridden[k])}")
+    critical = []
+    for k, hist in history.items():
+        name = k.rsplit("/", 1)[-1]
+        if name in PBR_CRITICAL and any(h in extra_labels for h in hist):
+            critical.append(f"{winner[k][0]}: {' -> '.join(hist)}")
+    if critical:
+        report += ["", "WARNING: extra layers ship PBR-critical files (check the winner is right):"]
+        report += [f"  {c}" for c in sorted(critical)]
+        print("WARNING: extra layers ship PBR-critical files:\n  " + "\n  ".join(sorted(critical)))
     report_text = "\n".join(report) + "\n"
 
     if a.dry_run:
