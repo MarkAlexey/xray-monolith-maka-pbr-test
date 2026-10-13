@@ -14,6 +14,7 @@
 
 #include "game_cl_mp.h"
 #include "reward_event_generator.h"
+#include "../Layers/xrRender/xrRender_console.h"
 
 #define FLAME_TIME 0.05f
 

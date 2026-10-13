@@ -71,6 +71,18 @@ PROJECTS = {
         "defines": ["USE_DX11", "WIN32", "NDEBUG", "_WINDOWS", "_USRDLL", "XRRENDER_R4_EXPORTS",
                     "_SECURE_SCL=0", "XRCORE_PROFILER"],
     },
+    # xrGame (and the xrServerEntities sources it builds): include paths and defines from
+    # src/xrGame/xrGame.vcxproj (Release|x64 / ProfiledDX11). Without this, xrGame files were
+    # compiled with the renderer's settings, stopped at "'smart_cast.h' file not found" and
+    # checked nothing past their precompiled header.
+    "xrGame": {
+        "dir": "src/xrGame",
+        "includes": ["src/xrGame", "src", "src/xrCore", "src/xrServerEntities",
+                     "src/3rd party/luajit-2/src", "src/3rd party/luabind", "sdk/include",
+                     "src/3rd party/CxImage", "src/3rd party", "src/3rd party/imgui"],
+        "defines": ["WIN32", "NDEBUG", "_WINDOWS", "_USRDLL", "XRGAME_EXPORTS", "dSINGLE", "MSVC",
+                    "_SECURE_SCL=0", "XRCORE_PROFILER"],
+    },
     "R3": {
         "dir": "src/Layers/xrRenderPC_R3",
         "includes": ["src/Layers/xrRenderPC_R3", "src/xrCore", "src", "sdk/include",
@@ -166,6 +178,8 @@ def projects_for(tu):
         return ["R3"]
     if "/xrRender/" in tu or "/xrRenderDX10/" in tu:
         return ["R4", "R3"]
+    if "/xrGame/" in tu or "/xrServerEntities/" in tu:
+        return ["xrGame"]
     return ["R4"]
 
 
