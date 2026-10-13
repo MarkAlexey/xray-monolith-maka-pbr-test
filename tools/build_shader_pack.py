@@ -66,6 +66,13 @@ Caveats
     (later wins), so their settings headers (LUT layout, puddles, SSR, ...) match the textures
     the modpack ships. Each accepts a folder, .zip or .7z, with or without a gamedata/ level.
     A layer that replaces a PBR-critical file (PBR_CRITICAL) is listed after the build.
+  - Build a modpack's pack on the same base stack the modpack uses. GAMMA runs on
+    Atmospherics (its shadow.h cloud-shadow floor and pbr_settings.h albedo boost are what its
+    weathers are tuned for), so GAMMA needs --beef and --atmospherics as well as --extra:
+        --es ES --sss SSS --beef BEEF --atmospherics ATM --shaders-only \
+        --extra <each GAMMA shader override> ...
+    Without --atmospherics the world renders far too dark (no sun under cloud shadows, darker
+    albedo) while the sky looks normal.
   - Settings headers in this pack (settings_screenspace_*.h) belong to the textures of the mod
     they come from. Installing the pack over a modpack that ships other textures (GAMMA's LUT
     atlas, for one) without --extra breaks those effects: a LUT layout mismatch remaps every
