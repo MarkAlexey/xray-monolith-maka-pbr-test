@@ -165,6 +165,11 @@ PBR_CRITICAL = {
 INCLUDE_REPO_SHADERS = True     # this branch's gamedata/shaders (needed: ixray_brdf.h, sslr_*)
 SHADERS_ONLY = False            # True = only gamedata/shaders from every layer
 SKIP_NAMES = {"Thumbs.db", "desktop.ini", ".DS_Store"}
+# Shader settings that describe a texture: left out of a SHADERS_ONLY pack (which ships no
+# textures), so the copy that matches the installed texture stays in charge. The LUT layout
+# must match lut_atlas.dds exactly (SSS 1024/32/4, Atmospherics 4096/64/17, GAMMA 4096/64/1);
+# a mismatch remaps every colour. An --extra layer that ships one still wins.
+TEXTURE_BOUND_SETTINGS = {"settings_screenspace_lut.h"}
 
 # ------------------------------------------------------------------------------------------
 
@@ -247,6 +252,10 @@ def keep(rel):
     return True
 
 
+def texture_bound(rel):
+    return SHADERS_ONLY and rel.rsplit("/", 1)[-1].lower() in TEXTURE_BOUND_SETTINGS
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--es", required=True, help="Enhanced Shaders 1.10 zip or extracted folder")
@@ -319,6 +328,8 @@ def main():
                 if label == "repo" and not rel.lower().startswith("gamedata/shaders/"):
                     continue                          # the exe's other gamedata is not part of the pack
                 if not keep(rel):
+                    continue
+                if texture_bound(rel) and not label.startswith("extra"):
                     continue
                 key = rel.lower()                     # Windows: case-insensitive paths
                 history.setdefault(key, []).append(label)
