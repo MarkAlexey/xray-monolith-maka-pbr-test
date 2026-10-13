@@ -43,8 +43,9 @@ What the patch does
       take the IX-Ray lighting (pbr_ixray.h), with SSS's screen-space/contact shadows and
       lightmaps folded in; legacy pixels keep SSS's / ES's lighting.
     - combine_1.ps (ES, SSS main file, SSS ES patch): PBR pixels get the IX-Ray ambient (IBL,
-      SSLR, HDR reflections) with SSS AO and the HUD hemi boost; PBR_DEBUG_VIEW works.
-      Not applied to PBR pixels: SSS Indirect Light, the r2 static-sun term.
+      SSLR, HDR reflections) with SSS AO, the HUD hemi boost and SSS Indirect Light on the
+      ambient diffuse (PBR_IL_INTENSITY); PBR_DEBUG_VIEW works (7 = IL factor).
+      Not applied to PBR pixels: the r2 static-sun term.
 
 Install order (Mod Organizer priority / JSGME order), after everything else:
   ES 1.10 -> SSS 23.5 modules (incl. "00 - PATCH - [ Enhanced Shaders 1.10 ]") -> this patch.
@@ -441,29 +442,60 @@ def make_light_patch(kind):
     return patch
 
 
+def il_factor(text):
+    """HLSL computing float3 pbr_il, the SSS Indirect Light factor for the PBR ambient diffuse
+    (see patch_combine). 1 when the file has no SSS IL code (ES alone, vanilla)."""
+    blend = "\t\tpbr_il = lerp( (float3)1.0, pbr_il, PBR_IL_INTENSITY );\n"
+    es = "lerp( (float3)1.0f, IL_sample * ( 30.0f * ssfx_il_setup.y ), IL_sample )"
+    gamma = "pbr_to_linear( lerp( (float3)1.0f, IL_sample * ( 7.5f * ssfx_il_setup.y ), IL_sample ) )"
+    head = "\t\tfloat3 pbr_il = 1.0;\n#ifdef SSFX_INDIRECT_LIGHT\n"
+    if "IL_sample" not in text or "SSFX_INDIRECT_LIGHT" not in text:
+        return "\t\tfloat3 pbr_il = 1.0;\t// no SSS Indirect Light in this combine_1\n"
+    if "7.5f * ssfx_il_setup.y" in text and "30.0f * ssfx_il_setup.y" in text:
+        # SSS main file: both paths, picked by SSFX_ENHANCED_SHADERS like SSS does
+        return (head + "#\tifdef SSFX_ENHANCED_SHADERS\n\t\tpbr_il = " + es + ";\n#\telse\n"
+                "\t\tpbr_il = " + gamma + ";\n#\tendif\n" + blend + "#endif\n")
+    if "30.0f * ssfx_il_setup.y" in text:
+        return head + "\t\tpbr_il = " + es + ";\n" + blend + "#endif\n"
+    raise PatchError("combine_1: SSS Indirect Light code found but not its hdiffuse factor (different SSS version?)")
+
+
 def patch_combine(text, what):
     """combine_1: IX-Ray ambient (IBL, SSLR, HDR reflections) for PBR pixels.
 
     Replaces the colour SSS / ES computed for PBR pixels, right before fog, with
     pbr_to_gamma( accumulated linear light + pbr_ambient ). Uses SSS AO when SSFX_AO is on (else
     the engine SSAO), times the material AO, and SSS's HUD hemi boost where the file has it.
-    Not applied to PBR pixels: SSS indirect light (IL) and the static-sun (r2 static lighting) term.
+
+    SSS Indirect Light (IL): SSS multiplies the legacy ambient diffuse by a factor from its IL
+    buffer (bounce light from nearby lit surfaces). The same factor scales the PBR ambient
+    diffuse (pbr_ambient_ex's diffuse_scale), so PBR surfaces pick up the same bounce colour.
+    Reflections are not scaled, as in SSS. SSS applies the factor in two spaces:
+      - with Enhanced Shaders (ES patch's combine_1, or SSFX_ENHANCED_SHADERS in the main file)
+        to linear light, factor 30: used as is;
+      - without ES to gamma-space light, factor 7.5: converted with pbr_to_linear(), which is
+        what scaling a gamma value by f does to the linear one.
+    PBR_IL_INTENSITY (pbr_ixray.h, default 1) blends it: 0 = off, >1 = stronger.
+    Not applied to PBR pixels: the static-sun (r2 static lighting) term.
     """
     text = add_pbr_include(text, what)
     hemi = "lerp( N.w, hud_hemi, HudMask )" if ("hud_hemi" in text and "HudMask" in text) else "N.w"
     ao = ("\n#ifdef SSFX_AO\n\t\tfloat pbr_occ = ssfx_ao.Sample( smp_linear, I.tc0 ).w;\n#else\n"
           "\t\tfloat pbr_occ = occ.x;\n#endif\n") if "ssfx_ao" in text else "\t\tfloat pbr_occ = occ.x;\n"
+    il = il_factor(text)
     block = (
         "#ifdef PBR_GBUFFER\n"
+        "#ifndef PBR_IL_INTENSITY\n#\tdefine PBR_IL_INTENSITY 1.0\t// older pbr_ixray.h without the option\n#endif\n"
         "\t" + BANNER + "IX-Ray PBR pixel: ambient (IBL) + the accumulated linear light, back to gamma\n"
         "\tpbr_material pbr_m = pbr_load( GLD_P(I.tc0, I.pos2d, ISAMPLE), D.rgb );\n"
         "\t[branch] if( pbr_m.enabled )\n"
         "\t{\n"
-        + ao +
-        f"\t\tfloat3 pbr_amb = pbr_ambient( pbr_m, P.xyz, N.xyz, {hemi}, pbr_occ * pbr_m.ao );\n"
+        + ao + il +
+        f"\t\tfloat3 pbr_amb = pbr_ambient_ex( pbr_m, P.xyz, N.xyz, {hemi}, pbr_occ * pbr_m.ao, pbr_il );\n"
         "\t\tcolor = pbr_to_gamma( L.rgb + pbr_amb );\n"
         "#ifdef PBR_DEBUG_VIEW\n"
-        "\t\t// pbr_ixray.h: 1 normal, 2 AO, 3 roughness, 4 metalness, 5 ambient only, 6 direct only\n"
+        "\t\t// pbr_ixray.h: 1 normal, 2 AO, 3 roughness, 4 metalness, 5 ambient only, 6 direct only,\n"
+        "\t\t// 7 SSS indirect light factor (grey 0.5 = no change, brighter = more bounce light)\n"
         "\t\tfloat4 pbr_dbg = gbuffer_load_surface( GLD_P(I.tc0, I.pos2d, ISAMPLE) );\n"
         "#\tif PBR_DEBUG_VIEW == 1\n\t\tcolor = mul( m_inv_V, normalize( N.xyz ) ) * 0.5 + 0.5;\n"
         "#\telif PBR_DEBUG_VIEW == 2\n\t\tcolor = pbr_occ * pbr_m.ao;\n"
@@ -471,6 +503,7 @@ def patch_combine(text, what):
         "#\telif PBR_DEBUG_VIEW == 4\n\t\tcolor = pbr_dbg.x;\n"
         "#\telif PBR_DEBUG_VIEW == 5\n\t\tcolor = pbr_to_gamma( pbr_amb );\n"
         "#\telif PBR_DEBUG_VIEW == 6\n\t\tcolor = pbr_to_gamma( L.rgb );\n"
+        "#\telif PBR_DEBUG_VIEW == 7\n\t\tcolor = saturate( pbr_il * 0.5 );\n"
         "#\tendif\n"
         "#endif\n"
         "\t}\n"

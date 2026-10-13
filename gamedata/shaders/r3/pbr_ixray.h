@@ -55,8 +55,12 @@
 
 // Debug view for PBR pixels, written by combine_1: 1 = world-space normal, 2 = ambient
 // occlusion (material AO x SSAO), 3 = roughness, 4 = metalness, 5 = ambient light only,
-// 6 = direct light only
+// 6 = direct light only, 7 = SSS Indirect Light factor (SSS only; grey = no change)
 // #define PBR_DEBUG_VIEW 1
+
+// SSS Indirect Light (bounce light) on PBR pixels, SSS only: scales the ambient diffuse by the
+// same factor SSS uses for legacy surfaces. 0 = off, 1 = as SSS (default), >1 = stronger.
+// #define PBR_IL_INTENSITY 1.0
 
 // Unified lighting, only with Enhanced Shaders installed. 1 (default): legacy textures get
 // Enhanced Shaders' pseudo-PBR material (its own conversion and pbr_settings.h, so mods that

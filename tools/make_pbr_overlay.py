@@ -58,8 +58,9 @@ Caveats
     hdr_ibl.h) are copied in when INCLUDE_REPO_HEADERS is on, so the overlay matches the PBR
     code it was made with. They are also in the exe's gamedata archive: if you update the exe
     later, regenerate the overlay (or turn the option off and rely on the exe's copies).
-  - Under SSS's sload.h, PBR textures get no POM / parallax and no detail bump; SSS Indirect
-    Light and the r2 static-sun term are not applied to PBR pixels (see pbr_hud.h).
+  - Under SSS's sload.h, PBR textures get no POM / parallax and no detail bump (see pbr_hud.h);
+    the r2 static-sun term is not applied to PBR pixels. SSS Indirect Light is, on the ambient
+    diffuse (PBR_IL_INTENSITY in pbr_ixray.h).
 """
 
 import argparse

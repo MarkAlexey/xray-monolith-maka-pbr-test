@@ -323,8 +323,10 @@ What the merged shaders do with PBR pixels:
 - SSS's `sload.h` is kept, so PBR textures are re-decoded in the G-buffer shaders
   (`pbr_hud.h`): no POM / parallax and no detail bump on PBR textures under SSS.
 - The r2 static-sun term (`USE_R2_STATIC_SUN`) is not PBR.
-- SSS Indirect Light is not applied to PBR pixels. The PBR ambient term has no separate diffuse
-  part to apply it to.
+- SSS Indirect Light (bounce light) scales the PBR ambient diffuse by the same factor SSS
+  applies to legacy surfaces (converted to linear when SSS runs without ES); reflections are
+  not scaled, as in SSS. `PBR_IL_INTENSITY` in `pbr_ixray.h` (0 = off, 1 = as SSS) tunes it,
+  `PBR_DEBUG_VIEW 7` shows the factor (grey = no change).
 - SSS SSR used to be added on top of the PBR image-based specular. With IX-Ray SSLR on (see
   below) and the generated patch installed, SSS SSR is limited to the HUD and SSLR replaces it
   everywhere else, so reflections no longer stack.
