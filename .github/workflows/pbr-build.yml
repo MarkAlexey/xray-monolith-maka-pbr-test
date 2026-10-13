@@ -8,6 +8,8 @@
 #     2. builds the exes listed in the build matrix with MSBuild (DX11 and DX11-AVX by default,
 #        the only renderer PBR runs on);
 #     3. zips the user-facing tools (compat patch generator, shader pack builder, texture packer);
+#     3b. builds the ready-made GAMMA shader zips, PBR_overlay_GAMMA.zip and PBR_shaders_GAMMA.zip
+#        (job "shader_packs", see "Shader packs" below), when the sources repository is set up;
 #     4. publishes a GitHub Release anyone can download without a GitHub account:
 #        - push / manual "latest": the rolling pre-release "pbr-test-latest" is replaced with
 #          the new build (one release, always the newest commit);
@@ -26,8 +28,24 @@
 #   - A full engine build takes a long time per configuration on GitHub's Windows runners; two
 #     configurations run in parallel. A newer push cancels a build still in progress.
 #   - Upstream's own workflow (msbuild.yml) only triggers on upstream's branch and stays inert here.
-#   - SSS / Enhanced Shaders files are NOT shipped (they belong to their authors). Users with
-#     SSS/ES generate the compatibility patch from their own copies with the tools zip.
+#   - SSS / Enhanced Shaders files are not in this repository (they belong to their authors).
+#     Users with SSS/ES generate the compatibility patch from their own copies with the tools zip.
+#
+# Shader packs (GAMMA)
+#   The two GAMMA zips are built from Screen Space Shaders, Enhanced Shaders, Atmospherics,
+#   Beef's NVGs and GAMMA's shader overrides, shipped in the release with their authors'
+#   permission. The source archives live in a PRIVATE repository, so they are not public here:
+#     - create a private repository with the layout described in
+#       .github/pbr-release/build_shader_packs.py (es/, sss/, atmospherics/, beef/, gamma/ with
+#       gamma/order.txt, optional vanilla/ for the DXC compile check);
+#     - Settings > Secrets and variables > Actions:
+#         Variables: PBR_SOURCES_REPO = owner/name of that repository
+#         Secrets:   PBR_SOURCES_TOKEN = a fine-grained token with read-only "Contents" access
+#                    to that repository only
+#   Without them the job is skipped with a notice and the release has no shader zips. If the
+#   build or the compile check fails, the release still goes out, without the shader zips.
+#   The packs follow this branch's tools and shaders; changing only the sources repository
+#   does not trigger a build: run the workflow manually afterwards.
 
 name: PBR-Test build
 
@@ -138,9 +156,68 @@ jobs:
           if-no-files-found: error
           retention-days: ${{ env.RETENTION_DAYS }}
 
+  shader_packs:
+    name: Shader packs (GAMMA)
+    runs-on: ubuntu-latest
+    env:
+      SOURCES_REPO: ${{ vars.PBR_SOURCES_REPO }}
+      SOURCES_TOKEN: ${{ secrets.PBR_SOURCES_TOKEN }}
+      # DirectX Shader Compiler for the compile check, pinned (version + SHA-256)
+      DXC_URL: https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.8.2407/linux_dxc_2024_07_31.x86_64.tar.gz
+      DXC_SHA256: b58725ac191df0686994fb9d54d27ee8dd3f180b023d562733112a499ea1195c
+    steps:
+      - name: Sources configured?
+        id: cfg
+        run: |
+          if [ -n "$SOURCES_REPO" ] && [ -n "$SOURCES_TOKEN" ]; then
+            echo "on=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::PBR_SOURCES_REPO / PBR_SOURCES_TOKEN not set: no GAMMA shader zips in this release"
+            echo "on=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.cfg.outputs.on == 'true'
+        uses: actions/checkout@v4
+
+      - name: Checkout the shader sources (private)
+        if: steps.cfg.outputs.on == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.PBR_SOURCES_REPO }}
+          token: ${{ secrets.PBR_SOURCES_TOKEN }}
+          path: shader-sources
+          lfs: true
+          persist-credentials: false
+
+      - name: Set up DXC and py7zr
+        if: steps.cfg.outputs.on == 'true'
+        run: |
+          set -euo pipefail
+          curl -sSL -o dxc.tgz "$DXC_URL"
+          echo "$DXC_SHA256  dxc.tgz" | sha256sum -c -
+          mkdir -p dxc && tar xzf dxc.tgz -C dxc
+          echo "LD_LIBRARY_PATH=$PWD/dxc/lib" >> "$GITHUB_ENV"
+          pip install --quiet py7zr
+
+      - name: Build PBR_overlay_GAMMA.zip and PBR_shaders_GAMMA.zip
+        if: steps.cfg.outputs.on == 'true'
+        run: python .github/pbr-release/build_shader_packs.py --sources shader-sources --out shader_packs --dxc "$PWD/dxc/bin/dxc"
+
+      - name: Upload
+        if: steps.cfg.outputs.on == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: shader-packs
+          path: shader_packs/*.zip
+          if-no-files-found: error
+          retention-days: ${{ env.RETENTION_DAYS }}
+
   release:
     name: Package and publish
-    needs: [ pack_gamedata, build ]
+    needs: [ pack_gamedata, build, shader_packs ]
+    # Ship even when the shader packs failed or were skipped (just without them)
+    if: ${{ !cancelled() && needs.pack_gamedata.result == 'success' && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -192,6 +269,13 @@ jobs:
           cp tools/make_pbr_compat_patch.py tools/make_pbr_overlay.py tools/build_shader_pack.py tools/pack_pbr_textures.py tools_pkg/tools/
           cp notes.md tools_pkg/README-PBR.md
           (cd tools_pkg && zip -qr "../${{ steps.v.outputs.name }}_tools.zip" .)
+
+          # GAMMA shader zips (job shader_packs), when it ran and succeeded
+          if ls artifacts/shader-packs/*.zip >/dev/null 2>&1; then
+            cp artifacts/shader-packs/*.zip .
+          else
+            echo "::notice::no GAMMA shader zips in this release (shader_packs skipped or failed)"
+          fi
           ls -la *.zip
 
       - name: Upload run artifact (always)

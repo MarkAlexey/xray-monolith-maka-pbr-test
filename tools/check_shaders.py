@@ -24,6 +24,7 @@ Usage (paths are examples):
 """
 
 import argparse
+import collections
 import json
 import os
 import re
@@ -56,6 +57,14 @@ DEFINE_SETS = [
 PROFILES = {"ps": "ps_6_0", "vs": "vs_6_0", "cs": "cs_6_0", "gs": "gs_6_0", "hs": "hs_6_0", "ds": "ds_6_0"}
 
 # ------------------------------------------------------------------------------------------
+
+
+POS_RE = re.compile(r":\d+:\d+:")
+
+
+def strip_pos(err):
+    """'combine_1.ps:128:58: error: ...' -> 'combine_1.ps: error: ...'"""
+    return POS_RE.sub(":", err, count=1)
 
 
 INCLUDE_RE = re.compile(r'(#\s*include\s*")([^"]+)(")')
@@ -154,8 +163,16 @@ def main():
             print(f"{sh}: MISSING in layers")
             continue
         for ds, (errs, bound) in sets.items():
-            known = set(base[sh][ds][0]) if base and base.get(sh) else set()
-            new = [e for e in errs if e not in known]
+            # Compare without line:column: code the patch inserts above an existing error moves
+            # it, and it must still count as the same (old) error. Counted, not deduplicated.
+            known = collections.Counter(strip_pos(e) for e in base[sh][ds][0]) if base and base.get(sh) else collections.Counter()
+            new = []
+            for e in errs:
+                k = strip_pos(e)
+                if known[k] > 0:
+                    known[k] -= 1
+                else:
+                    new.append(e)
             new_total += len(new)
             tag = "OK" if not errs else (f"{len(errs)} errors ({len(new)} new)" if base else f"{len(errs)} errors")
             extra = f"  binds: {' '.join(bound) or '-'}" if bindings else ""

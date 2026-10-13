@@ -16,7 +16,9 @@ plus engine support for Screen Space Shaders. DX11 only.
 |---|---|
 | `*_latest.zip` / `*_<version>.zip` | the exes (`bin/`) and the PBR gamedata (`db/mods/00_modded_exes_gamedata.db0`) |
 | `*_pdb.zip` | debug symbols; put the `.pdb` files next to the exes for readable crash logs |
-| `*_tools.zip` | Python tools: SSS/ES compatibility patch generator, shader pack builder, PBR texture packer |
+| `*_tools.zip` | Python tools: SSS/ES compatibility patch generator, PBR overlay generator, shader pack builder, PBR texture packer |
+| `PBR_overlay_GAMMA.zip` | GAMMA: only the shaders PBR needs, patched from GAMMA's own stack. Install last, on top of GAMMA |
+| `PBR_shaders_GAMMA.zip` | GAMMA: GAMMA's whole shader stack with PBR merged in, replacing GAMMA's shader mods |
 
 ## Install
 
@@ -25,6 +27,26 @@ plus engine support for Screen Space Shaders. DX11 only.
    Heatvision and HDR10 output.
 2. Start `AnomalyDX11.exe` (or `AnomalyDX11AVX.exe` on CPUs with AVX). PBR runs on DX11 only.
 3. Delete `appdata/shaders_cache/r4` whenever you change shaders or update this build.
+
+### With GAMMA
+
+Use **one** of the two GAMMA zips (when this release has them), not both:
+
+- **`PBR_overlay_GAMMA.zip` (recommended):** add it as a mod in Mod Organizer and put it at the
+  very bottom of the left pane (highest priority). It only replaces the files PBR needs, made from
+  GAMMA's own versions, so every other GAMMA shader stays as it is. In the conflict tab every file
+  of it must be "winning".
+- **`PBR_shaders_GAMMA.zip`:** GAMMA's complete shader stack (Enhanced Shaders, Screen Space
+  Shaders, Atmospherics, Beef's NVGs and GAMMA's shader overrides) with PBR merged in, as one
+  mod above all of them.
+
+Both are built for GAMMA's shader stack at the time of this release; if GAMMA updates its shaders,
+generate your own overlay with `make_pbr_overlay.py` from the tools zip. Delete
+`appdata/shaders_cache/r4` afterwards.
+
+Credits: Screen Space Shaders by Ascii1457, Enhanced Shaders and Color Grading by KennShade,
+Atmospherics, Beef's NVGs and the GAMMA shader overrides by their authors, included with
+permission.
 
 ### With Screen Space Shaders 23.5 and/or Enhanced Shaders 1.10
 
