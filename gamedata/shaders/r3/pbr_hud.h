@@ -2,7 +2,11 @@
 #define PBR_HUD_H
 
 //////////////////////////////////////////////////////////////////////////////////////////
-// Monolith: IX-Ray PBR materials for first-person (HUD) models under Screen Space Shaders
+// Monolith: IX-Ray PBR materials under Screen Space Shaders / Enhanced Shaders
+//
+// Used by SSS's HUD G-buffer shaders and, since the world PBR fix, by SSS's / ES's
+// deffer_base_bump.ps and deffer_base_aref_bump.ps too (they replace this repository's
+// versions, which write the material themselves). The name stays for compatibility.
 //
 // With SSS installed the engine compiles every HUD model (weapons, hands, detectors) with
 // SSS's own G-buffer shaders, deffer_base_hud_*.ps (ResourceManager.cpp: HudElement), not
@@ -11,7 +15,7 @@
 // (the height channel read as gloss, the normal channels swapped) and, with unified lighting,
 // converted by Enhanced Shaders' pseudo-PBR guess. Metals came out as matte white plastic.
 //
-// The compatibility patch (tools/make_pbr_compat_patch.py) makes SSS's HUD shaders call:
+// The compatibility patch (tools/make_pbr_compat_patch.py) makes those shaders call:
 //
 //     float4 pbr = pbr_hud_decode( S, I.tcdh.xy );	// after sload(), before the normal is used
 //     ...
@@ -20,20 +24,20 @@
 // Both compile to nothing unless the texture is PBR (USE_PBR, set by the engine per texture).
 //
 // Which sload.h is installed decides the decode:
-//  - PBR-aware sload.h (this repository's, or the SSS 23.5.1 PBR compatibility patch's; they
-//    define SLOAD_HEIGHT): S is already decoded IX-Ray style, parallax and detail included.
+//  - PBR-aware sload.h (this repository's; it defines SLOAD_HEIGHT): S is already decoded IX-Ray style, parallax and detail included.
 //    Its material is used as is.
 //  - SSS's own sload.h: S was decoded the legacy way. The normal, height, gloss and the
 //    material are re-read here from the IX-Ray texture layout (see sload.h):
 //        bump  : x = height, y = normal Y, w = normal X (z unused)
 //        bump# : x = metalness, y = roughness, z = subsurface, w = ambient occlusion
-//    Caveats on this path: no parallax offset and no detail bump (HUD models rarely use
-//    either); albedo detail from sload() is kept.
+//    Caveats on this path: no parallax offset and no detail bump on PBR textures (HUD models
+//    rarely use either; on world PBR surfaces it means no POM); albedo detail is kept.
 //
-// The material target only exists with a PBR gbuffer_stage.h (PBR_GBUFFER). Under SSS that
-// means the SSS 23.5.1 PBR compatibility patch must be installed; without it PBR_GBUFFER is
-// undefined, nothing is written, and the weapon is lit as a legacy model, but with the
-// correct normal and a gloss derived from the roughness.
+// The material target only exists with a PBR gbuffer_stage.h (PBR_GBUFFER), which the same
+// compatibility patch generates from SSS's. Without it nothing is written and the model is
+// lit as a legacy model, but with the correct normal and a gloss derived from the roughness.
+// The material is only read if the lighting shaders are PBR-aware: the compatibility patch
+// also adds the PBR path to SSS's / ES's accum_*.ps and combine_1.ps.
 //
 // Rain drops on the weapon (SSS HUD Raindrops) still change the legacy gloss and the normal;
 // they do not change the PBR roughness (same limitation as rain on PBR world surfaces).

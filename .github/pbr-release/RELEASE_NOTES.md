@@ -31,12 +31,12 @@ plus engine support for Screen Space Shaders. DX11 only.
 SSS and ES replace shaders PBR needs, so they need patches that are generated from your own
 copies of those mods (their files cannot be redistributed here):
 
-1. Install the **SSS 23.5.1 PBR compatibility patch** (world PBR materials under SSS).
-2. From the tools zip:
+1. From the tools zip:
    `python tools/make_pbr_compat_patch.py --es <ES zip or folder> --sss <SSS zip or folder> --out pbr_compat_patch --zip`
-3. Load order (lowest priority first): this build's gamedata (it is an archive, so it is always
+   It covers everything PBR needs under SSS/ES: G-buffer, lighting, ambient/reflections, weapons.
+2. Load order (lowest priority first): this build's gamedata (it is an archive, so it is always
    below loose mods) → Beef's NVGs (main folder only) → ES → SSS (+ its Beef's NVG patch) →
-   Atmospherics → SSS 23.5.1 PBR patch → the generated `99 - PBR compat` folders.
+   Atmospherics → the generated `99 - PBR compat` folders (always last).
 
 **With Atmospherics**, install Enhanced Shaders the way Atmospherics asks: `01 Enhanced Shaders - PBR`,
 `Optional - Fixed Bloom` and `Optional - shader_param controls - simple` only. Do **not** add

@@ -303,21 +303,26 @@ render target slots and the output path they used.
 ### Shaders: the SSS compatibility patch
 
 The shaders in this repository's `gamedata` are still the vanilla-based PBR shaders, so PBR
-works without SSS. SSS 23.5.1 replaces several of the files PBR needs (`gbuffer_stage.h`,
-`sload.h`, `combine_1.ps`, `accum_sun_near.ps`, `accum_sun_far.ps`, `accum_base.ps`,
-`accum_omni_unshadowed.ps`, and in the motion-vector main file `deffer_base_bump.ps` and
-`deffer_base_aref_bump.ps`). If you use SSS, install the **SSS 23.5.1 PBR compatibility
-patch** (distributed separately). It holds those files with the PBR code merged into the SSS
-versions, in folders named after the SSS modules they belong to. Install each one directly
-after its SSS module, so it overrides it. Without the patch the SSS files win, PBR textures are
-decoded as legacy textures and look wrong, and everything else renders as plain SSS.
+works without SSS. SSS 23.5 and ES 1.10 replace several of the files PBR needs
+(`gbuffer_stage.h`, `combine_1.ps`, `accum_sun_near.ps`, `accum_sun_far.ps`, `accum_sun.ps`,
+`accum_base.ps`, `accum_omni_unshadowed.ps`, `accum_indirect.ps`, `deffer_base_bump.ps`,
+`deffer_base_aref_bump.ps`, the HUD G-buffer shaders). The generated compatibility patch
+(`tools/make_pbr_compat_patch.py`, see "The SSS 23.5 / ES 1.10 compatibility patch" below)
+adds the PBR code to *your* SSS/ES versions of all of them, in folders named after the
+modules they override. Without it the SSS/ES files win: PBR textures write no material or
+nothing reads it, so they are lit as legacy (metals turn matte white).
+
+(Earlier versions of this README pointed to a separately distributed "SSS 23.5.1 PBR
+compatibility patch". It was never published; the generated patch now covers everything.)
 
 What the merged shaders do with PBR pixels:
 
 - SSS screen-space shadows darken PBR surfaces for the sun and local lights, as they do legacy ones.
 - With SSS AO on, its AO replaces the engine AO in the PBR ambient term, as it does for
   legacy pixels. The SSS HUD hemi boost is applied too.
-- The SSS parallax (POM) and simple parallax read the PBR height from the PBR bump texture.
+- SSS's `sload.h` is kept, so PBR textures are re-decoded in the G-buffer shaders
+  (`pbr_hud.h`): no POM / parallax and no detail bump on PBR textures under SSS.
+- The r2 static-sun term (`USE_R2_STATIC_SUN`) is not PBR.
 - SSS Indirect Light is not applied to PBR pixels. The PBR ambient term has no separate diffuse
   part to apply it to.
 - SSS SSR used to be added on top of the PBR image-based specular. With IX-Ray SSLR on (see
@@ -428,17 +433,16 @@ and SSR sky fallback), which used an ad-hoc perspective/altitude hack and an unr
 
 ### The SSS 23.5 / ES 1.10 compatibility patch (generated)
 
-This is a second patch, separate from the "SSS 23.5.1 PBR compatibility patch" described in the
-`pbr-mt-sss` section above:
+One patch, generated from your SSS/ES archives, in two parts:
 
-| Patch | Files | Purpose |
+| Part | Files | Purpose |
 |---|---|---|
-| SSS 23.5.1 PBR compatibility patch (distributed separately) | `gbuffer_stage.h`, `sload.h`, `combine_1.ps`, `accum_*`, `deffer_base_*bump.ps` | PBR textures work under SSS / ES at all |
-| generated patch (this section) | `pbr_brdf.h`, `lmodel.h`, `hmodel.h`, `screenspace_common.h`, `ssfx_ssr_combine.ps` | IX-Ray BRDF for Enhanced Shaders, SSLR, cubemap remap, HDR reflections |
+| PBR textures | `gbuffer_stage.h`, `deffer_base_bump.ps`, `deffer_base_aref_bump.ps`, `deffer_base_hud_*bump.ps`, `accum_sun*.ps`, `accum_base.ps`, `accum_omni_unshadowed.ps`, `accum_indirect.ps`, `combine_1.ps` | PBR materials written to the G-buffer and lit with the IX-Ray model under SSS / ES |
+| Legacy textures and reflections | `pbr_brdf.h`, `lmodel.h`, `hmodel.h`, `screenspace_common.h`, `ssfx_ssr_combine.ps` | IX-Ray BRDF for Enhanced Shaders, SSLR, cubemap remap, HDR reflections |
 
-The file sets do not overlap, so both can be installed: SSS modules, then the PBR compatibility
-patch, then the generated patch. Without the PBR compatibility patch, everything here still
-works for legacy (pseudo-PBR) textures; PBR textures are then decoded as legacy under SSS.
+Install order: ES → SSS modules → the generated `99 - PBR compat` folders (they sort in the
+right order among themselves; `accum_base.ps` is patched in 02, 08 and 91, the last one you
+have installed wins, as in SSS itself).
 
 `tools/make_pbr_compat_patch.py` builds it from your own SSS and ES archives (this repository
 does not redistribute them). Every edit is anchored on exact text; with a different SSS/ES
@@ -513,7 +517,7 @@ one shadow map per array slice (2 x 64 MB at `r2_smap_size 4096` with 32-bit dep
 
 Not ported from IX-Ray: its cascade sizes (15/40/160 m; Monolith keeps the configurable
 `ssfx_shadow_cascades`), its normal-based "far shadow" fade beyond the last cascade, and its
-HUD contact shadows. Under SSS without the SSS 23.5.1 PBR compatibility patch, PBR textures are
+HUD contact shadows. Under SSS without the generated compatibility patch, PBR textures are
 lit as legacy by this pass too, because SSS's `gbuffer_stage.h` replaces the PBR one; that is
 the same limitation the legacy sun shaders have.
 
@@ -649,12 +653,17 @@ The compatibility patch now patches SSS's two real HUD shaders, `deffer_base_hud
 `05 - Rain - HUD Raindrops`; the `-hq`, `_d`, `_d-hq` and `_db-hq` variants include these). They
 call the new `pbr_hud.h`:
 
-- With a PBR-aware `sload.h` (this repository's, or the SSS 23.5.1 PBR compatibility patch's,
-  detected by `SLOAD_HEIGHT`), the surface sload() decoded is used as is.
+- With a PBR-aware `sload.h` (this repository's, detected by `SLOAD_HEIGHT`), the surface
+  sload() decoded is used as is.
 - With SSS's own `sload.h`, the normal, height, gloss and material are re-read from the IX-Ray
   texture layout (no parallax offset or detail bump on this path).
 - The material is written to the G-buffer only when a PBR `gbuffer_stage.h` is installed
-  (`PBR_GBUFFER`); under SSS that is the SSS 23.5.1 PBR compatibility patch.
+  (`PBR_GBUFFER`); under SSS that is the generated patch's `gbuffer_stage.h`.
+
+Update: that fixed the G-buffer side only. SSS/ES also replace the lighting shaders
+(`accum_*.ps`, `combine_1.ps`) and the world G-buffer shaders, so PBR pixels were still lit as
+legacy (the Deagle stayed white in GAMMA). The patch now adds the PBR path to all of them; see
+"The SSS 23.5 / ES 1.10 compatibility patch".
 
 Checked with DXC on vanilla + ES + SSS (MV main file, HUD Raindrops) + the patch, in three
 setups: SSS's own G-buffer and `sload.h` (slot 2 stays exactly SSS's output with and without

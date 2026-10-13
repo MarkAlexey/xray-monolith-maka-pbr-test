@@ -33,6 +33,18 @@ What the patch does
       textures are written to the G-buffer as PBR (pbr_hud.h). SSS compiles every weapon and
       hand with these shaders, which never wrote the PBR material, so PBR weapons rendered as
       legacy (white plastic). Needs the patched gbuffer_stage.h above.
+  World PBR under SSS / ES (these files replace the exe's PBR versions, so without the edits
+  PBR textures wrote their material and nothing read it: lit as legacy, metals white):
+    - deffer_base_bump.ps, deffer_base_aref_bump.ps (ES 01 PBR, SSS MV main file): write the
+      PBR material like the HUD shaders (pbr_hud.h). Under SSS's sload.h: no POM / detail
+      bump on PBR textures.
+    - accum_sun_near/far.ps, accum_sun.ps, accum_base.ps, accum_omni_unshadowed.ps,
+      accum_indirect.ps (ES, SSS main file, 02 SSS, 08 Shadow & Light, 91 Flora): PBR pixels
+      take the IX-Ray lighting (pbr_ixray.h), with SSS's screen-space/contact shadows and
+      lightmaps folded in; legacy pixels keep SSS's / ES's lighting.
+    - combine_1.ps (ES, SSS main file, SSS ES patch): PBR pixels get the IX-Ray ambient (IBL,
+      SSLR, HDR reflections) with SSS AO and the HUD hemi boost; PBR_DEBUG_VIEW works.
+      Not applied to PBR pixels: SSS Indirect Light, the r2 static-sun term.
 
 Install order (Mod Organizer priority / JSGME order), after everything else:
   ES 1.10 -> SSS 23.5 modules (incl. "00 - PATCH - [ Enhanced Shaders 1.10 ]") -> this patch.
@@ -87,6 +99,9 @@ SSS_SSR = "03 - SSR/gamedata/shaders/r3"
 SSS_GLOSS = "94 - IMPROVED GLOSS & WET SURFACES - [ ES Required ]/gamedata/shaders/r3"
 SSS_MV = "00 - MAIN FILE (MV)/gamedata/shaders/r3"
 SSS_HUDRAIN = "05 - Rain - HUD Raindrops/gamedata/shaders/r3"
+SSS_SSS = "02 - SSS/gamedata/shaders/r3"
+SSS_SHADOWS = "08 - New Shadow & Light Features/gamedata/shaders/r3"
+SSS_FLORA = "91 - FLORA FIXES & IMPROVEMENTS/gamedata/shaders/r3"
 
 # Output folder names (prefix sorts them after the modules they override)
 OUT = {
@@ -98,6 +113,10 @@ OUT = {
     # HUD Raindrops overrides the MV main file's HUD shaders; its folder sorts after the MV one
     "sss_mv": "99 - PBR compat - SSS (00 - MAIN FILE (MV))",
     "sss_hudrain": "99 - PBR compat - SSS (05 - Rain - HUD Raindrops)",
+    # accum_base.ps ships in 02, 08 and 91 (91 wins in SSS's own order, and so do these folders)
+    "sss_sss": "99 - PBR compat - SSS (02 - SSS)",
+    "sss_shadows": "99 - PBR compat - SSS (08 - New Shadow & Light Features)",
+    "sss_flora": "99 - PBR compat - SSS (91 - FLORA FIXES & IMPROVEMENTS)",
 }
 
 # ------------------------------------------------------------------------------------------
@@ -356,6 +375,109 @@ def patch_ssr_combine(text, what):
     )
 
 
+# PBR lighting for SSS's / ES's own light shaders. These replace the exe's PBR versions
+# (gamedata/shaders/r3/accum_*.ps, which only exist for the vanilla shader set), so without this
+# a PBR pixel wrote its material and nothing read it: it was lit as a legacy surface.
+#
+# Same code as the exe's versions (pbr_ixray.h), with two differences:
+#  - pbr_load(), not pbr_load_unified(): only textures marked PBR take the IX-Ray path; legacy
+#    pixels keep SSS's / ES's lighting (which the patches above already move to the IX-Ray BRDF).
+#  - Inserted right before the shader's final return, after SSS has folded its screen-space
+#    shadows, contact shadows, lightmaps and shadow fading into the shadow factor, so PBR pixels
+#    get all of them.
+# PBR pixels write linear radiance and no separate specular (alpha 0); combine_1 adds the ambient.
+
+LIGHT_KINDS = {
+    "sun": "pbr_light_sun( pbr_m, gbd.P, _N.xyz, Ldynamic_dir.xyz, Ldynamic_color.rgb ) * pbr_to_linear( {shadow} )",
+    "local": "pbr_light_local( pbr_m, gbd.P, _N.xyz, Ldynamic_pos, Ldynamic_color.rgb ) * {shadow} * pbr_to_linear( lightmap.rgb )",
+    "omni": "pbr_light_local( pbr_m, gbd.P, _N.xyz, Ldynamic_pos, Ldynamic_color.rgb )",
+    "indirect": "pbr_to_linear( Ldynamic_color.xyz ) * att * light * hemi * pbr_m.diffuse",
+}
+
+# Where the final return construct starts, most specific first (SSS, then ES)
+LIGHT_RETURN_ANCHORS = [
+    r"\n(?=#ifdef SSFX_ENHANCED_SHADERS[^\n]*\n[ \t]*return)",
+    r"\n(?=[ \t]*float3 result[ \t]*=)",
+    r"\n(?=[ \t]*return[ \t]+float4\([ \t]*SRGBToLinear\(Ldynamic_color)",
+]
+
+
+def add_pbr_include(text, what):
+    if '#include "pbr_ixray.h"' in text:
+        return text
+    for anchor in ('#include "hmodel.h"\n', '#include "lmodel.h"\n', '#include "common.h"\n'):
+        if text.count(anchor) == 1:
+            return text.replace(anchor, anchor + '#include "pbr_ixray.h"\t' + BANNER + "IX-Ray PBR lighting\n")
+    raise PatchError(f"{what}: no include anchor for pbr_ixray.h")
+
+
+def make_light_patch(kind):
+    def patch(text, what):
+        text = add_pbr_include(text, what)
+        for anchor in LIGHT_RETURN_ANCHORS:
+            hits = [m.start() for m in re.finditer(anchor, text)]
+            if hits:
+                pos = hits[-1]
+                break
+        else:
+            raise PatchError(f"{what}: final return not found")
+        loads = list(re.finditer(r"gbuffer_load_data\(\s*(GLD_P\([^;]*?\))\s*\)", text[:pos]))
+        if not loads:
+            raise PatchError(f"{what}: gbuffer_load_data( GLD_P(...) ) not found")
+        gld = loads[-1].group(1)
+        # SSS's far cascade folds clouds and shadows into "shadows"; everything else uses "s"
+        shadow = "shadows" if (kind == "sun" and re.search(r"\bshadows[ \t]*\*=[ \t]*s\b", text[:pos])) else "s"
+        expr = LIGHT_KINDS[kind].format(shadow=shadow)
+        block = (
+            "\n#ifdef PBR_GBUFFER\n"
+            "\t" + BANNER + "IX-Ray PBR pixel: linear radiance, no separate specular (pbr_ixray.h)\n"
+            f"\tpbr_material pbr_m = pbr_load( {gld}, gbd.C );\n"
+            "\t[branch] if( pbr_m.enabled )\n"
+            f"\t\treturn float4( {expr}, 0 );\n"
+            "#endif\n"
+        )
+        return text[:pos] + block + text[pos:]
+    return patch
+
+
+def patch_combine(text, what):
+    """combine_1: IX-Ray ambient (IBL, SSLR, HDR reflections) for PBR pixels.
+
+    Replaces the colour SSS / ES computed for PBR pixels, right before fog, with
+    pbr_to_gamma( accumulated linear light + pbr_ambient ). Uses SSS AO when SSFX_AO is on (else
+    the engine SSAO), times the material AO, and SSS's HUD hemi boost where the file has it.
+    Not applied to PBR pixels: SSS indirect light (IL) and the static-sun (r2 static lighting) term.
+    """
+    text = add_pbr_include(text, what)
+    hemi = "lerp( N.w, hud_hemi, HudMask )" if ("hud_hemi" in text and "HudMask" in text) else "N.w"
+    ao = ("\n#ifdef SSFX_AO\n\t\tfloat pbr_occ = ssfx_ao.Sample( smp_linear, I.tc0 ).w;\n#else\n"
+          "\t\tfloat pbr_occ = occ.x;\n#endif\n") if "ssfx_ao" in text else "\t\tfloat pbr_occ = occ.x;\n"
+    block = (
+        "#ifdef PBR_GBUFFER\n"
+        "\t" + BANNER + "IX-Ray PBR pixel: ambient (IBL) + the accumulated linear light, back to gamma\n"
+        "\tpbr_material pbr_m = pbr_load( GLD_P(I.tc0, I.pos2d, ISAMPLE), D.rgb );\n"
+        "\t[branch] if( pbr_m.enabled )\n"
+        "\t{\n"
+        + ao +
+        f"\t\tfloat3 pbr_amb = pbr_ambient( pbr_m, P.xyz, N.xyz, {hemi}, pbr_occ * pbr_m.ao );\n"
+        "\t\tcolor = pbr_to_gamma( L.rgb + pbr_amb );\n"
+        "#ifdef PBR_DEBUG_VIEW\n"
+        "\t\t// pbr_ixray.h: 1 normal, 2 AO, 3 roughness, 4 metalness, 5 ambient only, 6 direct only\n"
+        "\t\tfloat4 pbr_dbg = gbuffer_load_surface( GLD_P(I.tc0, I.pos2d, ISAMPLE) );\n"
+        "#\tif PBR_DEBUG_VIEW == 1\n\t\tcolor = mul( m_inv_V, normalize( N.xyz ) ) * 0.5 + 0.5;\n"
+        "#\telif PBR_DEBUG_VIEW == 2\n\t\tcolor = pbr_occ * pbr_m.ao;\n"
+        "#\telif PBR_DEBUG_VIEW == 3\n\t\tcolor = pbr_dbg.y;\n"
+        "#\telif PBR_DEBUG_VIEW == 4\n\t\tcolor = pbr_dbg.x;\n"
+        "#\telif PBR_DEBUG_VIEW == 5\n\t\tcolor = pbr_to_gamma( pbr_amb );\n"
+        "#\telif PBR_DEBUG_VIEW == 6\n\t\tcolor = pbr_to_gamma( L.rgb );\n"
+        "#\tendif\n"
+        "#endif\n"
+        "\t}\n"
+        "#endif\n\n"
+    )
+    return regex_once(text, r"\n([ \t]*// here should be distance fog)", lambda m: "\n" + block + m.group(1), what, flags=0)
+
+
 def patch_hud(text, what):
     """SSS first-person (HUD) G-buffer shaders: write the IX-Ray PBR material (pbr_hud.h)."""
     text = replace_once(
@@ -478,6 +600,25 @@ JOBS = [
     ("sss", SSS_MV + "/deffer_base_hud_aref_bump.ps", "sss_mv", patch_hud),
     ("sss", SSS_HUDRAIN + "/deffer_base_hud_bump.ps", "sss_hudrain", patch_hud),
     ("sss", SSS_HUDRAIN + "/deffer_base_hud_aref_bump.ps", "sss_hudrain", patch_hud),
+    # World PBR under SSS / ES: G-buffer (same decode as the HUD shaders) and lighting
+    ("es", ES_PBR + "/deffer_base_bump.ps", "es", patch_hud),
+    ("sss", SSS_MV + "/deffer_base_bump.ps", "sss_mv", patch_hud),
+    ("sss", SSS_MV + "/deffer_base_aref_bump.ps", "sss_mv", patch_hud),
+    ("es", ES_PBR + "/accum_sun.ps", "es", make_light_patch("sun")),
+    ("es", ES_PBR + "/accum_sun_near.ps", "es", make_light_patch("sun")),
+    ("es", ES_PBR + "/accum_sun_far.ps", "es", make_light_patch("sun")),
+    ("es", ES_PBR + "/accum_base.ps", "es", make_light_patch("local")),
+    ("es", ES_PBR + "/accum_omni_unshadowed.ps", "es", make_light_patch("omni")),
+    ("es", ES_PBR + "/accum_indirect.ps", "es", make_light_patch("indirect")),
+    ("es", ES_PBR + "/combine_1.ps", "es", patch_combine),
+    ("sss", SSS_MAIN + "/accum_sun_near.ps", "sss_main", make_light_patch("sun")),
+    ("sss", SSS_MAIN + "/accum_sun_far.ps", "sss_main", make_light_patch("sun")),
+    ("sss", SSS_MAIN + "/combine_1.ps", "sss_main", patch_combine),
+    ("sss", SSS_ESPATCH + "/combine_1.ps", "sss_es", patch_combine),
+    ("sss", SSS_SSS + "/accum_base.ps", "sss_sss", make_light_patch("local")),
+    ("sss", SSS_SHADOWS + "/accum_base.ps", "sss_shadows", make_light_patch("local")),
+    ("sss", SSS_FLORA + "/accum_base.ps", "sss_flora", make_light_patch("local")),
+    ("sss", SSS_FLORA + "/accum_omni_unshadowed.ps", "sss_flora", make_light_patch("omni")),
 ]
 
 README = """PBR / IX-Ray SSLR compatibility patch for SSS 23.5 + Enhanced Shaders 1.10
