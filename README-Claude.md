@@ -714,3 +714,17 @@ plus an optional `[shaders_options]` section in the same file, e.g.
 
     [shaders_options]
     USE_DX_NORMAL_MAP = 1
+
+## Atmospherics and ES color grading
+
+Atmospherics asks for ES as `01 Enhanced Shaders - PBR` + `Optional - Fixed Bloom` +
+`Optional - shader_param controls - simple`, without `02 Enhanced Color Grading`: it grades the image
+in its own `img_corrections.h`, where `r__color_grading` is a mild midtone tint. With `02` also
+installed, ES's ACES grading reads the same value as a power curve (`2 * (1 - r__color_grading)`;
+Atmospherics' 0.75 gives 0.5) and the image looks washed out. `build_shader_pack.py --atmospherics`
+uses Atmospherics' ES set (`ATMOSPHERICS_ES_MODULES`).
+
+`tools/check_shaders.py` now counts fatal errors (a missing include used to pass as "OK") and folds
+file names and `#include` paths the way Windows resolves them (ES ships `ACES.H` and includes
+`"ACES.h"` and `"ACES_LMTs\..."`). Known DXC-only error: upstream's `fakescope.ps` declares
+`SV_POSITION` twice; the game's FXC accepts it.

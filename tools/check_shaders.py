@@ -26,6 +26,7 @@ Usage (paths are examples):
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -57,15 +58,30 @@ PROFILES = {"ps": "ps_6_0", "vs": "vs_6_0", "cs": "cs_6_0", "gs": "gs_6_0", "hs"
 # ------------------------------------------------------------------------------------------
 
 
+INCLUDE_RE = re.compile(r'(#\s*include\s*")([^"]+)(")')
+
+
 def overlay(dst, layers):
+    """Overlay the layers into dst the way Windows sees them: file names are case-insensitive
+    and #include paths may use backslashes (e.g. ES's "ACES.h" is shipped as ACES.H and
+    included as "ACES_LMTs\\LMT_Contrast.h"). Every path is lowercased and every #include line
+    rewritten to lowercase with forward slashes, so DXC on Linux resolves what FXC on Windows
+    resolves. A later layer replaces an earlier file regardless of the case it uses."""
     for layer in layers:
         if not os.path.isdir(layer):
             sys.exit(f"error: layer not found: {layer}")
         for root, _, files in os.walk(layer):
-            rel = os.path.relpath(root, layer)
+            rel = os.path.relpath(root, layer).lower()
             os.makedirs(os.path.join(dst, rel), exist_ok=True)
             for f in files:
-                shutil.copy(os.path.join(root, f), os.path.join(dst, rel, f))
+                src = os.path.join(root, f)
+                out = os.path.join(dst, rel, f.lower())
+                with open(src, "rb") as fh:
+                    data = fh.read()
+                text = data.decode("latin-1")
+                text = INCLUDE_RE.sub(lambda m: m.group(1) + m.group(2).replace("\\", "/").lower() + m.group(3), text)
+                with open(out, "wb") as fh:
+                    fh.write(text.encode("latin-1"))
 
 
 EXTRA_DEFINES = []  # --define
@@ -79,7 +95,8 @@ def compile_one(dxc, d, shader, defines, bindings):
     asm = os.path.join(d, "__out.asm")
     args += [shader, "-Fc", asm]
     r = subprocess.run(args, cwd=d, capture_output=True, text=True, errors="replace")
-    errors = sorted({l.strip() for l in r.stderr.splitlines() if ": error" in l})
+    # ": fatal error" (missing include, ...) counts too: it stops the compile outright
+    errors = sorted({l.strip() for l in r.stderr.splitlines() if ": error" in l or ": fatal error" in l})
     bound = []
     if bindings and os.path.exists(asm):
         with open(asm, errors="replace") as f:
@@ -94,6 +111,7 @@ def run(dxc, layers, shaders, bindings):
     with tempfile.TemporaryDirectory() as d:
         overlay(d, layers)
         for sh in shaders:
+            sh = sh.lower()
             if not os.path.exists(os.path.join(d, sh)):
                 out[sh] = None
                 continue

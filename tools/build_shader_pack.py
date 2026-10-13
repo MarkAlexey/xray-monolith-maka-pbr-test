@@ -23,7 +23,10 @@ Optional (--beef, --atmospherics), placed where they have to go:
       automatically), and Beef's copies would remove SSS's AO/IL/fog/SSR and PBR ambient
       handling from combine_1. Its sky2.ps comes from "Beef's NVGs - Patch (ES AND SSR)",
       Beef's ES-compatible version (byte-identical to the one Atmospherics ships).
-    Atmospherics: settings headers for SSS/ES, sky2.ps, shadow.h (cloud-shadow floor),
+    Atmospherics: ES is installed the way Atmospherics asks (ATMOSPHERICS_ES_MODULES: 01 PBR,
+      Fixed Bloom, shader_param controls - simple; no "02 Enhanced Color Grading", which would
+      grade the image a second time and wash it out).
+      Its files: settings headers for SSS/ES, sky2.ps, shadow.h (cloud-shadow floor),
       pbr_settings.h (ES pseudo-PBR tuning). None of them touches the G-buffer, lighting,
       gbuffer_stage.h, hmodel/lmodel/pbr_brdf or SSLR, so no compat patching is needed. It
       goes after SSS so its settings headers win. Accepts the full mod or just its shaders
@@ -81,6 +84,19 @@ ES_MODULES = [
     # "Optional - Fixed Bloom",
     # "Optional - Corrected Cubemaps",         # not needed with the unfuck() remap
     # "Optional - shader_param controls",
+]
+
+# ES modules used instead of ES_MODULES when --atmospherics is given: the set Atmospherics'
+# install instructions ask for. NOT "02 Enhanced Color Grading": Atmospherics grades the image
+# in its own img_corrections.h, where r__color_grading is a mild midtone tint. With "02" also
+# installed, ES's ACES grading reads the same r__color_grading as a power curve
+# (2 * (1 - value); Atmospherics' 0.75 gives 0.5) and the image looks washed out. Without "02"
+# the "simple" module's files are not compiled at all (nothing includes them); it is listed
+# because Atmospherics asks for it and it is harmless.
+ATMOSPHERICS_ES_MODULES = [
+    "01 Enhanced Shaders - PBR",
+    "Optional - Fixed Bloom",
+    "Optional - shader_param controls - simple",
 ]
 
 SSS_MODULES = [
@@ -245,7 +261,10 @@ def main():
     beef = Source(a.beef) if a.beef else None
     if beef:
         layers.append(("Beef/" + BEEF_MODULE, beef, BEEF_MODULE, "", lambda n: n.lower() not in BEEF_SKIP))
-    layers += [("ES/" + m, es, m, "", None) for m in ES_MODULES]
+    es_modules = ATMOSPHERICS_ES_MODULES if a.atmospherics else ES_MODULES
+    if a.atmospherics:
+        print("Atmospherics: using its ES modules: " + ", ".join(es_modules))
+    layers += [("ES/" + m, es, m, "", None) for m in es_modules]
     if beef:
         layers.append(("Beef/" + BEEF_ES_PATCH, beef, BEEF_ES_PATCH, "", lambda n: n.lower() in BEEF_ES_PATCH_FILES))
     sss_mods = list(SSS_MODULES)
