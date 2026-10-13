@@ -6,6 +6,15 @@
 
 Here is list of exe files for Anomaly 1.5.3 that contains all engine patches by community required for some advanced mods to work.
 
+
+Author Note :
+
+The entire PBR Pipeline was made using Claude and his work. LVunter provided a big help on adapting and fixing the pipeline, which i'm grateful forever for.
+Also the entire credits goes to :
+[IX-Ray](https://github.com/ixray-team/ixray-1.6-stcop) with [OpenXRay](https://github.com/OpenXRay/xray-16).
+[Modded Exes](https://github.com/themrdemonized/xray-monolith)
+And many other great people which names i can't remember. Bad memory for names, sorry.
+
 # Versions
 The Modded Exes come with standard and MT versions (currently in test phase designated as MT-TEST).
 
