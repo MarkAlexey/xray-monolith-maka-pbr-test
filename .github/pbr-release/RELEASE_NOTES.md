@@ -38,6 +38,11 @@ copies of those mods (their files cannot be redistributed here):
    below loose mods) → Beef's NVGs (main folder only) → ES → SSS (+ its Beef's NVG patch) →
    Atmospherics → SSS 23.5.1 PBR patch → the generated `99 - PBR compat` folders.
 
+**With Atmospherics**, install Enhanced Shaders the way Atmospherics asks: `01 Enhanced Shaders - PBR`,
+`Optional - Fixed Bloom` and `Optional - shader_param controls - simple` only. Do **not** add
+`02 Enhanced Color Grading`: it grades the image a second time from the same `r__color_grading`
+setting and everything looks washed out.
+
 `build_shader_pack.py` can merge all of that into one folder instead
 (`--beef` / `--atmospherics` optional). Every tool has `--dry-run` and documents itself (`--help`).
 
