@@ -189,7 +189,7 @@ jobs:
           (cd pdb && zip -qr "../${{ steps.v.outputs.name }}_pdb.zip" . ) || true
 
           mkdir -p tools_pkg/tools
-          cp tools/make_pbr_compat_patch.py tools/build_shader_pack.py tools/pack_pbr_textures.py tools_pkg/tools/
+          cp tools/make_pbr_compat_patch.py tools/make_pbr_overlay.py tools/build_shader_pack.py tools/pack_pbr_textures.py tools_pkg/tools/
           cp notes.md tools_pkg/README-PBR.md
           (cd tools_pkg && zip -qr "../${{ steps.v.outputs.name }}_tools.zip" .)
           ls -la *.zip

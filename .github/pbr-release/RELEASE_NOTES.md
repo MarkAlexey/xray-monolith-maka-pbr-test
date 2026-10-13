@@ -44,7 +44,11 @@ copies of those mods (their files cannot be redistributed here):
 setting and everything looks washed out.
 
 `build_shader_pack.py` can merge all of that into one folder instead
-(`--beef` / `--atmospherics` optional). Every tool has `--dry-run` and documents itself (`--help`).
+(`--beef` / `--atmospherics` optional).
+
+**Modpacks with their own shader stack (GAMMA):** use `make_pbr_overlay.py` instead. It patches
+only the files PBR needs, from the versions your mod list actually uses, and leaves everything
+else alone. Install the result last. Every tool has `--dry-run` and documents itself (`--help`).
 
 ## Making PBR textures
 

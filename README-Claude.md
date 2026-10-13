@@ -694,6 +694,30 @@ the PBR material target added (`99 - PBR compat - SSS (00 - MAIN FILE)`). The ex
 sit above SSS: SSS shaders then fail with `undeclared identifier 'ssfx_jitter'` (ssfx_taa.ps) and
 lose the velocity target.
 
+## PBR overlay for modpacks (tools/make_pbr_overlay.py)
+
+For modpacks with their own shader stack (GAMMA: Atmospherics on top of SSS/ES, plus its own
+LUT, puddles, DOF and NVG shaders). Instead of replacing the whole stack, the overlay takes the
+winning version of each file the PBR pipeline depends on, adds the PBR code to *that* version
+and writes only those files (`gbuffer_stage.h`, the `deffer_base_*bump.ps` G-buffer shaders,
+the `accum_*.ps` lights, `combine_1.ps`, and ES's `pbr_brdf.h`/`lmodel.h`/`hmodel.h` plus SSS's
+`screenspace_common.h`/`ssfx_ssr_combine.ps`), with this repository's PBR headers. Everything
+else stays exactly as the modpack ships it. Install it last; regenerate it when the shader mods
+below it change.
+
+    python tools/make_pbr_overlay.py --layer <lowest mod> --layer <next> ... --out "PBR overlay" --zip
+
+Each `--layer` is a mod folder/zip/7z or one merged copy of the whole stack, lowest priority
+first; leave out the exe's gamedata and earlier PBR packs (it refuses to patch files that an
+earlier pack already patched). `build_shader_pack.py --no-compat` makes such a merged copy from
+the mod archives. Settings block: `PATCH_PBR_TEXTURES`, `PATCH_LEGACY_IXRAY`,
+`INCLUDE_REPO_HEADERS`, `REQUIRED`.
+
+Found while testing GAMMA: a pack built on plain SSS/ES made GAMMA's world far too dark,
+because GAMMA's weathers are tuned for Atmospherics' `shadow.h` (cloud-shadow floor) and
+`pbr_settings.h` (albedo boost). The overlay avoids that class of problem by never replacing
+those files.
+
 ## Merged shader pack (tools/build_shader_pack.py)
 
 Flattens this branch's shaders, ES 1.10, SSS 23.5 (module list in the settings block) and the

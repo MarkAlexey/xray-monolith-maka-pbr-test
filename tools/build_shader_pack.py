@@ -271,6 +271,8 @@ def main():
     ap.add_argument("--atmospherics", help="Atmospherics (or just its shaders) folder/zip/7z (optional)")
     ap.add_argument("--extra", action="append", default=[], help="extra shader mod on top (repeatable, later wins)")
     ap.add_argument("--compat", help="existing compat patch folder/zip (default: generate it)")
+    ap.add_argument("--no-compat", action="store_true",
+                    help="leave the PBR compat patch out: the plain merged stack, e.g. as the base for make_pbr_overlay.py")
     ap.add_argument("--out", default="pbr_shader_pack")
     ap.add_argument("--zip", action="store_true", help="also write <out>.zip")
     ap.add_argument("--shaders-only", action="store_true", help="same as SHADERS_ONLY = True")
@@ -281,7 +283,7 @@ def main():
         SHADERS_ONLY = True
 
     tmp = None
-    if not a.compat:
+    if not a.compat and not a.no_compat:
         tmp = tempfile.mkdtemp(prefix="pbr_compat_")
         r = subprocess.run([sys.executable, os.path.join(HERE, "make_pbr_compat_patch.py"),
                             "--es", a.es, "--sss", a.sss, "--out", tmp], capture_output=True, text=True)
@@ -289,7 +291,8 @@ def main():
             sys.exit("error: generating the compat patch failed:\n" + r.stderr)
         a.compat = tmp
 
-    es, sss, compat = Source(a.es), Source(a.sss), Source(a.compat)
+    es, sss = Source(a.es), Source(a.sss)
+    compat = Source(a.compat) if not a.no_compat else None
     # (label, source, module, prefix added to paths, file filter on the base name)
     layers = []
     if INCLUDE_REPO_SHADERS:
@@ -312,7 +315,9 @@ def main():
         atm = Source(a.atmospherics)
         mod, prefix = gamedata_module(atm)
         layers.append(("Atmospherics", atm, mod, prefix, lambda n: n.lower() not in {s.lower() for s in ATMOSPHERICS_SKIP}))
-    if compat.zip:
+    if compat is None:
+        cmods = []
+    elif compat.zip:
         cmods = sorted({n[len(compat.root):].split("/", 1)[0] for n in compat.names if n[len(compat.root):].startswith("99 ")})
     else:
         cmods = sorted(d for d in os.listdir(a.compat) if d.startswith("99 "))
