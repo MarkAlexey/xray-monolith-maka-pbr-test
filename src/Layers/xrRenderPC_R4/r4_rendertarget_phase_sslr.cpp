@@ -22,7 +22,8 @@
 //   - Not run for the second viewport (scope picture-in-picture). Its camera differs, so the
 //     main view's result would land in the wrong places: binder_sslr_params (r4.cpp) sets the
 //     intensity to 0 on those frames and the scope picture keeps cubemap reflections only.
-//   - IX-Ray's offscreen cubemap fallback (VSLR) is not ported; misses fall back to the
+//   - IX-Ray's offscreen cubemap reflections (VSLR) are a separate pass
+//     (r4_rendertarget_phase_vslr.cpp) read by the consumer; misses fall back to the
 //     cubemap reflection in the consumer.
 
 static void sslr_bind_pass(ShaderElement* S)

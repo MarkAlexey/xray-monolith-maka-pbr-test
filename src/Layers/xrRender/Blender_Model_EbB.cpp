@@ -256,6 +256,11 @@ void CBlender_Model_EbB::Compile(CBlender_Compile& C)
 			C.r_StencilRef(0x01);
 			C.r_End();
 			break;
+#if RENDER == R_R4
+		case SE_R2_REFLECTIONS: // IX-Ray VSLR capture
+			uber_reflect(C, "model", FALSE);
+			break;
+#endif
 		case SE_R2_SHADOW: // smap
 //if (RImplementation.o.HW_smap)	C.r_Pass	("shadow_direct_model","dumb",	FALSE,TRUE,TRUE,FALSE);
 			//else							C.r_Pass	("shadow_direct_model","shadow_direct_base",FALSE);

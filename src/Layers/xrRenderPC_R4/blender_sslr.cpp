@@ -50,3 +50,20 @@ void CBlender_sslr::Compile(CBlender_Compile& C)
 		break;
 	}
 }
+
+void CBlender_vslr::Compile(CBlender_Compile& C)
+{
+	IBlender::Compile(C);
+
+	switch (C.iElement)
+	{
+	case 0: // cubes -> panorama mip 0 (the mips are generated afterwards)
+		C.r_ComputePass("vslr_panorama");
+		C.r_dx10Texture("s_vslr_color", r2_RT_vslr_color);
+		C.r_dx10Texture("s_vslr_dist", r2_RT_vslr_dist);
+		C.r_dx10Sampler("smp_linear");
+		C.r_dx10Sampler("smp_nofilter");
+		C.r_End();
+		break;
+	}
+}

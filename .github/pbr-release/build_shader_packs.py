@@ -86,6 +86,8 @@ CHECK_SHADERS = [
     "deffer_base_bump.ps", "deffer_base_aref_bump.ps",
     "deffer_base_hud_bump.ps", "deffer_base_hud_aref_bump.ps",
     "ssfx_ssr_combine.ps",
+    # IX-Ray VSLR capture / panorama (engine-owned, compiled against the stack's sload.h)
+    "deffer_vslr_bump.ps", "deffer_vslr_lmh_aref_bump.ps", "vslr_panorama.cs",
 ]
 # Engine defines added when SSS / ES are installed (check_shaders.py --define)
 CHECK_DEFINES = ["MONOLITH_ES", "MONOLITH_SSFX_CORE"]

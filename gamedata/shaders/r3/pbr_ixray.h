@@ -256,6 +256,21 @@ float3 pbr_light_sun( pbr_material M, float3 P, float3 N, float3 light_dir, floa
 
 TextureCube		sky_s0;
 TextureCube		sky_s1;
+
+#ifdef USE_OFFSCREEN_REFLECTIONS
+// IX-Ray VSLR: the surroundings captured around the camera as an octahedral panorama
+// (vslr_common.h, r4_rendertarget_phase_vslr.cpp). Set by the engine with r4_vslr_enable 1.
+#	include "vslr_common.h"
+Texture2D		s_env_fwd;		// rgb = gamma colour x coverage, a = coverage (premultiplied)
+
+// VSLR check: uncomment to make PBR reflections show ONLY the capture, sharp (mip 0), with
+// magenta where nothing was captured (sky / beyond r4_vslr_far / fog). On a metal PBR object
+// you then see the mirrored surroundings with magenta sky. Combine with PBR_DEBUG_VIEW 5
+// (ambient only) to hide the direct light. Needs r4_vslr_enable 1; with VSLR off (or before
+// the first full capture) the reflection is plain magenta.
+// #define VSLR_DEBUG
+uniform float4	vslr_params;	// x = intensity (0 until captured), y = mip count, z = capture distance
+#endif
 uniform float4	L_sky_color;	// rgb = sky colour of the current weather, w = blend factor
 uniform float4	L_sky_rotation;	// x = cos, y = sin of the skybox rotation around Y
 
@@ -389,10 +404,32 @@ float3 pbr_specular_irradiance( float3 R, float hemi, float roughness )
 	float scale	= pbr_luminance( env ) / max( pbr_luminance( sky_avg ), 1e-4 );
 	sky			*= min( scale, PBR_REFLECTION_SCALE_MAX );
 
+	float3 result	= lerp( sky, env, env_blend ) * hemi;
+
+#ifdef USE_OFFSCREEN_REFLECTIONS
+	// IX-Ray VSLR (CompureSpecularIrradance with USE_VIEW_REFLECTIONS): where the capture saw
+	// geometry, reflect it; elsewhere the sky reflection. The capture already hides the sky
+	// behind walls and roofs, so the sky part is only darkened by hemi x 3 there, as in IX-Ray.
+	// Rough surfaces read a smaller mip (IX-Ray: 6 x roughness).
+	{
+#	ifdef VSLR_DEBUG
+		float  vslr_lod	= 0.0;
+#	else
+		float  vslr_lod	= min( 6.0, max( vslr_params.y - 1.0, 0.0 ) ) * roughness;
+#	endif
+		float4 vslr		= s_env_fwd.SampleLevel( smp_linear, vslr_panorama_uv( normalize( rw ) ), vslr_lod );
+		float3 vslr_sky	= lerp( sky, env, env_blend ) * saturate( hemi * 3.0 );
+		result			= lerp( result, vslr.rgb + vslr_sky * ( 1.0 - vslr.a ), vslr_params.x );
+#	ifdef VSLR_DEBUG
+		result			= vslr.rgb + float3( 1.0, 0.0, 1.0 ) * ( 1.0 - vslr.a );
+#	endif
+	}
+#endif
+
 #ifdef PBR_ES
-	return lerp( sky, env, env_blend ) * hemi + L_ambient.rgb;	// Enhanced Shaders adds the ambient colour
+	return result + L_ambient.rgb;	// Enhanced Shaders adds the ambient colour
 #else
-	return lerp( sky, env, env_blend ) * hemi;
+	return result;
 #endif
 }
 

@@ -88,6 +88,8 @@ exports (gloss is inverted to roughness, packed normals are unpacked).
 ## Console
 
 `r4_sslr_reflections`, `r4_sslr_intensity`, `r4_sslr_temporal`, `r4_sslr_max_dist`,
-`r4_sslr_skip_ssfx_ssr`, `r4_sun_csm`, `r4_sun_csm_blend`.
+`r4_sslr_skip_ssfx_ssr`, `r4_sun_csm`, `r4_sun_csm_blend`, `r4_vslr_enable` (IX-Ray offscreen
+reflections, off by default, needs a restart), `r4_vslr_size`, `r4_vslr_faces`, `r4_vslr_far`,
+`r4_vslr_intensity`.
 
 Details, caveats and the full change list: [README-Claude.md](https://github.com/{{REPO}}/blob/{{SHA}}/README-Claude.md).

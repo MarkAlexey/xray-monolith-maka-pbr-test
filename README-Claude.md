@@ -410,8 +410,8 @@ What differs from IX-Ray, and why:
 - No blue-noise texture array exists in Anomaly; interleaved gradient noise is used.
 - IX-Ray's sky fallback inside the trace is dropped (the consumer has its own).
 - IX-Ray's temporal pass sampled the (-1, -1) neighbour twice; fixed to (+1, -1).
-- **VSLR (IX-Ray's offscreen cubemap reflections) is not ported yet.** It needs a reflection
-  element in every geometry blender, a forward shader and a six-face scene pass per frame.
+- **VSLR (IX-Ray's offscreen cubemap reflections)** is ported separately, off by default:
+  see "IX-Ray VSLR (offscreen reflections)" below.
 
 Console: `r4_sslr_reflections 0/1` (needs a game restart; `vid_restart` does not re-read renderer options), `r4_sslr_intensity`, `r4_sslr_temporal`,
 `r4_sslr_max_dist`, `r4_sslr_skip_ssfx_ssr`. Compile-time settings and a debug view are in
@@ -528,6 +528,49 @@ vanilla + ES + SSS (main, AO, SSS, SSR, IL, New Shadow & Light Features, flora, 
 + compat patch, and vanilla + SSS without ES, with and without `MONOLITH_SSFX_CORE`, sunmask,
 `SUN_QUALITY` 2/3 and the debug view; each binds the expected resources (`s_ssfx_sss` only with
 SSS). The C++ was not compiled.
+
+## IX-Ray VSLR (offscreen reflections)
+
+IX-Ray 1.6's "view space local reflections" (`r4_vslr_enable`): the scene around the camera is
+rendered into a small cubemap with a cheap forward shader, converted to an octahedral panorama,
+and the PBR reflections read it, so metals and glossy PBR surfaces reflect the actual
+surroundings (walls, trees, buildings) instead of only the sky. SSLR still wins where its rays
+hit something on screen; VSLR replaces the sky cubemap behind it.
+
+Console (renderer options need a game restart):
+
+| Command | Default | What it does |
+|---|---|---|
+| `r4_vslr_enable` | 0 | 1 = on (needs a restart; off with MSAA) |
+| `r4_vslr_size` | 256 | cube face size in pixels, 64-1024 (restart) |
+| `r4_vslr_faces` | 2 | cube faces re-rendered per frame, 1-6; a full update takes 6 / this many frames |
+| `r4_vslr_far` | 0.4 | capture distance, fraction of the weather's far plane |
+| `r4_vslr_intensity` | 1 | how strongly the capture replaces the sky reflection |
+
+How it is built (`r4_rendertarget_phase_vslr.cpp`):
+
+- Capture before the G-buffer pass: per cube face a separate scene traversal (`GMReflect`: opaque
+  geometry, no HOM, no particles, no lights) drawn with shader element 5 (`SE_R2_REFLECTIONS`),
+  which `uber_reflect()` builds for the flat, alpha-tested, lightmapped, terrain, tree and model
+  blenders: the geometry's own vertex shader with `deffer_vslr_*.ps` (`vslr_capture.h`), writing
+  linear colour (R11G11B10F) and distance (R16F). Faces are aligned with the world axes (IX-Ray
+  aligns them with the camera), so the panorama does not change with the view direction.
+- Lighting in the capture: sun with the baked sun visibility of lightmapped geometry (dynamic
+  objects estimate it from their hemi), sky colour x hemi, the weather's ambient, and the
+  level's baked lightmap colour. PBR textures keep their metalness. No shadow map, no dynamic
+  lights.
+- `vslr_panorama.cs` turns the cubes into the panorama (RGBA16F, premultiplied coverage that fades
+  over the last 30 % of the capture distance and with fog), then the mips are generated.
+  `pbr_ixray.h` (`pbr_specular_irradiance`, `USE_OFFSCREEN_REFLECTIONS`) samples it by
+  reflection direction, roughness picking the mip, as IX-Ray's `CompureSpecularIrradance` does.
+
+Limits: one probe centred on the camera (reflections of far-away surfaces are increasingly off,
+no parallax correction); objects the main view draws as LOD billboards are left out; only PBR
+textures read it (legacy textures keep their cubemap reflections); not recaptured for a scope's
+second viewport. Cost: `r4_vslr_faces` extra traversals and draws of the opaque scene per frame
+at `r4_vslr_size`. Checked: the shaders compile with DXC on vanilla, SSS/ES/Atmospherics (both
+Atmospherics versions) and the GAMMA overlay; the C++ passes `check_cpp.py` (R3 and R4) with no
+new errors. Not yet run in the game.
 
 ## HDR reflections
 

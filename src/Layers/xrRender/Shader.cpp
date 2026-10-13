@@ -120,6 +120,7 @@ ShaderElement::ShaderElement()
 	flags.isWater = FALSE;
 
 	flags.iScopeLense = 0; 	//  Redotix99: for 3D Shader Based Scopes
+	flags.bReflect = FALSE;	// Monolith: IX-Ray VSLR capture element
 	//	0 = eNoLense, 
 	//  1 = eBackLense, 
 	//  2 = eZwriteLense, 
@@ -137,6 +138,7 @@ BOOL ShaderElement::equal(ShaderElement& S)
 	if (flags.bLandscape != S.flags.bLandscape) return FALSE;
 	if (flags.bWmark != S.flags.bWmark) return FALSE;
 	if (flags.bDistort != S.flags.bDistort) return FALSE;
+	if (flags.bReflect != S.flags.bReflect) return FALSE;
 	if (passes.size() != S.passes.size()) return FALSE;
 	for (u32 p = 0; p < passes.size(); p++)
 		if (passes[p] != S.passes[p]) return FALSE;

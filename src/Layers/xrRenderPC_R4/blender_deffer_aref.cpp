@@ -136,6 +136,10 @@ void CBlender_deffer_aref::Compile(CBlender_Compile& C)
 			break;
 
 
+		case SE_R2_REFLECTIONS: // IX-Ray VSLR capture (alpha-tested)
+			uber_reflect(C, "base", TRUE);
+			break;
+
 		case SE_R2_SHADOW: // smap
 			//			if (RImplementation.o.HW_smap)	C.r_Pass	("shadow_direct_base_aref","shadow_direct_base_aref",FALSE,TRUE,TRUE,FALSE,D3DBLEND_ZERO,D3DBLEND_ONE,TRUE,220);
 			//			else							C.r_Pass	("shadow_direct_base_aref","shadow_direct_base_aref",FALSE);

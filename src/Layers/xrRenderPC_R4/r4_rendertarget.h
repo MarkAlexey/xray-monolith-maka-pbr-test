@@ -66,6 +66,7 @@ public:
 	// compute shader for hdao
 	IBlender* b_hdao_cs;
 	IBlender* b_sslr = nullptr; // IX-Ray SSLR
+	IBlender* b_vslr = nullptr; // IX-Ray VSLR panorama
 	IBlender* b_hdao_msaa_cs;
 
 	// [SSS Stuff]
@@ -253,6 +254,28 @@ private:
 	ref_rt rt_sslr_pos_old; // last main-view frame's G-buffer positions
 	ref_shader s_sslr;
 	u32 sslr_history_frame = u32(-1); // frame the SSLR history was last written, -1 = invalid
+
+public: // read by CRender::render_reflections() and binder_vslr_params
+	// IX-Ray VSLR (see r4_rendertarget_phase_vslr.cpp). Created by hand like the CSM array:
+	// the engine's render targets have no cubemap or mip-chain variant.
+	ID3DTexture2D* t_vslr_color_surf = nullptr;	// cube, R11G11B10F
+	ID3DTexture2D* t_vslr_dist_surf = nullptr;	// cube, R16F
+	ID3DTexture2D* t_vslr_depth_surf = nullptr;	// one face, D16
+	ID3DTexture2D* t_vslr_env_surf = nullptr;	// panorama, RGBA16F with mips
+	ID3DRenderTargetView* rt_vslr_color_rtv[6] = {};
+	ID3DRenderTargetView* rt_vslr_dist_rtv[6] = {};
+	ID3DDepthStencilView* rt_vslr_depth_dsv = nullptr;
+	ID3D11UnorderedAccessView* rt_vslr_env_uav = nullptr; // mip 0
+	ref_texture t_vslr_color;
+	ref_texture t_vslr_dist;
+	ref_texture t_vslr_env;
+	ref_shader s_vslr;		// CBlender_vslr element 0: cubes -> panorama (vslr_panorama.cs)
+	u32 vslr_size = 0;		// face size
+	u32 vslr_env_mips = 1;	// panorama mip count (vslr_params.y)
+	float vslr_far = 1.f;	// capture distance of the last capture, metres (vslr_params.z)
+	bool vslr_valid = false;	// every face rendered at least once since creation
+	u32 vslr_captured_faces = 0;	// faces rendered since creation, until vslr_valid
+private:
 	ref_rt rt_half_depth;
 	ref_shader s_ssao;
 	ref_shader s_ssao_msaa[8];
@@ -433,6 +456,10 @@ public:
 	void phase_ssao();
 	void phase_hdao();
 	void phase_sslr(); // IX-Ray SSLR
+	// IX-Ray VSLR (r4_rendertarget_phase_vslr.cpp)
+	void create_vslr(u32 size);
+	void destroy_vslr();
+	void phase_vslr_panorama();
 	void phase_downsamp();
 	void phase_wallmarks();
 	void phase_smap_direct(light* L, u32 sub_phase);

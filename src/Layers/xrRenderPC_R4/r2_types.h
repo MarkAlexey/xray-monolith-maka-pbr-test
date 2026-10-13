@@ -88,6 +88,11 @@
 #define		r2_RT_sslr_temp			"$user$sslr_temp"	// spatially resolved reflection
 #define		r2_RT_sslr_color		"$user$sslr_color"	// combine_1 output of the last MAIN-view frame (RGBA8, the colour SSLR reflects)
 #define		r2_RT_sslr_pos_old		"$user$sslr_pos_old"	// G-buffer positions of the last main-view frame (history validation)
+
+// Monolith: IX-Ray VSLR (offscreen reflections, r4_rendertarget_phase_vslr.cpp)
+#define		r2_RT_vslr_color		"$user$vslr_color"	// cubemap, R11G11B10F: linear radiance of the scene around the camera
+#define		r2_RT_vslr_dist			"$user$vslr_dist"	// cubemap, R16F: distance from the camera (cleared to "far")
+#define		r2_RT_vslr_env			"$user$vslr_env"	// octahedral panorama + mips, RGBA16F: rgb gamma colour, a sky/fog weight; read by combine as s_env_fwd
 #define		r2_RT_ssfx_temp2		"$user$ssfx_temp2" // SSS Temp3
 #define		r2_RT_ssfx_temp3		"$user$ssfx_temp3"
 #define		r2_RT_ssfx_accum		"$user$ssfx_accum" // SSS Volumetric
@@ -150,6 +155,8 @@ const u32 LUMINANCE_size = 16;
 #define		SE_R2_NORMAL_HQ		0	// high quality/detail
 #define		SE_R2_NORMAL_LQ		1	// low quality
 #define		SE_R2_SHADOW		2	// shadow generation
+// E[3] is SSS's very-low-quality terrain, E[4] emissive/distort; E[5] was unused by geometry blenders
+#define		SE_R2_REFLECTIONS	5	// Monolith: IX-Ray VSLR capture (uber_reflect, only with r4_vslr_enable 1)
 
 // spot
 #define		SE_L_FILL			0

@@ -1083,6 +1083,9 @@
     <ClCompile Include="r4_rendertarget_phase_sslr.cpp">
       <Filter>Core_Target</Filter>
     </ClCompile>
+    <ClCompile Include="r4_rendertarget_phase_vslr.cpp">
+      <Filter>Core_Target</Filter>
+    </ClCompile>
     <ClCompile Include="r4_rendertarget_accum_csm.cpp">
       <Filter>Core_Target</Filter>
     </ClCompile>

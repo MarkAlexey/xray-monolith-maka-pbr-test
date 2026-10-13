@@ -148,6 +148,9 @@ void CBlender_deffer_model::Compile(CBlender_Compile& C)
 			if (bUseATOC) C.RS.SetRS(D3DRS_ZFUNC, D3DCMP_EQUAL);
 			C.r_End();
 			break;
+		case SE_R2_REFLECTIONS: // IX-Ray VSLR capture
+			uber_reflect(C, "model", bAref);
+			break;
 		case SE_R2_SHADOW: // smap
 			if (bAref)
 			{

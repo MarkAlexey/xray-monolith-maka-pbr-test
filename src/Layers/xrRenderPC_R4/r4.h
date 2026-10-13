@@ -47,6 +47,7 @@ public:
 		u32 ssfx_hud_raindrops : 1;
 		u32 ssfx_ssr : 1;
 		u32 sslr : 1; // IX-Ray SSLR (r4_sslr_reflections, no MSAA)
+		u32 vslr : 1; // IX-Ray VSLR offscreen reflections (r4_vslr_enable, no MSAA)
 		u32 es_installed : 1; // Enhanced Shaders present (r3\pbr_settings.h)
 		u32 sun_csm : 1; // IX-Ray single-pass cascaded sun (r4_sun_csm, no MSAA)
 		u32 ssfx_terrain : 1;
@@ -199,6 +200,11 @@ public:
 	CDSGraphManager GMBase = CDSGraphManager(u32(CDSGraphManager::VQ_HOM + CDSGraphManager::VQ_SSA + CDSGraphManager::VQ_FADE),
 		u32(STYPE_RENDERABLE + STYPE_PARTICLE + STYPE_LIGHTSOURCE),
 		{ true,true,true,true,false,false,false });
+	// IX-Ray VSLR capture (r4_rendertarget_phase_vslr.cpp): opaque geometry only, no HOM (fl_normal
+	// off: the main view's occlusion does not apply to other directions), no particles/lights
+	CDSGraphManager GMReflect = CDSGraphManager(u32(CDSGraphManager::VQ_SSA), u32(STYPE_RENDERABLE),
+		{ true,false,false,false,false,false,false });
+	u32 vslr_next_face = 0; // first cube face to re-render this frame (r4_vslr_faces per frame)
 
 	xr_task_group												main_task_static, main_task_dynamic, sun_cascades_task, raimwet_task;
 
@@ -218,6 +224,7 @@ private:
 public:
 	IRender_Sector* rimp_detectSector(Fvector& P, Fvector& D);
 	void render_forward();
+	void render_reflections(); // IX-Ray VSLR capture, before the G-buffer pass (r4_rendertarget_phase_vslr.cpp)
 	void render_Reticle();
 	void render_smap_direct(Fmatrix& mCombined);
 	void render_indirect(light* L);

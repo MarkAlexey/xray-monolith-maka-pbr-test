@@ -239,6 +239,13 @@ float ps_r4_sslr_temporal = 0.9f; // history weight
 float ps_r4_sslr_max_dist = 60.0f; // longest ray, metres
 int ps_r4_sslr_skip_ssfx_ssr = 0; // skip the SSS SSR pass while SSLR is on
 
+// IX-Ray VSLR (offscreen cubemap reflections, r4_rendertarget_phase_vslr.cpp)
+int ps_r4_vslr_enable = 0; // r4_vslr_enable, needs a game restart (read in CRender::create)
+int ps_r4_vslr_size = 256; // r4_vslr_size, cubemap face size in pixels, needs a game restart
+int ps_r4_vslr_faces = 2; // r4_vslr_faces, cube faces re-rendered per frame (6 = all, every frame)
+float ps_r4_vslr_far = 0.4f; // r4_vslr_far, capture distance as a fraction of the weather's far plane
+float ps_r4_vslr_intensity = 1.0f; // r4_vslr_intensity, how strongly the capture replaces the sky reflection
+
 // IX-Ray CSM
 int ps_r4_sun_csm = 1; // r4_sun_csm, needs a game restart (read in CRender::create)
 float ps_r4_sun_csm_blend = 0.1f; // cross-fade band between cascades, fraction of a cascade
@@ -1381,6 +1388,13 @@ void xrRender_initconsole()
 	CMD4(CCC_Float, "r4_sslr_temporal", &ps_r4_sslr_temporal, 0.f, 0.98f);
 	CMD4(CCC_Float, "r4_sslr_max_dist", &ps_r4_sslr_max_dist, 1.f, 300.f);
 	CMD4(CCC_Integer, "r4_sslr_skip_ssfx_ssr", &ps_r4_sslr_skip_ssfx_ssr, 0, 1);
+
+	// IX-Ray VSLR
+	CMD4(CCC_Integer, "r4_vslr_enable", &ps_r4_vslr_enable, 0, 1);
+	CMD4(CCC_Integer, "r4_vslr_size", &ps_r4_vslr_size, 64, 1024);
+	CMD4(CCC_Integer, "r4_vslr_faces", &ps_r4_vslr_faces, 1, 6);
+	CMD4(CCC_Float, "r4_vslr_far", &ps_r4_vslr_far, 0.05f, 1.f);
+	CMD4(CCC_Float, "r4_vslr_intensity", &ps_r4_vslr_intensity, 0.f, 1.f);
 
 	// IX-Ray CSM
 	CMD4(CCC_Integer, "r4_sun_csm", &ps_r4_sun_csm, 0, 1);

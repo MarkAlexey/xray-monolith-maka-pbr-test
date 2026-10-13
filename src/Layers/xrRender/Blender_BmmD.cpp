@@ -373,6 +373,12 @@ void CBlender_BmmD::Compile(CBlender_Compile& C)
 		C.r_End();
 		break;
 
+#if RENDER == R_R4
+	case SE_R2_REFLECTIONS: // IX-Ray VSLR capture: the terrain's colour map (no detail layers)
+		uber_reflect(C, "base", FALSE);
+		break;
+#endif
+
 	case SE_R2_SHADOW: // smap
 //if (RImplementation.o.HW_smap)	C.r_Pass	("shadow_direct_base","dumb",	FALSE,TRUE,TRUE,FALSE);
 		//else							C.r_Pass	("shadow_direct_base","shadow_direct_base",FALSE);

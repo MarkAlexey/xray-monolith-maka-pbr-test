@@ -278,6 +278,11 @@ void CBlender_Tree::Compile(CBlender_Compile& C)
 			C.RS.SetRS(D3DRS_ZFUNC, D3DCMP_EQUAL);
 		C.r_End();
 		break;
+#if RENDER == R_R4
+	case SE_R2_REFLECTIONS: // IX-Ray VSLR capture (no wind: the capture is small and blurred)
+		uber_reflect(C, tvs, oBlend.value);
+		break;
+#endif
 	case SE_R2_SHADOW: // smap-spot
 		//	TODO: DX10: Use dumb shader for shadowmap since shadows are drawn using hardware PCF
 		if (oBlend.value)

@@ -89,7 +89,8 @@ PATCH_LEGACY_IXRAY = True
 
 # Copy this repository's PBR-only headers into the overlay (see the caveat above).
 INCLUDE_REPO_HEADERS = True
-REPO_HEADERS = ["pbr_ixray.h", "pbr_hud.h", "ixray_brdf.h", "hdr_ibl.h", "sslr_apply.h", "sslr_settings.h"]
+REPO_HEADERS = ["pbr_ixray.h", "pbr_hud.h", "ixray_brdf.h", "hdr_ibl.h", "sslr_apply.h", "sslr_settings.h",
+                "vslr_common.h"]
 
 # Files whose failure stops the run: without them PBR textures are wrong. Any other file that
 # fails is left out with a warning.

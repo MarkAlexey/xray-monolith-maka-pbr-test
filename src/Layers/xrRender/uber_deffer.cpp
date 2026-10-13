@@ -394,3 +394,28 @@ void uber_shadow(CBlender_Compile& C, LPCSTR _vspec)
 		C.r_Pass("shadow_direct_base", "dumb", FALSE,TRUE,TRUE,FALSE);
 }
 #endif
+
+#if RENDER == R_R4
+bool uber_reflect(CBlender_Compile& C, LPCSTR _vspec, BOOL _aref)
+{
+	if (!RImplementation.o.vslr)
+		return false;
+
+	// LQ variant: no detail, no parallax, no tessellation; shader names
+	// deffer_vslr[_lmh][_aref]_flat|_bump (+ the texture's PBR options)
+	uber_deffer(C, false, _vspec, "vslr", _aref, 0, true);
+
+	// Static lightmap colour of level geometry (textures: base, lightmap colour, lightmap hemi):
+	// the capture has no dynamic lights, the baked ones light interiors
+	if (C.L_textures.size() >= 3)
+	{
+		pcstr lm = C.L_textures[1].c_str();
+		if (lm && lm[0] == 'l' && lm[1] == 'm' && lm[2] == 'a' && lm[3] == 'p')
+			C.r_dx10Texture("s_lmap", C.L_textures[1]);
+	}
+
+	C.SH->flags.bReflect = TRUE;
+	C.r_End();
+	return true;
+}
+#endif

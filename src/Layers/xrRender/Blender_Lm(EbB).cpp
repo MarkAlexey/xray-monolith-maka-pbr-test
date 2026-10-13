@@ -162,8 +162,20 @@ void CBlender_LmEbB::Compile(CBlender_Compile& C)
 //////////////////////////////////////////////////////////////////////////
 // R3
 //////////////////////////////////////////////////////////////////////////
+#include "uber_deffer.h"
+
 void CBlender_LmEbB::Compile(CBlender_Compile& C)
 {
+#if RENDER == R_R4
+	// IX-Ray VSLR capture. This blender compiles the same forward pass for every element, so
+	// E[SE_R2_REFLECTIONS] gets its own (empty with r4_vslr_enable 0; it was never used before)
+	if (C.iElement == SE_R2_REFLECTIONS)
+	{
+		if (!oBlend.value)
+			uber_reflect(C, "base", FALSE);
+		return;
+	}
+#endif
 	if (oBlend.value) C.r_Pass("lmapE", "lmapE",TRUE,TRUE,FALSE,TRUE, D3DBLEND_SRCALPHA, D3DBLEND_INVSRCALPHA, TRUE, 0);
 	else C.r_Pass("lmapE", "lmapE",TRUE);
 	//C.r_Sampler			("s_base",	C.L_textures[0]	);

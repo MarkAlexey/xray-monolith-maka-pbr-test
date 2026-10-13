@@ -146,6 +146,8 @@ public:
 		u32 isWater : 1;
 
 		u32 iScopeLense : 2; //  Redotix99: for 3D Shader Based Scopes 		
+
+		u32 bReflect : 1; // Monolith: IX-Ray VSLR capture element (E[SE_R2_REFLECTIONS], uber_reflect)
 	};
 
 public:

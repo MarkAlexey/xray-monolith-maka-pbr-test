@@ -111,6 +111,10 @@ void CRender::Render()
 	ViewBase.CreateFromMatrix(Device.mFullTransform, FRUSTUM_P_LRTB + FRUSTUM_P_FAR);
     HOM.MT_RENDER();
 
+	// IX-Ray VSLR: capture the surroundings for the reflections (r4_rendertarget_phase_vslr.cpp).
+	// Before the G-buffer pass, which binds its own targets next.
+	render_reflections();
+
 	Target->phase_scene_prepare();
 
 

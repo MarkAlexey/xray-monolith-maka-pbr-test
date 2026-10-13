@@ -440,6 +440,7 @@ CRenderTarget::CRenderTarget()
 
 	// IX-Ray SSLR
 	b_sslr = xr_new<CBlender_sslr>();
+	b_vslr = xr_new<CBlender_vslr>();
 
 	// HDAO
 	b_hdao_cs = xr_new<CBlender_CS_HDAO>();
@@ -947,6 +948,16 @@ CRenderTarget::CRenderTarget()
 		s_sslr.create(b_sslr);
 	}
 
+	// IX-Ray VSLR: two cubemaps, a depth face and the panorama (r4_rendertarget_phase_vslr.cpp)
+	if (RImplementation.o.vslr)
+	{
+		create_vslr(u32(_max(64, _min(1024, ps_r4_vslr_size))));
+		if (t_vslr_env_surf)
+			s_vslr.create(b_vslr);
+		else
+			RImplementation.o.vslr = FALSE;
+	}
+
 	// HDAO
 	if (RImplementation.o.ssao_hdao && RImplementation.o.ssao_ultra)
 	{
@@ -1413,6 +1424,8 @@ CRenderTarget::~CRenderTarget()
 
 	xr_delete(b_hdao_cs);
 	xr_delete(b_sslr);
+	destroy_vslr();
+	xr_delete(b_vslr);
 	if (RImplementation.o.dx10_msaa)
 	{
 		xr_delete(b_hdao_msaa_cs);

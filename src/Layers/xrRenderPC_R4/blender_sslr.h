@@ -15,3 +15,18 @@ public:
 	CBlender_sslr();
 	virtual ~CBlender_sslr();
 };
+
+// Monolith: IX-Ray VSLR (offscreen reflections) panorama pass, see r4_rendertarget_phase_vslr.cpp.
+// Element 0: the captured cubemaps -> octahedral panorama (r3\vslr_panorama.cs)
+class CBlender_vslr : public IBlender
+{
+public:
+	virtual LPCSTR getComment() { return "INTERNAL: IX-Ray offscreen reflections panorama"; }
+	virtual BOOL canBeDetailed() { return FALSE; }
+	virtual BOOL canBeLMAPped() { return FALSE; }
+
+	virtual void Compile(CBlender_Compile& C);
+
+	CBlender_vslr() { description.CLS = 0; }
+	virtual ~CBlender_vslr() {}
+};

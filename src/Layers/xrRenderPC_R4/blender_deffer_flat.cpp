@@ -79,5 +79,8 @@ void CBlender_deffer_flat::Compile(CBlender_Compile& C)
 		C.r_ColorWriteEnable(false, false, false, false);
 		C.r_End();
 		break;
+	case SE_R2_REFLECTIONS: // IX-Ray VSLR capture
+		uber_reflect(C, "base", FALSE);
+		break;
 	}
 }

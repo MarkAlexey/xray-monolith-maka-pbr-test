@@ -20,7 +20,8 @@
 //  - Sky / environment fallback is NOT done here: a miss writes confidence 0 and the
 //    consumer (combine_1) keeps its own cubemap reflection. That keeps the IBL calibration
 //    of PBR and Enhanced Shaders untouched.
-//  - IX-Ray's offscreen-cubemap fallback (VSLR) is not part of this port yet.
+//  - IX-Ray's offscreen-cubemap reflections (VSLR, r4_vslr_enable) are ported separately:
+//    they live in the consumer's reflection (pbr_ixray.h), so SSLR misses fall back to them.
 //
 // Deliberately self-contained: it does not include common.h, so it compiles the same with
 // vanilla, SSS and Enhanced Shaders installed. Constants are bound by name by the engine.

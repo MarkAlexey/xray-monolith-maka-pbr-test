@@ -68,12 +68,25 @@ bool CRender::is_sun()
 
 float r_dtex_range = 50.f;
 //////////////////////////////////////////////////////////////////////////
+// IX-Ray VSLR: the capture element, or nothing (the visual is left out of the capture) when its
+// blender has none. Only elements built by uber_reflect() are used: some blenders compile the
+// same pass for every element index, which would write the wrong outputs here.
+static ShaderElement* vslr_select_sh(dxRender_Visual* pVisual)
+{
+	ShaderElement* E = pVisual->shader->E[SE_R2_REFLECTIONS]._get();
+	return (E && E->flags.bReflect && E->passes.size()) ? E : nullptr;
+}
+
 ShaderElement* CRender::rimp_select_sh_dynamic(dxRender_Visual* pVisual, float cdist_sq)
 {
 	int id = SE_R2_SHADOW;
 	if (CRender::PHASE_NORMAL == RImplementation.phase)
 	{
 		id = ((_sqrt(cdist_sq) - pVisual->vis.sphere.R) < r_dtex_range) ? SE_R2_NORMAL_HQ : SE_R2_NORMAL_LQ;
+	}
+	else if (CRender::PHASE_REFLECT == RImplementation.phase)
+	{
+		return vslr_select_sh(pVisual);
 	}
 	return pVisual->shader->E[id]._get();
 }
@@ -82,6 +95,10 @@ ShaderElement* CRender::rimp_select_sh_dynamic(dxRender_Visual* pVisual, float c
 ShaderElement* CRender::rimp_select_sh_static(dxRender_Visual* pVisual, float cdist_sq)
 {
 	int id = SE_R2_SHADOW;
+	if (CRender::PHASE_REFLECT == RImplementation.phase)
+	{
+		return vslr_select_sh(pVisual);
+	}
 	if (CRender::PHASE_NORMAL == RImplementation.phase)
 	{
 		if (pVisual->shader->E[0]->flags.isLandscape)
@@ -161,6 +178,19 @@ static class cl_sslr_params : public R_constant_setup
 		RCache.set_c(C, intensity, ps_r4_sslr_temporal, ps_r4_sslr_max_dist, float(Device.dwFrame % 1024));
 	}
 } binder_sslr_params;
+
+// IX-Ray VSLR, read by pbr_ixray.h (s_env_fwd): x = intensity, y = mip count of the panorama
+// (roughness picks the mip), z = capture distance in metres (fog weight), w unused
+static class cl_vslr_params : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		const CRenderTarget* T = RImplementation.Target;
+		// Intensity 0 until every cube face has been captured once (the panorama is sky until then)
+		const float intensity = (T && T->vslr_valid) ? ps_r4_vslr_intensity : 0.f;
+		RCache.set_c(C, intensity, T ? float(T->vslr_env_mips) : 1.f, T ? T->vslr_far : 1.f, 0.f);
+	}
+} binder_vslr_params;
 
 #ifdef TREE_WIND_EFFECT
 static class cl_tree_amplitude_intensity : public R_constant_setup
@@ -530,6 +560,13 @@ void CRender::create()
 	// Enhanced Shaders present: tells engine-owned shaders which tonemap curve combine_1 uses
 	o.es_installed = FS.exist(fn, "$game_shaders$", "r3\\pbr_settings", ".h") ? 1 : 0;
 
+	// IX-Ray VSLR: needs its capture and panorama shaders; not with MSAA, like SSLR
+	// (r4_rendertarget_phase_vslr.cpp)
+	o.vslr = (ps_r4_vslr_enable != 0) && !o.dx10_msaa
+		&& FS.exist(fn, "$game_shaders$", "r3\\vslr_panorama", ".cs")
+		&& FS.exist(fn, "$game_shaders$", "r3\\deffer_vslr_bump", ".ps");
+	Msg("- IX-Ray VSLR %s", o.vslr ? "ON" : (ps_r4_vslr_enable && o.dx10_msaa ? "OFF (MSAA)" : "OFF"));
+
 	// IX-Ray single-pass cascaded sun (r4_rendertarget_accum_csm.cpp)
 	o.sun_csm = (ps_r4_sun_csm != 0) && !o.dx10_msaa && !o.sunfilter && o.HW_smap && FS.exist(fn, "$game_shaders$", "r3\\accum_sun_csm", ".ps");
 	Msg("- IX-Ray CSM %s", o.sun_csm ? "ON" : "OFF");
@@ -539,6 +576,7 @@ void CRender::create()
 	RM->RegisterConstantSetup("parallax", &binder_parallax);
 	RM->RegisterConstantSetup("water_intensity", &binder_water_intensity);
 	RM->RegisterConstantSetup("sslr_params", &binder_sslr_params);
+	RM->RegisterConstantSetup("vslr_params", &binder_vslr_params);
 	RM->RegisterConstantSetup("sun_shafts_intensity", &binder_sun_shafts_intensity);
 	RM->RegisterConstantSetup("m_AlphaRef", &binder_alpha_ref);
 	RM->RegisterConstantSetup("pos_decompression_params", &binder_pos_decompress_params);
@@ -1874,6 +1912,16 @@ HRESULT CRender::shader_compile(
 		def_it++;
 	}
 	sh_name[len] = '0' + char(o.sslr);
+	++len;
+
+	// IX-Ray VSLR: the ambient (pbr_ixray.h) reads the offscreen reflection panorama s_env_fwd
+	if (o.vslr)
+	{
+		defines[def_it].Name = "USE_OFFSCREEN_REFLECTIONS";
+		defines[def_it].Definition = "1";
+		def_it++;
+	}
+	sh_name[len] = '0' + char(o.vslr);
 	++len;
 
 	//Be carefull!!!!! this should be at the end to correctly generate
