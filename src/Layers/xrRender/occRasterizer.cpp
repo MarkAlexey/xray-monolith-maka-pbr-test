@@ -4,6 +4,7 @@
 
 #include "stdafx.h"
 #include "occRasterizer.h"
+#include <emmintrin.h>
 
 #if DEBUG
 #include "dxRenderDeviceRender.h"
@@ -23,28 +24,36 @@ void __stdcall fillDW_8x(void* _p, u32 size, u32 value)
 	}
 }
 
-IC void propagade_depth(LPVOID p_dest, LPVOID p_src, int dim)
+IC __m128i max_s32(__m128i left, __m128i right)
 {
-	occD* dest = (occD*)p_dest;
-	occD* src = (occD*)p_src;
+    const __m128i mask = _mm_cmpgt_epi32(left, right);
+    return _mm_or_si128(_mm_and_si128(mask, left), _mm_andnot_si128(mask, right));
+}
 
-	for (int y = 0; y < dim; y++)
-	{
-		for (int x = 0; x < dim; x++)
-		{
-			occD* base0 = src + (y * 2 + 0) * (dim * 2) + (x * 2);
-			occD* base1 = src + (y * 2 + 1) * (dim * 2) + (x * 2);
-			occD f1 = base0[0];
-			occD f2 = base0[1];
-			occD f3 = base1[0];
-			occD f4 = base1[1];
-			occD f = f1;
-			if (f2 > f) f = f2;
-			if (f3 > f) f = f3;
-			if (f4 > f) f = f4;
-			dest[y * dim + x] = f;
-		}
-	}
+IC void propagade_depth(occD* dest, const occD* src, int dim)
+{
+    for (int y = 0; y < dim; y++)
+    {
+        const occD* row0 = src + y * 2 * dim * 2;
+        const occD* row1 = row0 + dim * 2;
+        occD* output = dest + y * dim;
+        for (int x = 0; x < dim; x += 4)
+        {
+            const int source_x = x * 2;
+            __m128i first = max_s32(
+                _mm_loadu_si128((const __m128i*)(row0 + source_x)),
+                _mm_loadu_si128((const __m128i*)(row1 + source_x)));
+            __m128i second = max_s32(
+                _mm_loadu_si128((const __m128i*)(row0 + source_x + 4)),
+                _mm_loadu_si128((const __m128i*)(row1 + source_x + 4)));
+
+            first = max_s32(first, _mm_shuffle_epi32(first, _MM_SHUFFLE(2, 3, 0, 1)));
+            second = max_s32(second, _mm_shuffle_epi32(second, _MM_SHUFFLE(2, 3, 0, 1)));
+            first = _mm_shuffle_epi32(first, _MM_SHUFFLE(2, 0, 2, 0));
+            second = _mm_shuffle_epi32(second, _MM_SHUFFLE(2, 0, 2, 0));
+            _mm_storeu_si128((__m128i*)(output + x), _mm_unpacklo_epi64(first, second));
+        }
+    }
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -69,10 +78,9 @@ void occRasterizer::clear()
       PROF_TAG("Coarse rejects", coarse_rejects.exchange(0, std::memory_order_relaxed));
       PROF_TAG("Fine visible", fine_visible.exchange(0, std::memory_order_relaxed)); }
 #endif
-	u32 size = occ_dim * occ_dim;
-	float f = 1.f;
-	Memory.mem_fill32(bufFrame, 0, size * (sizeof(void*) / 4));
-	Memory.mem_fill32(bufDepth, *LPDWORD(&f), size);
+    PROF_EVENT("Render.HOM.Clear");
+    std::fill_n(&bufFrame[0][0], occ_dim * occ_dim, nullptr);
+    std::fill_n(&bufDepth[0][0], occ_dim * occ_dim, 1.f);
 }
 
 IC BOOL shared(occTri* T1, occTri* T2)
@@ -86,6 +94,7 @@ IC BOOL shared(occTri* T1, occTri* T2)
 
 void occRasterizer::propagade()
 {
+    PROF_EVENT("Render.HOM.BuildDepthHierarchy");
 	// Clip-and-propagade zero level
 	occTri** pFrame = get_frame();
 	float* pDepth = get_depth();
@@ -138,9 +147,9 @@ void occRasterizer::propagade()
 	}
 
 	// Propagate other levels
-	propagade_depth(bufDepth_1, bufDepth_0, occ_dim_1);
-	propagade_depth(bufDepth_2, bufDepth_1, occ_dim_2);
-	propagade_depth(bufDepth_3, bufDepth_2, occ_dim_3);
+	propagade_depth(&bufDepth_1[0][0], &bufDepth_0[0][0], occ_dim_1);
+	propagade_depth(&bufDepth_2[0][0], &bufDepth_1[0][0], occ_dim_2);
+	propagade_depth(&bufDepth_3[0][0], &bufDepth_2[0][0], occ_dim_3);
 }
 
 void occRasterizer::on_dbg_render()
