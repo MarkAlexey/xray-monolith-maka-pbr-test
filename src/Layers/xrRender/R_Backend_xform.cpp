@@ -16,6 +16,17 @@ void R_xforms::set_W(const Fmatrix& m)
 	RCache.set_xform(D3DTS_WORLD, m);
 }
 
+void R_xforms::set_W_prepared(const Fmatrix& m, const Fmatrix& wv, const Fmatrix& wvp)
+{
+    m_w = m; m_wv = wv; m_wvp = wvp;
+    if (c_w) RCache.set_c(c_w, m_w);
+    if (c_wv) RCache.set_c(c_wv, m_wv);
+    if (c_wvp) RCache.set_c(c_wvp, m_wvp);
+    m_bInvWValid = false;
+    if (c_invw) apply_invw();
+    RCache.set_xform(D3DTS_WORLD, m);
+}
+
 void R_xforms::set_V(const Fmatrix& m)
 {
 	m_v.set(m);

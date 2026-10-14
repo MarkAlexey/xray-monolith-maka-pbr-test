@@ -83,6 +83,40 @@ void CDSGraphManager::r_dsgraph_render_graph_sorted(R_dsgraph::mapDSGraphItems<T
 	RCache.set_xform_world(Fidentity);
 }
 
+#if defined(USE_DX11) && RENDER == R_R4
+void CDSGraphManager::SetPreparedWorld(const Fmatrix* world)
+{
+    const Fmatrix& view = RCache.get_xform_view();
+    const Fmatrix& projection = RCache.get_xform_project();
+    if (prepared_frame != Device.dwFrame || memcmp(&prepared_view, &view, sizeof(Fmatrix)) ||
+        memcmp(&prepared_projection, &projection, sizeof(Fmatrix)))
+    {
+        prepared_worlds.clear();
+        prepared_frame = Device.dwFrame;
+        prepared_view = view;
+        prepared_projection = projection;
+    }
+    auto found = prepared_worlds.find(world);
+    if (found == prepared_worlds.end() || memcmp(&found->second.world, world, sizeof(Fmatrix)))
+    {
+        PROF_EVENT("Render.Graph.PrepareWorldMatrix");
+        // Bound retained scratch; a very large scene retains the native path.
+        if (prepared_worlds.size() >= 8192)
+        {
+            RCache.set_xform_world(*world);
+            return;
+        }
+        auto& result = prepared_worlds[world];
+        result.world = *world;
+        result.view.mul_43(view, result.world);
+        result.projection.mul(projection, result.view);
+        found = prepared_worlds.find(world);
+    }
+    const auto& result = found->second;
+    RCache.xforms.set_W_prepared(result.world, result.view, result.projection);
+}
+#endif
+
 void CDSGraphManager::r_dsgraph_render_graph(RenderQueueArray& queues, u32 _priority, bool _clear, bool static_geometry)
 {
 	RCache.set_xform_world(Fidentity);
@@ -183,7 +217,11 @@ void CDSGraphManager::r_dsgraph_render_graph(RenderQueueArray& queues, u32 _prio
 			auto& item = packet.item;
 			if (!static_geometry)
 			{
-				RCache.set_xform_world(*item.pMatrix);
+				#if defined(USE_DX11) && RENDER == R_R4
+                SetPreparedWorld(item.pMatrix);
+#else
+                RCache.set_xform_world(*item.pMatrix);
+#endif
 				RImplementation.apply_object(item.pObject);
 				RImplementation.apply_lmaterial();
 			}

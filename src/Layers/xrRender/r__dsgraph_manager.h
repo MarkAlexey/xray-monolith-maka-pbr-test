@@ -73,6 +73,16 @@ public:
 	void add_leafs_Dynamic(xr_vector<IRenderVisual*>& children, Fmatrix* xform);
 	void r_dsgraph_insert_dynamic(dxRender_Visual* pVisual, Fmatrix* xform);
 
+#if defined(USE_DX11) && RENDER == R_R4
+    struct PreparedWorld
+    {
+        Fmatrix world, view, projection;
+    };
+    xr_unordered_flat_map<const Fmatrix*, PreparedWorld> prepared_worlds;
+    Fmatrix prepared_view, prepared_projection;
+    u32 prepared_frame = u32(-1);
+    void SetPreparedWorld(const Fmatrix* world);
+#endif
 	void AddToRenderQueue(R_dsgraph::RenderQueue& queue, const R_dsgraph::DSGraphItem<u32, false>& item, const SPass& pass);
 	void r_dsgraph_render_graph(R_dsgraph::RenderQueueArray& queue, u32 _priority, bool _clear = true, bool static_geometry = true);
 	IC void r_dsgraph_render_graph(u32 _priority, bool _clear = true)
@@ -120,6 +130,10 @@ public:
 	{
 		xrSRWLockGuard guard(&S_LC, false);
 		RGraph.clear();
+#if defined(USE_DX11) && RENDER == R_R4
+        prepared_worlds.clear();
+        prepared_frame = u32(-1);
+#endif
 		if (m_sector_frustums.size())
 		{
 			for (auto& pair : m_sector_frustums)

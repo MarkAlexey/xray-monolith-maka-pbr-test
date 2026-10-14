@@ -41,6 +41,7 @@ public:
 	R_xforms();
 	void unmap();
 	void set_W(const Fmatrix& m);
+    void set_W_prepared(const Fmatrix& world, const Fmatrix& view, const Fmatrix& projection);
 	void set_V(const Fmatrix& m);
 	void set_P(const Fmatrix& m);
 	IC const Fmatrix& get_W() { return m_w; }
