@@ -29,6 +29,7 @@ dx10ConstantBuffer::dx10ConstantBuffer(ID3DShaderReflectionConstantBuffer* pTabl
 	//	Fill member list with variable descriptions
 	m_MembersList.resize(Desc.Variables);
 	m_MembersNames.resize(Desc.Variables);
+    m_MembersOffsets.resize(Desc.Variables);
 	for (u32 i = 0; i < Desc.Variables; ++i)
 	{
 		ID3DShaderReflectionVariable* pVar;
@@ -44,6 +45,7 @@ dx10ConstantBuffer::dx10ConstantBuffer(ID3DShaderReflectionConstantBuffer* pTabl
 		//	Buffers with the same layout can contain totally different members
 		CHK_DX(pVar->GetDesc(&var_desc));
 		m_MembersNames[i] = var_desc.Name;
+        m_MembersOffsets[i] = var_desc.StartOffset;
 	}
 
 	m_uiMembersCRC = crc32(&m_MembersList[0], Desc.Variables * sizeof(m_MembersList[0]));
@@ -59,6 +61,9 @@ bool dx10ConstantBuffer::Similar(dx10ConstantBuffer& _in)
 {
 	if (m_strBufferName._get() != _in.m_strBufferName._get())
 		return false;
+
+	if (m_uiBufferSize != _in.m_uiBufferSize || m_MembersOffsets != _in.m_MembersOffsets)
+        return false;
 
 	if (m_eBufferType != _in.m_eBufferType)
 		return false;
@@ -83,6 +88,24 @@ bool dx10ConstantBuffer::Similar(dx10ConstantBuffer& _in)
 
 	return true;
 }
+
+#ifdef USE_DX11
+bool dx10ConstantBuffer::WriteFloat4Array(R_constant* C, R_constant_load& L, const Fvector4* data, u32 count)
+{
+    if (!C || C->type != RC_float || L.cls != RC_1x4 || !data || !count ||
+        L.index > m_uiBufferSize || count > (m_uiBufferSize - L.index) / sizeof(Fvector4)) return false;
+    for (u32 i = 0; i < m_MembersNames.size(); ++i)
+        if (m_MembersNames[i] == C->name && m_MembersOffsets[i] == L.index)
+        {
+            const auto& type = m_MembersList[i];
+            if (type.Class != D3D_SVC_VECTOR || type.Type != D3D_SVT_FLOAT ||
+                type.Rows != 1 || type.Columns != 4 || type.Elements < count) return false;
+            Write(L.index, data, count * sizeof(Fvector4));
+            return true;
+        }
+    return false;
+}
+#endif
 
 void dx10ConstantBuffer::Flush()
 {

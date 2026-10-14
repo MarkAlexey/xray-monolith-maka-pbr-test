@@ -35,6 +35,9 @@ public:
 	void set_bytes(R_constant_load& L, const void* data, u32 bytes);
 
 	void* AccessDirect(R_constant_load& L, u32 DataSize);
+#ifdef USE_DX11
+    bool WriteFloat4Array(R_constant* C, R_constant_load& L, const Fvector4* data, u32 count);
+#endif
 
 private:
 	void Write(u32 offset, const void* value, u32 size);
@@ -50,6 +53,7 @@ private:
 	u32 m_uiMembersCRC;
 	xr_vector<D3D_SHADER_TYPE_DESC> m_MembersList;
 	xr_vector<shared_str> m_MembersNames;
+    xr_vector<u32> m_MembersOffsets;
 
 	ID3DBuffer* m_pBuffer;
 	u32 m_uiBufferSize; //	Cache buffer size for debug validation

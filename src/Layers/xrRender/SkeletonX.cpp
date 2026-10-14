@@ -141,10 +141,15 @@ void CSkeletonX::_Render(ref_geom& hGeom, u32 vCount, u32 iOffset, u32 pCount)
                 const Fvector4* previous_rows = previous_needed ? Parent->RenderPalette(count, true) : nullptr;
                 if (current_rows && (!previous_needed || previous_rows))
                 {
-                    for (u32 row = 0; row < count * 3; ++row)
+                    const bool current_block = RCache.set_vertex_array_block(array, current_rows, count * 3);
+                    const bool previous_block = !previous_rows || RCache.set_vertex_array_block(array_prev, previous_rows, count * 3);
+                    if (!current_block || !previous_block)
                     {
-                        RCache.set_ca(array, row, current_rows[row]);
-                        if (previous_rows) RCache.set_ca(array_prev, row, previous_rows[row]);
+                        for (u32 row = 0; row < count * 3; ++row)
+                        {
+                            if (!current_block) RCache.set_ca(array, row, current_rows[row]);
+                            if (!previous_block) RCache.set_ca(array_prev, row, previous_rows[row]);
+                        }
                     }
                 }
                 else

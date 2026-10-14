@@ -402,6 +402,9 @@ public:
 	ICF void set_c(R_constant* C, const Fmatrix& A) { if (C) constants.set(C, A); }
 	ICF void set_c(R_constant* C, const Fvector4& A) { if (C) constants.set(C, A); }
 	ICF void set_c(R_constant* C, float x, float y, float z, float w) { if (C) constants.set(C, x, y, z, w); }
+#ifdef USE_DX11
+    IC bool set_vertex_array_block(R_constant* constant, const Fvector4* data, u32 count);
+#endif
 	ICF void set_ca(R_constant* C, u32 e, const Fmatrix& A) { if (C) constants.seta(C, e, A); }
 	ICF void set_ca(R_constant* C, u32 e, const Fvector4& A) { if (C) constants.seta(C, e, A); }
 	ICF void set_ca(R_constant* C, u32 e, float x, float y, float z, float w)

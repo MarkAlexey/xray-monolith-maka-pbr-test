@@ -838,6 +838,18 @@ ICF void CBackend::ApplyRTandZB()
 	}
 }
 
+#ifdef USE_DX11
+IC bool CBackend::set_vertex_array_block(R_constant* constant, const Fvector4* data, u32 count)
+{
+    PROF_EVENT("Render.Skinning.ArrayBlock");
+    if (!constant) return true; // The existing set_ca(NULL) path is a no-op.
+    if ((constant->destination & 0xff) != RC_dest_vertex) return false;
+    const u32 slot = (constant->destination & RC_dest_vertex_cb_index_mask) >> RC_dest_vertex_cb_index_shift;
+    return slot < MaxCBuffers && m_aVertexConstants[slot] &&
+        m_aVertexConstants[slot]->WriteFloat4Array(constant, constant->vs, data, count);
+}
+#endif
+
 IC void CBackend::get_ConstantDirect(shared_str& n, u32 DataSize, void** pVData, void** pGData, void** pPData)
 {
 	PROF_EVENT("CBackend::get_ConstantDirect");
