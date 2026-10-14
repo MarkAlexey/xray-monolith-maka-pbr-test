@@ -142,6 +142,7 @@ namespace R_dsgraph
         const SPass* source_pass = nullptr;
         void* static_batch = nullptr;
         u32 static_first_index = 0;
+        u32 shadow_ticket = 0;
 #endif
 		// Sorting key
         RenderPacketSortKey sortKey;

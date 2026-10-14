@@ -147,6 +147,38 @@ void CDSGraphManager::r_dsgraph_render_graph(RenderQueueArray& queues, u32 _prio
 		else
             xr_parallel_sort(queue.begin(), queue.end(), compare);
 
+#if defined(USE_DX11) && RENDER == R_R4
+        if (static_geometry && _priority == 0 && RImplementation.phase == CRender::PHASE_SMAP && !RImplementation.o.Tshadows)
+        {
+            PROF_EVENT("Render.Shadow.SelectStaticGroups");
+            static u32 serial = 0;
+            for (size_t first = 0; first < queue.size();)
+            {
+                const auto* pass = queue[first].source_pass;
+                size_t end = first;
+                while (end < queue.size() && queue[end].source_pass == pass && queue[end].item.pVisual->Type == MT_NORMAL) ++end;
+                if (end - first > 1 && pass && Fvisual::ShadowBatchPassSafe(*pass))
+                {
+                    if (!++serial) ++serial;
+                    for (size_t i = first; i < end; ++i)
+                    {
+                        auto& mesh = *static_cast<Fvisual*>(queue[i].item.pVisual);
+                        if (!mesh.shadow_batch || !mesh.ShadowBatchMemberValid()) continue;
+                        auto& batch = *mesh.shadow_batch;
+                        if (batch.selection.begin(Device.dwFrame, serial))
+                            batch.binding_valid = batch.pass._get() == pass && batch.vertex_revision == pass->vs->shadow_shader_revision &&
+                                batch.pixel_revision == pass->ps->shadow_shader_revision;
+                        if (batch.binding_valid)
+                        {
+                            batch.selection.add(mesh.shadow_batch_member, u32(batch.members.size()));
+                            queue[i].shadow_ticket = serial;
+                        }
+                    }
+                }
+                first = end > first ? end : first + 1;
+            }
+        }
+#endif
 		// 2. Render
 		vs_type pVS = nullptr;
 
@@ -288,6 +320,10 @@ void CDSGraphManager::r_dsgraph_render_graph(RenderQueueArray& queues, u32 _prio
                 ++combined_members;
                 continue;
             }
+#endif
+#if defined(USE_DX11) && RENDER == R_R4
+            if (static_geometry && mesh && !RCache.is_TessEnabled() &&
+                !memcmp(&RCache.xforms.m_w, &Fidentity, sizeof(Fmatrix)) && mesh->DrawShadowBatch(packet.shadow_ticket)) continue;
 #endif
             item.pVisual->Render(LOD);
 		}

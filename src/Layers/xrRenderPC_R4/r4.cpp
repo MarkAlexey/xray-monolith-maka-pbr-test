@@ -1061,6 +1061,32 @@ static bool static_draw_shader_safe(ID3DShaderReflection* reflection)
     return true;
 }
 
+static bool shadow_depth_shader_safe(ID3DShaderReflection* reflection)
+{
+    if (!static_draw_shader_safe(reflection)) return false;
+    D3D11_SHADER_DESC desc{};
+    if (FAILED(reflection->GetDesc(&desc))) return false;
+    for (UINT i = 0; i < desc.BoundResources; ++i)
+    {
+        D3D11_SHADER_INPUT_BIND_DESC resource{};
+        if (FAILED(reflection->GetResourceBindingDesc(i, &resource)) || resource.Type != D3D_SIT_CBUFFER)
+            return false; // No textures, samplers, UAVs or externally mutable buffers.
+    }
+    for (UINT i = 0; i < desc.ConstantBuffers; ++i)
+    {
+        auto* buffer = reflection->GetConstantBufferByIndex(i);
+        D3D11_SHADER_BUFFER_DESC info{};
+        if (FAILED(buffer->GetDesc(&info))) return false;
+        for (UINT j = 0; j < info.Variables; ++j)
+        {
+            D3D11_SHADER_VARIABLE_DESC variable{};
+            if (FAILED(buffer->GetVariableByIndex(j)->GetDesc(&variable))) return false;
+            if ((variable.uFlags & D3D_SVF_USED) && xr_strcmp(variable.Name, "m_WVP")) return false;
+        }
+    }
+    return true;
+}
+
 #endif
 template <typename T>
 static HRESULT create_shader(
@@ -1107,6 +1133,9 @@ static HRESULT create_shader(
 		SPS* sps_result = (SPS*)result;
 #ifdef USE_DX11
         sps_result->static_draw_safe = false;
+        sps_result->shadow_batch_safe = false;
+        sps_result->shadow_depth_cache_safe = false;
+        ++sps_result->shadow_shader_revision;
 #endif
 #ifdef USE_DX11
 		_result = HW.pDevice->CreatePixelShader(buffer, buffer_size, 0, &sps_result->ps);
@@ -1136,6 +1165,10 @@ static HRESULT create_shader(
 			sps_result->constants.parse(pReflection, RC_dest_pixel);
 #ifdef USE_DX11
             sps_result->static_draw_safe = static_draw_shader_safe(pReflection);
+            sps_result->shadow_depth_cache_safe = shadow_depth_shader_safe(pReflection);
+            D3D11_SHADER_DESC desc{};
+            sps_result->shadow_batch_safe = sps_result->shadow_depth_cache_safe &&
+                SUCCEEDED(pReflection->GetDesc(&desc)) && desc.InputParameters == 0;
 #endif
 
 			_RELEASE(pReflection);
@@ -1151,6 +1184,8 @@ static HRESULT create_shader(
 		SVS* svs_result = (SVS*)result;
 #ifdef USE_DX11
         svs_result->static_draw_safe = false;
+        svs_result->shadow_depth_cache_safe = false;
+        ++svs_result->shadow_shader_revision;
 #endif
 #ifdef USE_DX11
 		_result = HW.pDevice->CreateVertexShader(buffer, buffer_size, 0, &svs_result->vs);
@@ -1192,6 +1227,7 @@ static HRESULT create_shader(
 			svs_result->constants.parse(pReflection, RC_dest_vertex);
 #ifdef USE_DX11
             svs_result->static_draw_safe = static_draw_shader_safe(pReflection);
+            svs_result->shadow_depth_cache_safe = shadow_depth_shader_safe(pReflection);
 #endif
 
 			_RELEASE(pReflection);

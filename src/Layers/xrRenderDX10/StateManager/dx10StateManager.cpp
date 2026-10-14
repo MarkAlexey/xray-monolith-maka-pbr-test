@@ -1,4 +1,7 @@
 #include "stdafx.h"
+#ifdef USE_DX11
+#include "ShadowBatchStatePolicy.h"
+#endif
 #include "dx10StateManager.h"
 
 #include "../dx10StateUtils.h"
@@ -167,6 +170,15 @@ void dx10StateManager::ValidateBDesc()
 }
 
 //	Sends states to DX10 runtime, creates new state objects if nessessary
+#ifdef USE_DX11
+bool dx10StateManager::ShadowBatchStateSafe()
+{
+    ValidateDSDesc();
+    ValidateBDesc();
+    return m_pDepthStencilState && m_pBlendState && aoe_render::shadow_batch_state_safe(m_DSDesc, m_BDesc);
+}
+#endif
+
 void dx10StateManager::Apply()
 {
 	//	Apply rasterizer state

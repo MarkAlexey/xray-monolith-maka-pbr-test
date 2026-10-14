@@ -386,6 +386,13 @@ public:
 	IC void set_Scissor(Irect* rect = NULL);
 
 	// constants
+#if defined(USE_DX11) && RENDER == R_R4
+    bool matches_shadow_batch_pass(const SPass& pass) const
+    {
+        return pass.vs && pass.ps && vs == pass.vs->vs && ps == pass.ps->ps && ctable == pass.constants._get() &&
+            !gs && !hs && !ds && pass.state && state == pass.state->state;
+    }
+#endif
 	ICF R_constant* get_c(LPCSTR n)
 	{
 		if (ctable) return ctable->get(n);

@@ -29,6 +29,8 @@ struct ECORE_API SVS : public xr_resource_named
 	ID3DVertexShader* vs;
 #ifdef USE_DX11
     bool static_draw_safe = false;
+    bool shadow_depth_cache_safe = false;
+    u32 shadow_shader_revision = 0;
 #endif
 	R_constant_table constants;
 #if defined(USE_DX10) || defined(USE_DX11)
@@ -46,6 +48,9 @@ struct ECORE_API SPS : public xr_resource_named
 	ID3DPixelShader* ps;
 #ifdef USE_DX11
     bool static_draw_safe = false;
+    bool shadow_batch_safe = false;
+    bool shadow_depth_cache_safe = false;
+    u32 shadow_shader_revision = 0;
 #endif
 	R_constant_table constants;
 	~SPS();

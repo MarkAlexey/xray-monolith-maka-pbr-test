@@ -12,6 +12,9 @@ public:
 	void Reset();
 	//	Sends states to DX10 runtime, creates new state objects if nesessary
 	void Apply();
+#ifdef USE_DX11
+    bool ShadowBatchStateSafe();
+#endif
 
 	//	Unmaps all constant bindings.
 	void UnmapConstants();

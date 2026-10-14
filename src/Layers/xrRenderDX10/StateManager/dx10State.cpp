@@ -3,6 +3,9 @@
 
 //#include "dx10RSManager.h"
 #include "dx10StateCache.h"
+#ifdef USE_DX11
+#include "ShadowBatchStatePolicy.h"
+#endif
 
 dx10State::dx10State() :
 	m_pRasterizerState(0),
@@ -51,6 +54,7 @@ dx10State* dx10State::Create(SimulatorStates& state_code)
             safe = safe && safe_face(depth.FrontFace) && safe_face(depth.BackFace);
         }
         pState->m_static_packet_safe = safe;
+        pState->m_shadow_batch_safe = aoe_render::shadow_batch_state_safe(depth, blend);
     }
 #endif
 	//ID3DxxDevice::CreateSamplerState

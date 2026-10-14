@@ -27,6 +27,12 @@ BIND_DECLARE(p);
 BIND_DECLARE(wv);
 BIND_DECLARE(vp);
 BIND_DECLARE(wvp);
+#if defined(USE_DX11) && RENDER == R_R4
+bool IsNativeShadowMatrix(R_constant* constant)
+{
+    return constant && constant->handler == &binder_wvp && constant->name == "m_WVP";
+}
+#endif
 
 BIND_DECLARE(v_prev);
 BIND_DECLARE(p_prev);
@@ -46,6 +52,19 @@ DECLARE_TREE_BIND(wind);
 DECLARE_TREE_BIND(c_scale);
 DECLARE_TREE_BIND(c_bias);
 DECLARE_TREE_BIND(c_sun);
+#if defined(USE_DX11) && RENDER == R_R4
+bool NativeShadowHandlers(const R_constant_table* table)
+{
+    if (!table) return true;
+    R_constant_setup* pure[] = {&binder_w, &binder_invw, &binder_v, &binder_p, &binder_wv, &binder_vp, &binder_wvp,
+        &binder_v_prev, &binder_p_prev, &binder_wv_prev, &binder_vp_prev, &binder_wvp_prev,
+        &tree_binder_m_xform_v, &tree_binder_m_xform, &tree_binder_consts, &tree_binder_wave, &tree_binder_wind,
+        &tree_binder_c_scale, &tree_binder_c_bias, &tree_binder_c_sun};
+    for (const auto& constant : table->table)
+        if (constant->handler && std::find(std::begin(pure), std::end(pure), constant->handler) == std::end(pure)) return false;
+    return true;
+}
+#endif
 
 class cl_hemi_cube_pos_faces : public R_constant_setup
 {

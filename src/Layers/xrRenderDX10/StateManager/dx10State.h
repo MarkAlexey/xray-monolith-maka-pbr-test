@@ -18,9 +18,11 @@ public:
 	//	DX9 unified interface
 	HRESULT Apply();
 #ifdef USE_DX11
+    bool ShadowBatchSafe() const { return m_shadow_batch_safe; }
     bool StaticPacketSafe() const { return m_static_packet_safe; }
 private:
     bool m_static_packet_safe = false;
+    bool m_shadow_batch_safe = false;
 public:
 #endif
 	void Release();
