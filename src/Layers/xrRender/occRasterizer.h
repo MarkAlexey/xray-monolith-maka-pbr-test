@@ -1,6 +1,7 @@
 // occRasterizer.h: interface for the occRasterizer class.
 //////////////////////////////////////////////////////////////////////
 #pragma once
+#include <atomic>
 
 const int occ_dim_0 = 64;
 const int occ_dim_1 = occ_dim_0 / 2;
@@ -26,6 +27,9 @@ typedef s32 occD;
 
 class occRasterizer
 {
+#if XRCORE_PROFILER == PROFILER_OPTICK
+    std::atomic<u32> coarse_rejects{0}, fine_visible{0};
+#endif
 private:
 	occTri* bufFrame [occ_dim][occ_dim];
 	float bufDepth [occ_dim][occ_dim];

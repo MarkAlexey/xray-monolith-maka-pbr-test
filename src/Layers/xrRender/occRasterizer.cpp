@@ -64,6 +64,11 @@ occRasterizer::~occRasterizer()
 
 void occRasterizer::clear()
 {
+#if XRCORE_PROFILER == PROFILER_OPTICK
+    { PROF_EVENT("Render.HOM.HierarchyTests");
+      PROF_TAG("Coarse rejects", coarse_rejects.exchange(0, std::memory_order_relaxed));
+      PROF_TAG("Fine visible", fine_visible.exchange(0, std::memory_order_relaxed)); }
+#endif
 	u32 size = occ_dim * occ_dim;
 	float f = 1.f;
 	Memory.mem_fill32(bufFrame, 0, size * (sizeof(void*) / 4));
@@ -197,35 +202,45 @@ void occRasterizer::on_dbg_render()
 }
 
 
-IC BOOL test_Level(occD* depth, int dim, float _x0, float _y0, float _x1, float _y1, occD z)
+// Round at level zero once; every coarse cell covers that exact fine rectangle.
+IC BOOL test_Level(occD* depth, int dim, int x0, int y0, int x1, int y1, occD z)
 {
-	int x0 = iFloor(_x0 * dim + .5f); clamp(x0, 0, dim - 1);
-	int x1 = iFloor(_x1 * dim + .5f); clamp(x1, x0, dim - 1);
-	int y0 = iFloor(_y0 * dim + .5f); clamp(y0, 0, dim - 1);
-	int y1 = iFloor(_y1 * dim + .5f); clamp(y1, y0, dim - 1);
-
-	for (int y = y0; y <= y1; y++)
-	{
-		occD* base = depth + y * dim;
-		occD* it = base + x0;
-		occD* end = base + x1;
-		for (; it <= end; it++)
-			if (z < *it) return TRUE;
-	}
-	return FALSE;
+    for (int y = y0; y <= y1; ++y)
+    {
+        const occD* row = depth + y * dim;
+        for (int x = x0; x <= x1; ++x)
+            if (z < row[x]) return TRUE;
+    }
+    return FALSE;
 }
 
-
-BOOL occRasterizer::test(float _x0, float _y0, float _x1, float _y1, float _z)
+BOOL occRasterizer::test(float x0f, float y0f, float x1f, float y1f, float zf)
 {
-	occD z = df_2_s32up(_z) + 1;
-	return test_Level(get_depth_level(0), occ_dim_0, _x0, _y0, _x1, _y1, z);
-	/*
-	if	(test_Level(get_depth_level(2),occ_dim_2,_x0,_y0,_x1,_y1,z))
-	{
-		// Visbible on level 2 - test level 0
-		return test_Level(get_depth_level(0),occ_dim_0,_x0,_y0,_x1,_y1,z);
-	}
-	return FALSE;
-	*/
+    const occD z = df_2_s32up(zf) + 1;
+    int x0 = iFloor(x0f * occ_dim_0 + .5f); clamp(x0, 0, occ_dim_0 - 1);
+    int x1 = iFloor(x1f * occ_dim_0 + .5f); clamp(x1, x0, occ_dim_0 - 1);
+    int y0 = iFloor(y0f * occ_dim_0 + .5f); clamp(y0, 0, occ_dim_0 - 1);
+    int y1 = iFloor(y1f * occ_dim_0 + .5f); clamp(y1, y0, occ_dim_0 - 1);
+    int span = _max(x1 - x0 + 1, y1 - y0 + 1);
+    int first = 0;
+    while (first < 3 && span > 4)
+    {
+        span = (span + 1) / 2;
+        ++first;
+    }
+    for (int level = first; level >= 0; --level)
+    {
+        if (!test_Level(get_depth_level(level), occ_dim_0 >> level,
+            x0 >> level, y0 >> level, x1 >> level, y1 >> level, z))
+        {
+#if XRCORE_PROFILER == PROFILER_OPTICK
+            if (level) coarse_rejects.fetch_add(1, std::memory_order_relaxed);
+#endif
+            return FALSE;
+        }
+    }
+#if XRCORE_PROFILER == PROFILER_OPTICK
+    fine_visible.fetch_add(1, std::memory_order_relaxed);
+#endif
+    return TRUE;
 }
