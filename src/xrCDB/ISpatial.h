@@ -106,6 +106,7 @@ public:
 
 		// Cached parent node for "empty-members" optimization
 		ISpatial_NODE* node_ptr = nullptr;
+        u32 items_idx = u32(-1);
 		IRender_Sector* sector = nullptr;
 
 		// allow different spaces

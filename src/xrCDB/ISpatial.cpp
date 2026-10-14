@@ -208,16 +208,25 @@ void ISpatial_NODE::_init(ISpatial_NODE* _parent)
 void ISpatial_NODE::_insert(ISpatialShared S)
 {
 	S->spatial.node_ptr = this;
+    S->spatial.items_idx = u32(items.size());
 	items.push_back(S);
 	S->spatial.space->stat_objects ++;
 }
 
 void ISpatial_NODE::_remove(ISpatialShared S)
 {
-	S->spatial.node_ptr = nullptr;
-	auto it = std::find(items.begin(),items.end(),S);
-	VERIFY(it!=items.end());
-	items.erase_fast(it);
+	PROF_EVENT("Spatial.RemoveIndexed");
+    const u32 index = S->spatial.items_idx;
+    R_ASSERT(index < items.size() && items[index] == S);
+    const u32 last = u32(items.size() - 1);
+    if (index != last)
+    {
+        items[index] = std::move(items[last]);
+        items[index]->spatial.items_idx = index;
+    }
+    items.pop_back();
+    S->spatial.node_ptr = nullptr;
+    S->spatial.items_idx = u32(-1);
 	S->spatial.space->stat_objects --;
 }
 
