@@ -161,61 +161,53 @@ void CDetailManager::cache_Update(int v_x, int v_z, Fvector& view, int limit)
 		}
 	}
 
-	// Task performer
-	if(ps_r2_ls_flags.test(R2FLAG_FAST_DETAILS_UPDATE))
-	{
-		for (u32 iteration=0; iteration<cache_task.size(); iteration++)
-		{
-			// Decompress and remove task
-			cache_Decompress	(cache_task[iteration]);
-			cache_task.erase	(iteration);
-		}
-	}
-	else
-	{
-		BOOL bFullUnpack = FALSE;
-		if (cache_task.size() == dm_cache_size)
-		{
-			limit = dm_cache_size;
-			bFullUnpack = TRUE;
-		}
-
-		for (int iteration = 0; cache_task.size() && (iteration < limit); iteration++)
-		{
-			u32 best_id = 0;
-			float best_dist = flt_max;
-
-			if (bFullUnpack)
-			{
-				best_id = cache_task.size() - 1;
-			}
-			else
-			{
-				for (u32 entry = 0; entry < cache_task.size(); entry++)
-				{
-					// Gain access to data
-					Slot* S = cache_task[entry];
-					VERIFY(stPending == S->type);
-
-					// Estimate
-					Fvector C;
-					S->vis.box.getcenter(C);
-					float D = view.distance_to_sqr(C);
-
-					// Select
-					if (D < best_dist)
-					{
-						best_dist = D;
-						best_id = entry;
-					}
-				}
-			}
-
-			// Decompress and remove task
-			cache_Decompress(cache_task[best_id]);
-			cache_task.erase(best_id);
-		}
-	}
+    // Full initialization retains reverse task order; nearest selection visits each pending slot once.
+    {
+        PROF_EVENT("Render.Grass.SelectCacheTasks");
+        PROF_TAG("Pending slots", u32(cache_task.size()));
+        if (cache_task.size() == dm_cache_size || ps_r2_ls_flags.test(R2FLAG_FAST_DETAILS_UPDATE))
+        {
+            while (!cache_task.empty())
+            {
+                cache_Decompress(cache_task.back());
+                cache_task.pop_back();
+            }
+        }
+        else if (limit > 0 && !cache_task.empty())
+        {
+            const u32 count = _min(u32(limit), u32(cache_task.size()));
+            R_ASSERT(count <= dm_max_decompress);
+            u32 bestIndexes[dm_max_decompress];
+            float bestDistances[dm_max_decompress];
+            std::fill_n(bestIndexes, count, u32(-1));
+            std::fill_n(bestDistances, count, flt_max);
+            u32 maxIndex = 0;
+            for (u32 i = 0; i < cache_task.size(); ++i)
+            {
+                Slot* slot = cache_task[i];
+                VERIFY(stPending == slot->type);
+                Fvector center;
+                slot->vis.box.getcenter(center);
+                const float distance = view.distance_to_sqr(center);
+                if (distance < bestDistances[maxIndex])
+                {
+                    bestDistances[maxIndex] = distance;
+                    bestIndexes[maxIndex] = i;
+                    maxIndex = u32(std::max_element(bestDistances, bestDistances + count) - bestDistances);
+                }
+            }
+            std::sort(bestIndexes, bestIndexes + count);
+            for (u32 i = count; i > 0; --i)
+            {
+                const u32 index = bestIndexes[i - 1];
+                if (index != u32(-1))
+                {
+                    cache_Decompress(cache_task[index]);
+                    cache_task.erase(index);
+                }
+            }
+        }
+    }
 
 	if (bNeedMegaUpdate)
 	{
