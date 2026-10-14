@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "../xrRender/ParticlePositionProof.h"
 #include "r4.h"
 #include "../xrRender/fbasicvisual.h"
 #include "../../xrEngine/xr_object.h"
@@ -1232,6 +1233,7 @@ static HRESULT create_shader(
 		SVS* svs_result = (SVS*)result;
 #ifdef USE_DX11
         svs_result->static_draw_safe = false;
+        svs_result->particle_position_safe = false;
         svs_result->tree_shadow_inputs = 0;
         svs_result->tree_shadow_batch_safe = false;
         svs_result->shadow_depth_cache_safe = false;
@@ -1280,6 +1282,46 @@ static HRESULT create_shader(
             svs_result->shadow_depth_cache_safe = shadow_depth_shader_safe(pReflection);
             svs_result->tree_shadow_inputs = tree_shadow_inputs(pReflection);
             svs_result->tree_shadow_batch_safe = tree_shadow_batch_safe(pReflection);
+            if (strstr(file_name, "particle") && svs_result->static_draw_safe)
+            {
+                D3D11_SHADER_DESC desc{}; pReflection->GetDesc(&desc);
+                unsigned input = ~0u, output = ~0u;
+                for (unsigned i = 0; i < desc.InputParameters; ++i)
+                {
+                    D3D11_SIGNATURE_PARAMETER_DESC p{}; pReflection->GetInputParameterDesc(i, &p);
+                    if (!_stricmp(p.SemanticName, "POSITION") && !p.SemanticIndex) input = p.Register;
+                }
+                for (unsigned i = 0; i < desc.OutputParameters; ++i)
+                {
+                    D3D11_SIGNATURE_PARAMETER_DESC p{}; pReflection->GetOutputParameterDesc(i, &p);
+                    if (p.SystemValueType == D3D_NAME_POSITION) output = p.Register;
+                }
+                ID3DBlob* assembly = nullptr;
+                if (input != ~0u && output != ~0u && SUCCEEDED(D3DDisassemble(buffer, buffer_size, 0, nullptr, &assembly)))
+                {
+                    for (unsigned i = 0; i < desc.ConstantBuffers && !svs_result->particle_position_safe; ++i)
+                    {
+                        auto* cb = pReflection->GetConstantBufferByIndex(i);
+                        D3D11_SHADER_BUFFER_DESC bd{}; cb->GetDesc(&bd);
+                        D3D11_SHADER_INPUT_BIND_DESC binding{};
+                        if (FAILED(pReflection->GetResourceBindingDescByName(bd.Name, &binding))) continue;
+                        for (unsigned j = 0; j < bd.Variables; ++j)
+                        {
+                            auto* variable = cb->GetVariableByIndex(j);
+                            D3D11_SHADER_VARIABLE_DESC vd{}; variable->GetDesc(&vd);
+                            D3D11_SHADER_TYPE_DESC td{}; variable->GetType()->GetDesc(&td);
+                            if ((strcmp(vd.Name, "m_VP") && strcmp(vd.Name, "m_WVP")) || vd.Size != 64 ||
+                                td.Class != D3D_SVC_MATRIX_ROWS || td.Rows != 4 || td.Columns != 4 || td.Elements) continue;
+                            if (particle_position_dp4(static_cast<const char*>(assembly->GetBufferPointer()), input, output, binding.BindPoint, vd.StartOffset / 16))
+                            {
+                                svs_result->particle_position_safe = true;
+                                svs_result->particle_uses_vp = !strcmp(vd.Name, "m_VP");
+                            }
+                        }
+                    }
+                    assembly->Release();
+                }
+            }
 #endif
 
 			_RELEASE(pReflection);

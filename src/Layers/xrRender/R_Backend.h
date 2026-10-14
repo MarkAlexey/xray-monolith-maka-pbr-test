@@ -387,6 +387,11 @@ public:
 
 	// constants
 #if defined(USE_DX11) && RENDER == R_R4
+    bool matches_native_particle_pass(const SPass& pass) const
+    {
+        return pass.vs && pass.ps && vs == pass.vs->vs && ps == pass.ps->ps && ctable == pass.constants._get() &&
+            !gs && !hs && !ds && !(pass.cs && pass.cs->sh);
+    }
     bool matches_shadow_batch_pass(const SPass& pass) const
     {
         return pass.vs && pass.ps && vs == pass.vs->vs && ps == pass.ps->ps && ctable == pass.constants._get() &&

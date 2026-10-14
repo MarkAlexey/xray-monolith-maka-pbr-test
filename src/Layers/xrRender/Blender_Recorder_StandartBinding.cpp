@@ -28,6 +28,11 @@ BIND_DECLARE(wv);
 BIND_DECLARE(vp);
 BIND_DECLARE(wvp);
 #if defined(USE_DX11) && RENDER == R_R4
+bool IsNativeParticleMatrix(R_constant* constant, bool vp)
+{
+    return constant && constant->handler == (vp ? static_cast<R_constant_setup*>(&binder_vp) : &binder_wvp);
+}
+
 bool IsNativeShadowMatrix(R_constant* constant)
 {
     return constant && constant->handler == &binder_wvp && constant->name == "m_WVP";

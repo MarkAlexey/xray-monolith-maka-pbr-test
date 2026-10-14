@@ -29,6 +29,7 @@ struct ECORE_API SVS : public xr_resource_named
 	ID3DVertexShader* vs;
 #ifdef USE_DX11
     bool static_draw_safe = false;
+    bool particle_position_safe = false, particle_uses_vp = false;
     bool tree_shadow_batch_safe = false;
     u32 tree_shadow_inputs = 0;
     bool shadow_depth_cache_safe = false;

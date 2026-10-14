@@ -510,8 +510,19 @@ __forceinline void magnitude_sse(Fvector& vec, float& res)
 	_mm_store_ss((float*)&res, tv);
 }
 
-bool ParticleRenderStream(FVF::LIT* pv, u32 count, PAPI::Particle * particles, CParticleEffect * pPE)
+bool ParticleRenderStream(FVF::LIT* pv, u32 count, PAPI::Particle* particles, CParticleEffect* pPE,
+    u32& emitted, const CFrustum* clip = nullptr)
 {
+    PROF_EVENT("Render.Particles.SpriteStream");
+    FVF::LIT* first_vertex = pv;
+    emitted = 0;
+    float clip_scale = 1.f;
+    if (clip && pPE->m_RT_Flags.is(CParticleEffect::flRT_XFORM))
+    {
+        const Fmatrix& t = pPE->m_XFORM;
+        clip_scale = _max(1.f, _sqrt(t._11*t._11+t._12*t._12+t._13*t._13+
+            t._21*t._21+t._22*t._22+t._23*t._23+t._31*t._31+t._32*t._32+t._33*t._33));
+    }
 	float sina = 0.0f, cosa = 0.0f;
 	// Xottab_DUTY: changed angle to be float instead of DWORD
 	// But it must be 0xFFFFFFFF or otherwise some particles won't play
@@ -575,6 +586,17 @@ bool ParticleRenderStream(FVF::LIT* pv, u32 count, PAPI::Particle * particles, C
 			r_y += speed * pPE->m_Def->m_VelocityScale.y;
 		}
 
+        if (clip)
+        {
+            Fvector center = m.posI;
+            float radius = _sqrt(r_x * r_x + r_y * r_y);
+            if (pPE->m_RT_Flags.is(CParticleEffect::flRT_XFORM))
+            {
+                center = wp_eff;
+                radius *= clip_scale;
+            }
+            if (_valid(center) && _valid(radius) && !clip->testSphere_dirty(center, radius + EPS_L)) continue;
+        }
 		if (pPE->m_Def->m_Flags.is(CPEDef::dfAlignToPath))
 		{
 			if (!speed_calculated)
@@ -646,6 +668,9 @@ bool ParticleRenderStream(FVF::LIT* pv, u32 count, PAPI::Particle * particles, C
 			}
 		}
 	}
+    emitted = u32(pv - first_vertex);
+    PROF_TAG("Input sprites", count);
+    PROF_TAG("Emitted sprites", emitted / 4);
 	return false;
 }
 
@@ -665,10 +690,29 @@ void CParticleEffect::Render(float)
 	{
 		if (m_Def && m_Def->m_Flags.is(CPEDef::dfSprite))
 		{
-			FVF::LIT* pv_start = (FVF::LIT*)RCache.Vertex.Lock(p_cnt * 4 * 4, geom->vb_stride, dwOffset);
-			bool NeedExit = ParticleRenderStream(pv_start, p_cnt, particles, this);
-
-			dwCount = p_cnt << 2;
+			CFrustum frustum;
+            const CFrustum* clip = nullptr;
+#if defined(USE_DX11) && RENDER == R_R4
+            extern bool IsNativeParticleMatrix(R_constant*, bool);
+            if (shader)
+                for (const auto& element : shader->E)
+                    if (element)
+                        for (const auto& pass : element->passes)
+                            if (pass && pass->vs && pass->ps && pass->vs->particle_position_safe &&
+                                pass->ps->static_draw_safe && RCache.matches_native_particle_pass(*pass) && pass->constants &&
+                                IsNativeParticleMatrix(pass->constants->get(pass->vs->particle_uses_vp ? "m_VP" : "m_WVP"), pass->vs->particle_uses_vp))
+                            {
+                                Fmatrix view = RCache.xforms.m_vp;
+                                if (GetHudMode()) view.mul(Device.mProjectHud, RCache.xforms.m_v);
+                                if (_valid(view))
+                                {
+                                    frustum.CreateFromMatrix(view, FRUSTUM_P_LRTB | FRUSTUM_P_NEAR | FRUSTUM_P_FAR);
+                                    clip = &frustum;
+                                }
+                            }
+#endif
+            FVF::LIT* pv_start = (FVF::LIT*)RCache.Vertex.Lock(p_cnt * 4, geom->vb_stride, dwOffset);
+            bool NeedExit = ParticleRenderStream(pv_start, p_cnt, particles, this, dwCount, clip);
 
 			RCache.Vertex.Unlock(dwCount, geom->vb_stride);
 
