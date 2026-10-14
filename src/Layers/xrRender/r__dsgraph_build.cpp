@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "FVisual.h"
 
 #include "fhierrarhyvisual.h"
 #include "SkeletonCustom.h"
@@ -408,7 +409,19 @@ void CDSGraphManager::AddToRenderQueue(R_dsgraph::RenderQueue& queue, const R_ds
 		}
 	}
 
+#if defined(USE_DX11) && RENDER == R_R4
+    if (packet_pass_owners.find(&pass) == packet_pass_owners.end())
+        packet_pass_owners.emplace(&pass, ref_pass(const_cast<SPass*>(&pass)));
+#endif
 	queue.emplace_back(item, pass);
+#if defined(USE_DX11) && RENDER == R_R4
+    if (!item.pMatrix && item.pVisual && item.pVisual->Type == MT_NORMAL && Fvisual::StaticPassSafe(pass))
+    {
+        auto* mesh = static_cast<Fvisual*>(item.pVisual);
+        queue.back().static_batch = mesh->static_batch.get();
+        queue.back().static_first_index = mesh->static_batch_first_index;
+    }
+#endif
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

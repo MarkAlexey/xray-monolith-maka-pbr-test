@@ -7,6 +7,10 @@
 #include "../../xrEngine/CustomHUD.h"
 
 #include "FBasicVisual.h"
+#include "FVisual.h"
+#if defined(USE_DX11) && RENDER == R_R4
+#include "StaticDrawPacketPolicy.h"
+#endif
 #include "CHudInitializer.h"
 
 #include "fhierrarhyvisual.h"
@@ -127,11 +131,21 @@ void CDSGraphManager::r_dsgraph_render_graph(RenderQueueArray& queues, u32 _prio
 		if (queue.empty())
 			continue;
 
-		// 1. Sort by generated sort key to replicate previous fixed map behaviour
+		// Exact pipelines retain their key ordering; immutable members order by shared IB range.
+#if defined(USE_DX11) && RENDER == R_R4
+        const auto compare = [](const RenderPacket& a, const RenderPacket& b)
+        {
+            if (!(a.sortKey == b.sortKey)) return a.sortKey < b.sortKey;
+            if (a.static_batch != b.static_batch) return std::less<const void*>()(a.static_batch, b.static_batch);
+            return a.static_first_index < b.static_first_index;
+        };
+#else
+        const auto compare = [](const RenderPacket& a, const RenderPacket& b) { return a < b; };
+#endif
 		if (queue.size() < 4096)
-            std::sort(queue.begin(), queue.end());
+            std::sort(queue.begin(), queue.end(), compare);
 		else
-            xr_parallel_sort(queue.begin(), queue.end());
+            xr_parallel_sort(queue.begin(), queue.end(), compare);
 
 		// 2. Render
 		vs_type pVS = nullptr;
@@ -153,8 +167,37 @@ void CDSGraphManager::r_dsgraph_render_graph(RenderQueueArray& queues, u32 _prio
 
         u64 high = 0;
 
+        #if defined(USE_DX11) && RENDER == R_R4
+        std::shared_ptr<Fvisual::StaticBatch> batch;
+        const SPass* batch_pass = nullptr;
+        u32 batch_first = 0, batch_count = 0, batch_vertices = 0, combined_draws = 0, combined_members = 0;
+        float batch_lod = 0.f;
+        auto flush_static = [&]()
+        {
+            if (!batch) return;
+            RCache.LOD.set_LOD(batch_lod);
+            RCache.set_Geometry(batch->geometry);
+            RCache.Render(D3DPT_TRIANGLELIST, batch->base_vertex, 0, batch->vertex_count, batch_first, batch_count / 3);
+            RCache.stat.r.s_static.add(batch_vertices);
+            batch.reset();
+            batch_count = batch_vertices = 0;
+            ++combined_draws;
+        };
+#endif
         for (auto& packet : queue)
         {
+            #if defined(USE_DX11) && RENDER == R_R4
+            const float packet_lod = calcLOD(packet.item.ssa, packet.item.pVisual->vis.sphere.R);
+            auto* mesh = packet.item.pVisual->Type == MT_NORMAL ? static_cast<Fvisual*>(packet.item.pVisual) : nullptr;
+            const auto* pass = packet.source_pass;
+            const bool eligible = static_geometry && RImplementation.phase == CRender::PHASE_NORMAL && _priority == 0 && mesh &&
+                mesh->StaticBatchValid() && mesh->static_batch.get() == packet.static_batch &&
+                mesh->static_batch_first_index == packet.static_first_index && pass && Fvisual::StaticPassSafe(*pass) &&
+                pass->vs._get() == packet.pVS && pass->ps->ps == packet.pPS && pass->constants._get() == packet.pCS &&
+                pass->state->state == packet.pState && pass->T._get() == packet.pTextures;
+            if (batch && (!eligible || batch != mesh->static_batch || batch_pass != pass || batch_lod != packet_lod ||
+                !aoe_render::adjacent_static_range(batch_first, batch_count, mesh->static_batch_first_index))) flush_static();
+#endif
             auto& currentKey = packet.sortKey;
             if (currentKey.high != high)
             {
@@ -230,9 +273,30 @@ void CDSGraphManager::r_dsgraph_render_graph(RenderQueueArray& queues, u32 _prio
 #ifdef USE_DX11
 			RCache.LOD.set_LOD(LOD);
 #endif
-			item.pVisual->Render(LOD);
+			#if defined(USE_DX11) && RENDER == R_R4
+            if (eligible)
+            {
+                if (!batch)
+                {
+                    batch = mesh->static_batch;
+                    batch_pass = pass;
+                    batch_lod = LOD;
+                    batch_first = mesh->static_batch_first_index;
+                }
+                batch_count += mesh->iCount;
+                batch_vertices += mesh->vCount;
+                ++combined_members;
+                continue;
+            }
+#endif
+            item.pVisual->Render(LOD);
 		}
 
+#if defined(USE_DX11) && RENDER == R_R4
+        flush_static();
+        { PROF_EVENT("Render.Static.BatchStats");
+          PROF_TAG("Draws", combined_draws); PROF_TAG("Members", combined_members); }
+#endif
 		if (_clear)
 			queue.clear();
 	}

@@ -166,6 +166,7 @@ public:
 	xr_vector<ID3DVertexBuffer*> nVB, xVB;
 	xr_vector<ID3DIndexBuffer*> nIB, xIB;
 	xr_vector<dxRender_Visual*> Visuals;
+    xr_vector<xr_vector<u16>> levelIBData; // Temporary immutable batch input, released after visuals load.
 	CPSLibrary PSLibrary;
 
 	CDetailManager* Details;

@@ -27,6 +27,9 @@ typedef	resptr_core<SInputSignature,resptr_base<SInputSignature> >	ref_input_sig
 struct ECORE_API SVS : public xr_resource_named
 {
 	ID3DVertexShader* vs;
+#ifdef USE_DX11
+    bool static_draw_safe = false;
+#endif
 	R_constant_table constants;
 #if defined(USE_DX10) || defined(USE_DX11)
 	ref_input_sign						signature;
@@ -41,6 +44,9 @@ typedef resptr_core<SVS, resptr_base<SVS>> ref_vs;
 struct ECORE_API SPS : public xr_resource_named
 {
 	ID3DPixelShader* ps;
+#ifdef USE_DX11
+    bool static_draw_safe = false;
+#endif
 	R_constant_table constants;
 	~SPS();
 };

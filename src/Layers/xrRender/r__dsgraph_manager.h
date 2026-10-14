@@ -79,6 +79,7 @@ public:
         Fmatrix world, view, projection;
     };
     xr_unordered_flat_map<const Fmatrix*, PreparedWorld> prepared_worlds;
+    xr_unordered_flat_map<const SPass*, ref_pass> packet_pass_owners;
     Fmatrix prepared_view, prepared_projection;
     u32 prepared_frame = u32(-1);
     void SetPreparedWorld(const Fmatrix* world);
@@ -132,6 +133,7 @@ public:
 		RGraph.clear();
 #if defined(USE_DX11) && RENDER == R_R4
         prepared_worlds.clear();
+        packet_pass_owners.clear();
         prepared_frame = u32(-1);
 #endif
 		if (m_sector_frustums.size())

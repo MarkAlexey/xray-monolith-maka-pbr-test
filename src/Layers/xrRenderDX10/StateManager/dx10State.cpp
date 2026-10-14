@@ -29,6 +29,30 @@ dx10State* dx10State::Create(SimulatorStates& state_code)
 	pState->m_pRasterizerState = RSManager.GetState(state_code);
 	pState->m_pDepthStencilState = DSSManager.GetState(state_code);
 	pState->m_pBlendState = BSManager.GetState(state_code);
+#ifdef USE_DX11
+    // Compile once from the actual immutable API states, rather than scanning
+    // SimulatorStates for every visible mesh on every frame.
+    if (pState->m_pDepthStencilState && pState->m_pBlendState)
+    {
+        D3D11_DEPTH_STENCIL_DESC depth{};
+        D3D11_BLEND_DESC blend{};
+        pState->m_pDepthStencilState->GetDesc(&depth);
+        pState->m_pBlendState->GetDesc(&blend);
+        bool safe = !blend.AlphaToCoverageEnable && depth.DepthEnable && depth.DepthWriteMask == D3D11_DEPTH_WRITE_MASK_ALL &&
+            (depth.DepthFunc == D3D11_COMPARISON_LESS || depth.DepthFunc == D3D11_COMPARISON_LESS_EQUAL);
+        for (const auto& target : blend.RenderTarget) safe = safe && !target.BlendEnable;
+        if (depth.StencilEnable)
+        {
+            const auto safe_face = [](const D3D11_DEPTH_STENCILOP_DESC& face)
+            {
+                const auto safe_op = [](D3D11_STENCIL_OP op) { return op == D3D11_STENCIL_OP_KEEP || op == D3D11_STENCIL_OP_REPLACE; };
+                return safe_op(face.StencilFailOp) && safe_op(face.StencilDepthFailOp) && safe_op(face.StencilPassOp);
+            };
+            safe = safe && safe_face(depth.FrontFace) && safe_face(depth.BackFace);
+        }
+        pState->m_static_packet_safe = safe;
+    }
+#endif
 	//ID3DxxDevice::CreateSamplerState
 
 	//	Create samplers here

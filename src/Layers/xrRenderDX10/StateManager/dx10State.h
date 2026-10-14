@@ -17,6 +17,12 @@ public:
 
 	//	DX9 unified interface
 	HRESULT Apply();
+#ifdef USE_DX11
+    bool StaticPacketSafe() const { return m_static_packet_safe; }
+private:
+    bool m_static_packet_safe = false;
+public:
+#endif
 	void Release();
 
 	//	DX10 specific

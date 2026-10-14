@@ -1035,6 +1035,33 @@ void CRender::addShaderOption(const char* name, const char* value)
 }
 
 
+#ifdef USE_DX11
+static bool static_draw_shader_safe(ID3DShaderReflection* reflection)
+{
+    D3D11_SHADER_DESC description{};
+    if (FAILED(reflection->GetDesc(&description)) || reflection->GetNumInterfaceSlots()) return false;
+    for (UINT i = 0; i < description.InputParameters; ++i)
+    {
+        D3D11_SIGNATURE_PARAMETER_DESC input{};
+        if (FAILED(reflection->GetInputParameterDesc(i, &input))) return false;
+        if (input.SystemValueType == D3D_NAME_VERTEX_ID || input.SystemValueType == D3D_NAME_PRIMITIVE_ID ||
+            input.SystemValueType == D3D_NAME_INSTANCE_ID) return false;
+    }
+    for (UINT i = 0; i < description.BoundResources; ++i)
+    {
+        D3D11_SHADER_INPUT_BIND_DESC resource{};
+        if (FAILED(reflection->GetResourceBindingDesc(i, &resource))) return false;
+        switch (resource.Type)
+        {
+        case D3D_SIT_CBUFFER: case D3D_SIT_TBUFFER: case D3D_SIT_TEXTURE: case D3D_SIT_SAMPLER:
+        case D3D_SIT_STRUCTURED: case D3D_SIT_BYTEADDRESS: break;
+        default: return false;
+        }
+    }
+    return true;
+}
+
+#endif
 template <typename T>
 static HRESULT create_shader(
 	LPCSTR const pTarget,
@@ -1079,6 +1106,9 @@ static HRESULT create_shader(
 	{
 		SPS* sps_result = (SPS*)result;
 #ifdef USE_DX11
+        sps_result->static_draw_safe = false;
+#endif
+#ifdef USE_DX11
 		_result = HW.pDevice->CreatePixelShader(buffer, buffer_size, 0, &sps_result->ps);
 #else // #ifdef USE_DX11
 		_result			= HW.pDevice->CreatePixelShader(buffer, buffer_size, &sps_result->ps);
@@ -1104,6 +1134,9 @@ static HRESULT create_shader(
 		{
 			//	Let constant table parse it's data
 			sps_result->constants.parse(pReflection, RC_dest_pixel);
+#ifdef USE_DX11
+            sps_result->static_draw_safe = static_draw_shader_safe(pReflection);
+#endif
 
 			_RELEASE(pReflection);
 		}
@@ -1116,6 +1149,9 @@ static HRESULT create_shader(
 	else if (pTarget[0] == 'v')
 	{
 		SVS* svs_result = (SVS*)result;
+#ifdef USE_DX11
+        svs_result->static_draw_safe = false;
+#endif
 #ifdef USE_DX11
 		_result = HW.pDevice->CreateVertexShader(buffer, buffer_size, 0, &svs_result->vs);
 #else // #ifdef USE_DX11
@@ -1154,6 +1190,9 @@ static HRESULT create_shader(
 
 			//	Let constant table parse it's data
 			svs_result->constants.parse(pReflection, RC_dest_vertex);
+#ifdef USE_DX11
+            svs_result->static_draw_safe = static_draw_shader_safe(pReflection);
+#endif
 
 			_RELEASE(pReflection);
 		}

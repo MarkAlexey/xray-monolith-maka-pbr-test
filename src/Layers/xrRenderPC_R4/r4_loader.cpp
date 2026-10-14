@@ -14,6 +14,7 @@
 #include "../xrRenderDX10/3DFluid/dx103DFluidVolume.h"
 
 #include "../xrRender/FHierrarhyVisual.h"
+#include "../xrRender/FVisual.h"
 
 #pragma warning(push)
 #pragma warning(disable:4995)
@@ -119,6 +120,7 @@ void CRender::level_Unload()
 	if (!b_loaded) return;
 
 	GMBase.clear();
+    levelIBData.clear_and_free();
 	GMRainWet.clear();
 	for (sun::cascade& cascade : m_sun_cascades)
 		cascade.GMCascade.clear();
@@ -258,6 +260,7 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 		CStreamReader* fs = base_fs->open_chunk(fsL_IB);
 		u32 count = fs->r_u32();
 		_IB.resize(count);
+        if (!_alternative) levelIBData.resize(count);
 		for (u32 i = 0; i < count; i++)
 		{
 			u32 iCount = fs->r_u32();
@@ -276,6 +279,7 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 			BYTE* pData = xr_alloc<BYTE>(iCount * 2);
 			fs->r(pData, iCount * 2);
 			dx10BufferUtils::CreateIndexBuffer(&_IB[i], pData, iCount * 2);
+            if (!_alternative) levelIBData[i].assign(reinterpret_cast<u16*>(pData), reinterpret_cast<u16*>(pData) + iCount);
 			xr_free(pData);
 
 			//			fs().advance		(iCount*2);
@@ -301,6 +305,10 @@ void CRender::LoadVisuals(IReader* fs)
 		chunk->close();
 		index++;
 	}
+    for (auto* visual : Visuals)
+        if (visual->Type == MT_NORMAL) static_cast<Fvisual*>(visual)->immutable_level_geometry = true;
+    Fvisual::BuildStaticBatches(Visuals);
+    levelIBData.clear_and_free();
 }
 
 void CRender::LoadLights(IReader* fs)

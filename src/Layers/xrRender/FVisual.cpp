@@ -11,6 +11,9 @@
 
 #include "../../xrEngine/fmesh.h"
 #include "fvisual.h"
+#if defined(USE_DX11) && RENDER == R_R4
+#include "StaticDrawPacketPolicy.h"
+#endif
 
 #include "../xrRenderDX10/dx10BufferUtils.h"
 
@@ -32,6 +35,12 @@ Fvisual::~Fvisual()
 
 void Fvisual::Release()
 {
+#if defined(USE_DX11) && RENDER == R_R4
+    static_batch.reset();
+    static_source_geometry.destroy();
+    static_source_indices.clear_and_free();
+    immutable_level_geometry = false;
+#endif
 	dxRender_Visual::Release();
 }
 
@@ -68,6 +77,14 @@ void Fvisual::Load(const char* N, IReader* data, u32 dwFlags)
 		VERIFY(NULL==p_rm_Indices);
 		p_rm_Indices = RImplementation.getIB(ID);
 		p_rm_Indices->AddRef();
+#if defined(USE_DX11) && RENDER == R_R4
+        if (Type == MT_NORMAL && ID < RImplementation.levelIBData.size())
+        {
+            const auto& indices = RImplementation.levelIBData[ID];
+            if (iBase <= indices.size() && iCount <= indices.size() - iBase)
+                static_source_indices.assign(indices.begin() + iBase, indices.begin() + iBase + iCount);
+        }
+#endif
 #endif
 #if (RENDER==R_R2) || (RENDER==R_R3) || (RENDER==R_R4)
 		// check for fast-vertices
@@ -255,3 +272,149 @@ void Fvisual::Copy(dxRender_Visual* pSrc)
 
 	PCOPY(m_fast);
 }
+
+#if defined(USE_DX11) && RENDER == R_R4
+bool Fvisual::StaticPassSafe(const SPass& pass)
+{
+    return pass.vs && pass.ps && pass.state && pass.state->state &&
+        pass.vs->static_draw_safe && pass.ps->static_draw_safe && pass.state->state->StaticPacketSafe() &&
+        !(pass.gs && pass.gs->gs) && !(pass.hs && pass.hs->sh) && !(pass.ds && pass.ds->sh) && !(pass.cs && pass.cs->sh);
+}
+
+bool Fvisual::StaticBatchValid() const
+{
+    return immutable_level_geometry && static_batch && rm_geom == static_source_geometry &&
+        rm_geom && rm_geom->vb == static_batch->vertices && rm_geom->dcl == static_batch->geometry->dcl &&
+        rm_geom->vb_stride == static_batch->geometry->vb_stride && vBase == static_source_base &&
+        vCount == static_source_vertices && iBase == static_source_first && iCount == static_source_count &&
+        dwPrimitives == iCount / 3;
+}
+Fvisual::StaticBatch::~StaticBatch()
+{
+    geometry.destroy();
+    if (indices) HW.stats_manager.decrement_stats_ib(indices);
+    _RELEASE(indices);
+    _RELEASE(vertices);
+}
+
+void Fvisual::BuildStaticBatches(const xr_vector<dxRender_Visual*>& visuals)
+{
+    PROF_EVENT("Render.StaticBatch.Build.Level");
+    R_ASSERT(GetCurrentThreadId() == Device.mmThreadID);
+    struct Candidate { Fvisual* visual; int cell[3]; };
+    xr_vector<Candidate> candidates;
+    for (auto* visual : visuals)
+    {
+        if (visual->Type != MT_NORMAL) continue;
+        auto* mesh = static_cast<Fvisual*>(visual);
+        mesh->static_batch.reset();
+        if (mesh->static_source_indices.empty() || !mesh->rm_geom || !mesh->shader || !mesh->immutable_level_geometry) continue;
+        bool useful = false, compatible = true;
+        for (u32 element_id = 0; element_id < 2; ++element_id)
+        {
+            const auto* element = mesh->shader->E[element_id]._get();
+            if (!element || element->flags.iPriority / 2 != 0 || element->flags.bStrictB2F ||
+                element->flags.bLandscape || element->flags.isWater || element->flags.bWmark)
+            {
+                if (element) compatible = false;
+                continue;
+            }
+            for (const auto& pass : element->passes)
+                if (pass && Fvisual::StaticPassSafe(*pass)) useful = true;
+        }
+        if (!useful || !compatible || !mesh->vCount || !mesh->iCount || mesh->iCount % 3 ||
+            mesh->static_source_indices.size() != mesh->iCount || mesh->vBase > UINT32_MAX - mesh->vCount) continue;
+        bool valid = true;
+        for (u16 index : mesh->static_source_indices) if (index >= mesh->vCount) { valid = false; break; }
+        if (!valid) continue;
+        const auto& p = mesh->vis.sphere.P;
+        if (!_valid(p) || _abs(p.x) > 1000000.f || _abs(p.y) > 1000000.f || _abs(p.z) > 1000000.f) continue;
+        candidates.push_back({mesh, {iFloor(p.x / 16.f), iFloor(p.y / 16.f), iFloor(p.z / 16.f)}});
+    }
+    auto same_group = [](const Candidate& a, const Candidate& b)
+    {
+        return a.visual->shader == b.visual->shader && a.visual->rm_geom->vb == b.visual->rm_geom->vb &&
+            a.visual->rm_geom->dcl == b.visual->rm_geom->dcl && a.visual->rm_geom->vb_stride == b.visual->rm_geom->vb_stride &&
+            a.cell[0] == b.cell[0] && a.cell[1] == b.cell[1] && a.cell[2] == b.cell[2];
+    };
+    std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b)
+    {
+        const void* ka[] = {a.visual->shader._get(), a.visual->rm_geom->vb, a.visual->rm_geom->dcl._get()};
+        const void* kb[] = {b.visual->shader._get(), b.visual->rm_geom->vb, b.visual->rm_geom->dcl._get()};
+        for (unsigned i = 0; i < 3; ++i) if (ka[i] != kb[i]) return std::less<const void*>()(ka[i], kb[i]);
+        if (a.visual->rm_geom->vb_stride != b.visual->rm_geom->vb_stride)
+            return a.visual->rm_geom->vb_stride < b.visual->rm_geom->vb_stride;
+        for (unsigned i = 0; i < 3; ++i) if (a.cell[i] != b.cell[i]) return a.cell[i] < b.cell[i];
+        return a.visual->vBase < b.visual->vBase;
+    });
+    u32 batches = 0, members = 0, index_bytes = 0;
+    for (size_t begin = 0; begin < candidates.size();)
+    {
+        auto* first = candidates[begin].visual;
+        const u32 base = first->vBase;
+        u32 vertex_end = base, count = 0;
+        size_t end = begin;
+        // Bounds are geometry/index limits, never a per-frame work allowance.
+        while (end < candidates.size() && end - begin < 64 && same_group(candidates[begin], candidates[end]))
+        {
+            auto* mesh = candidates[end].visual;
+            const u32 next_end = _max(vertex_end, mesh->vBase + mesh->vCount);
+            if (!aoe_render::static_vertex_span(base, next_end) || mesh->iCount > 65536 - count) break;
+            vertex_end = next_end; count += mesh->iCount; ++end;
+        }
+        if (end - begin > 1 && count * sizeof(u16) <= 64u * 1024u * 1024u - index_bytes)
+        {
+            xr_vector<u16> indices;
+            indices.reserve(count);
+            for (size_t i = begin; i < end; ++i)
+            {
+                auto* mesh = candidates[i].visual;
+                for (u16 index : mesh->static_source_indices) indices.push_back(u16(index + mesh->vBase - base));
+            }
+            auto batch = std::make_shared<StaticBatch>();
+            D3D11_BUFFER_DESC description{};
+            description.ByteWidth = count * sizeof(u16);
+            description.Usage = D3D11_USAGE_IMMUTABLE;
+            description.BindFlags = D3D11_BIND_INDEX_BUFFER;
+            D3D11_SUBRESOURCE_DATA data{};
+            data.pSysMem = indices.data();
+            const HRESULT result = HW.pDevice->CreateBuffer(&description, &data, &batch->indices);
+            if (SUCCEEDED(result))
+            {
+                HW.stats_manager.increment_stats_ib(batch->indices);
+                batch->vertices = first->rm_geom->vb;
+                batch->vertices->AddRef();
+                batch->base_vertex = base; batch->vertex_count = vertex_end - base;
+                batch->geometry.create(first->rm_geom->dcl->dcl_code.data(), batch->vertices, batch->indices);
+                u32 offset = 0;
+                for (size_t i = begin; i < end; ++i)
+                {
+                    auto* mesh = candidates[i].visual;
+                    mesh->static_batch = batch;
+                    mesh->static_source_geometry = mesh->rm_geom;
+                    mesh->static_source_base = mesh->vBase;
+                    mesh->static_source_vertices = mesh->vCount;
+                    mesh->static_source_first = mesh->iBase;
+                    mesh->static_source_count = mesh->iCount;
+                    mesh->static_batch_first_index = offset;
+                    offset += mesh->iCount;
+                }
+                ++batches; members += u32(end - begin); index_bytes += count * sizeof(u16);
+            }
+            else
+            {
+                _RELEASE(batch->indices); // No stats were registered on the failed allocation.
+                Msg("! Static batch index allocation failed (%08x); keeping original meshes", u32(result));
+            }
+        }
+        begin = end > begin ? end : begin + 1;
+    }
+    for (auto* visual : visuals)
+        if (visual->Type == MT_NORMAL) static_cast<Fvisual*>(visual)->static_source_indices.clear_and_free();
+    PROF_TAG("Groups", batches);
+    PROF_TAG("Members", members);
+    PROF_TAG("Index bytes", index_bytes);
+    Msg("* Static batches: %u groups, %u meshes, %u KB indices", batches, members, index_bytes / 1024);
+}
+
+#endif

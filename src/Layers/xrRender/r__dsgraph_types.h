@@ -138,6 +138,11 @@ namespace R_dsgraph
 
 	struct RenderPacket
 	{
+#if defined(USE_DX11) && RENDER == R_R4
+        const SPass* source_pass = nullptr;
+        void* static_batch = nullptr;
+        u32 static_first_index = 0;
+#endif
 		// Sorting key
         RenderPacketSortKey sortKey;
 
@@ -167,6 +172,9 @@ namespace R_dsgraph
 
         RenderPacket(const DSGraphItem<u32, false>& _item, const SPass& pass) : item(_item)
         {
+            #if defined(USE_DX11) && RENDER == R_R4
+            source_pass = &pass;
+#endif
             // Extract resource pointers from shader pass (previously used as map keys)
 #if defined(USE_DX10) || defined(USE_DX11)
             pVS = &*pass.vs;
