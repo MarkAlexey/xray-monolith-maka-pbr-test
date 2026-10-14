@@ -40,7 +40,10 @@ BOOL R_constant_table::parseConstants(ID3DShaderReflectionConstantBuffer* pTable
 
 		pVar = pTable->GetVariableByIndex(i);
 		VERIFY(pVar);
-		pVar->GetDesc(&VarDesc);
+        CHK_DX(pVar->GetDesc(&VarDesc));
+        // Usage belongs to this stage; merging still retains uses in other stages.
+        // Keep shader-bus declarations visible to scripts even when compiled out.
+        if (!(VarDesc.uFlags & D3D10_SVF_USED) && strncmp(VarDesc.Name, "bus_", 4)) continue;
 		pType = pVar->GetType();
 		VERIFY(pType);
 		pType->GetDesc(&TypeDesc);
