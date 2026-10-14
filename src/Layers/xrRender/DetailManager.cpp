@@ -93,6 +93,7 @@ CDetailManager::CDetailManager()
 	m_global_time_old = 0;
 
     m_frame_calc = 0;
+    m_visible_bounds.invalidate();
     m_frame_rendered.store(0, std::memory_order_relaxed);
 
 #ifdef DETAIL_RADIUS
@@ -305,6 +306,7 @@ extern float ps_r__ssaDISCARD_exp;
 extern float ps_r__ssaDISCARD_fade_k;
 void CDetailManager::UpdateVisibleM()
 {
+    m_visible_bounds.invalidate();
 	Fvector EYE = RDEVICE.vCameraPosition_saved;
 
 	CFrustum View;
@@ -554,6 +556,7 @@ void CDetailManager::UpdateVisibleM()
 							R.pack = 0;
 					}
 				}
+                bool slot_visible = false;
 				Fsphere bound;
 				if (fill_bounds)
 					bound.set(S.vis.sphere.P, S.cull_R);
@@ -569,6 +572,7 @@ void CDetailManager::UpdateVisibleM()
 							m_vis_bounds[0][sp.id].push_back(bound);
 						if (fill_rows)
 							m_vis_rows[0][sp.id].push_back(rows_id + sp_id * 3 + 0);
+                        slot_visible = true;
 					}
 					if (!sp.r_items[1].empty())
 					{
@@ -577,6 +581,7 @@ void CDetailManager::UpdateVisibleM()
 							m_vis_bounds[1][sp.id].push_back(bound);
 						if (fill_rows)
 							m_vis_rows[1][sp.id].push_back(rows_id + sp_id * 3 + 1);
+                        slot_visible = true;
 					}
 					if (!sp.r_items[2].empty())
 					{
@@ -585,8 +590,10 @@ void CDetailManager::UpdateVisibleM()
 							m_vis_bounds[2][sp.id].push_back(bound);
 						if (fill_rows)
 							m_vis_rows[2][sp.id].push_back(rows_id + sp_id * 3 + 2);
+                        slot_visible = true;
 					}
 				}
+                if (slot_visible) m_visible_bounds.merge(S.vis.box);
 			}
 		}
 	}
@@ -630,6 +637,14 @@ void CDetailManager::Render()
 	
 	RDEVICE.Statistic->RenderDUMP_DT_Render.End();
 	m_frame_rendered.store(RDEVICE.dwFrame, std::memory_order_release);
+}
+
+bool CDetailManager::GetVisibleBounds(Fbox& bounds)
+{
+    xrCriticalSectionGuard guard(m_mt_calc_guard);
+    if (m_frame_calc != RDEVICE.dwFrame || !m_visible_bounds.is_valid()) return false;
+    bounds = m_visible_bounds;
+    return true;
 }
 
 void __stdcall CDetailManager::MT_CALC()

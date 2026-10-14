@@ -20,6 +20,8 @@ public:
 	Fvector									i_vBase;		// input:	"view" point
 	CFrustum								i_frustum;		// input:	"view" frustum
 	Fmatrix									i_mXFORM;		// input:	4x4 xform
+    bool i_shadow_receiver_clip = false;
+    Fbox i_shadow_receiver_bounds;
 	CSector* i_start;		// input:	starting point
 	xrCriticalSection						P_CS;
 	xrSRWLock								S_LC;
@@ -36,6 +38,38 @@ public:
 	{
 		std::copy(mask, mask + 7, i_mask);
 	}
+    void set_shadow_receiver_bounds(const Fbox* bounds)
+    {
+        i_shadow_receiver_clip = bounds != nullptr;
+        if (bounds)
+            i_shadow_receiver_bounds.set(*bounds);
+    }
+    bool shadow_receiver_visible(const Fbox& world_bounds) const
+    {
+        if (!i_shadow_receiver_clip)
+            return true;
+
+        if (!world_bounds.is_valid() || !_valid(world_bounds.min) || !_valid(world_bounds.max) || !_valid(i_mXFORM)) return true;
+        Fbox projected;
+        projected.xform(world_bounds, i_mXFORM);
+        if (!projected.is_valid() || !_valid(projected.min) || !_valid(projected.max)) return true;
+        return projected.max.x >= i_shadow_receiver_bounds.min.x &&
+            projected.max.y >= i_shadow_receiver_bounds.min.y &&
+            projected.min.x <= i_shadow_receiver_bounds.max.x &&
+            projected.min.y <= i_shadow_receiver_bounds.max.y &&
+            projected.min.z <= i_shadow_receiver_bounds.max.z;
+    }
+    bool shadow_receiver_visible(const Fbox& local_bounds, const Fmatrix& world_xform) const
+    {
+        if (!i_shadow_receiver_clip)
+            return true;
+        if (!local_bounds.is_valid() || !_valid(local_bounds.min) || !_valid(local_bounds.max) || !_valid(world_xform))
+            return true;
+
+        Fbox world_bounds;
+        world_bounds.xform(local_bounds, world_xform);
+        return shadow_receiver_visible(world_bounds);
+    }
 	void initialize();
 	void destroy();
 	void traverse(CSector* start, CFrustum& F, Fvector& vBase, Fmatrix& mXFORM);
@@ -131,6 +165,7 @@ public:
 	{
 		xrSRWLockGuard guard(&S_LC, false);
 		RGraph.clear();
+        i_shadow_receiver_clip = false;
 #if defined(USE_DX11) && RENDER == R_R4
         prepared_worlds.clear();
         packet_pass_owners.clear();

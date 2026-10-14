@@ -364,6 +364,8 @@ public:
 
 	PSS poolSI; // pool из которого выделяются SlotItem
 
+    Fbox m_visible_bounds;
+    bool GetVisibleBounds(Fbox& bounds);
 	void UpdateVisibleM();
 	void UpdateVisibleS();
 public:

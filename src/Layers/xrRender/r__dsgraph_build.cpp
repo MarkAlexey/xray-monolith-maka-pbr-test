@@ -437,6 +437,9 @@ void CDSGraphManager::add_Dynamic(IRenderVisual* piVisual, Fmatrix* xform)
 
 	if (!i_mask[CDSGraphManager::fl_normal] && !!flags.test(IRenderVisualFlags::eNoShadow))
 		return;
+    if (pVisual->Type != MT_PARTICLE_GROUP && pVisual->Type != MT_PARTICLE_EFFECT &&
+        !shadow_receiver_visible(pVisual->vis.box, *xform)) return;
+
 
 	// Visual is 100% visible - simply add it
 	switch (pVisual->Type)
@@ -504,6 +507,9 @@ void CDSGraphManager::add_Dynamic(dxRender_Visual* pVisual, Fmatrix* xform)
 
 	if (!i_mask[CDSGraphManager::fl_normal] && !!flags.test(IRenderVisualFlags::eNoShadow))
 		return;
+    if (pVisual->Type != MT_PARTICLE_GROUP && pVisual->Type != MT_PARTICLE_EFFECT &&
+        !shadow_receiver_visible(pVisual->vis.box, *xform)) return;
+
 
 	// Visual is 100% visible - simply add it
 	switch (pVisual->Type)
@@ -593,6 +599,7 @@ void CDSGraphManager::add_Static(IRenderVisual* piVisual, CFrustum& frustum, u32
 
 	// Check frustum visibility and calculate distance to visual's center
 	vis_data& vis = pVisual->vis;
+    if (!shadow_receiver_visible(vis.box)) return;
 	EFC_Visible VIS = frustum.testSAABB(vis.sphere.P, vis.sphere.R, vis.box.data(), planes);
 
 	if (fcvNone == VIS)
@@ -671,6 +678,7 @@ void CDSGraphManager::add_Static_MultiFrustum(IRenderVisual* piVisual, const xr_
 
 	// Check visibility against all active frustums and propagate per-frustum masks.
 	vis_data& vis = pVisual->vis;
+    if (!shadow_receiver_visible(vis.box)) return;
 	bool anyVisible = false;
 	bool hasFullyVisibleFrustum = false;
 	xr_vector<u32> childMasks;
@@ -774,6 +782,7 @@ void CDSGraphManager::add_Static_MultiFrustum(IRenderVisual* piVisual, const xr_
 
 void CDSGraphManager::add_leaf_Static(dxRender_Visual* pVisual)
 {
+    if (!shadow_receiver_visible(pVisual->vis.box)) return;
 	if (R4FullDetailRejectStatic(pVisual, i_mask[CDSGraphManager::fl_normal]))
 		return;
 
