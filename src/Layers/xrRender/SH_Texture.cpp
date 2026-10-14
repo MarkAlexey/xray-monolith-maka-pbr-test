@@ -20,7 +20,8 @@
 
 void resptrcode_texture::create(LPCSTR _name)
 {
-	_set(DEV->_CreateTexture(_name));
+	ref_texture texture = DEV->_CreateTexture(_name);
+    _set(texture._get());
 }
 
 

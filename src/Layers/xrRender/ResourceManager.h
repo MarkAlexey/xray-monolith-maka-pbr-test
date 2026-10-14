@@ -120,7 +120,10 @@ public:
 #endif
 
 	// Low level resource creation
-	CTexture* _CreateTexture(LPCSTR Name);
+	ref_texture _CreateTexture(LPCSTR Name);
+    void PrefetchTexture(LPCSTR name);
+    // creationGuard must protect the map entry while acquiring a live reference.
+    static ref_texture AcquireTexture(CTexture* texture);
 	CTexture* _FindTexture(LPCSTR Name);
 	void _DeleteTexture(const CTexture* T);
 

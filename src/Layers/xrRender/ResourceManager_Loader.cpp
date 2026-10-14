@@ -4,10 +4,15 @@
 #include "ResourceManager.h"
 #include "blenders\blender.h"
 
+extern xr_task_group textures_load_tasks;
+
 
 void CResourceManager::OnDeviceDestroy(BOOL)
 {
 	if (RDEVICE.b_is_Ready) return;
+    // Task-held texture references must release while this manager is still alive.
+    textures_load_tasks.wait();
+    DestroyNecessaryTextures();
 	m_textures_description.UnLoad();
 
 	// Matrices
@@ -154,33 +159,18 @@ void CResourceManager::OnDeviceCreate(LPCSTR shName)
 
 void CResourceManager::StoreNecessaryTextures()
 {
-	if (!m_necessary.empty())
-		return;
-
-	// Snapshot the keys under creationGuard: this used to walk m_textures
-	// directly with no lock at all, racing _CreateTexture's guarded insert on
-	// other threads. Release the lock before calling T.create(), since that
-	// re-enters _CreateTexture and takes creationGuard itself.
-	xr_vector<LPCSTR> texture_names;
-	{
-		xrCriticalSectionGuard guard(creationGuard);
-		texture_names.reserve(m_textures.size());
-		for (auto& pair : m_textures)
-			texture_names.push_back(pair.first);
-	}
-
-	for (LPCSTR texture_name : texture_names)
-	{
-		if (strstr(texture_name, "\\levels\\")) continue;
-		if (!strchr(texture_name, '\\')) continue;
-
-		ref_texture T;
-		T.create(texture_name);
-		m_necessary.push_back(T);
-	}
+    xrCriticalSectionGuard guard(creationGuard);
+    for (const auto& entry : m_textures)
+    {
+        if (strstr(entry.first, "\\levels\\") || !strchr(entry.first, '\\')) continue;
+        ref_texture texture = AcquireTexture(entry.second);
+        if (texture && std::find(m_necessary.begin(), m_necessary.end(), texture) == m_necessary.end())
+            m_necessary.push_back(texture);
+    }
 }
 
 void CResourceManager::DestroyNecessaryTextures()
 {
+    xrCriticalSectionGuard guard(creationGuard);
 	m_necessary.clear();
 }

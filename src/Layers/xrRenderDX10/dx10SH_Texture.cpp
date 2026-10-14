@@ -29,7 +29,8 @@ extern xr_task_group textures_load_tasks;
 void resptrcode_texture::create(LPCSTR _name)
 {
 	PROF_EVENT("resptrcode_texture::create");
-	_set(DEV->_CreateTexture(_name));
+	ref_texture texture = DEV->_CreateTexture(_name);
+    _set(texture._get());
 }
 
 
@@ -182,12 +183,11 @@ void CTexture::apply_load(u32 dwStage)
 #ifdef DEBUG
             Msg("* [TexReload] queued: %s", cName.c_str());
 #endif // DEBUG
-            CTexture* self = this;
-            static DWORD this_thread_id = 0;
-            this_thread_id = GetCurrentThreadId();
-            textures_load_tasks.run([self]()
+            ref_texture self(this);
+            const DWORD owner_thread = GetCurrentThreadId();
+            textures_load_tasks.run([self, owner_thread]()
             {
-                if (this_thread_id != GetCurrentThreadId()) { PROF_THREAD("X-Ray PPL Thread") }
+                if (owner_thread != GetCurrentThreadId()) { PROF_THREAD("X-Ray PPL Thread") }
                 self->Load();
             });
         }

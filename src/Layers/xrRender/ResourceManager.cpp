@@ -381,6 +381,30 @@ void CResourceManager::Delete(const Shader* S)
 	Msg("! ERROR: Failed to find complete shader");
 }
 
+ref_texture CResourceManager::AcquireTexture(CTexture* texture)
+{
+    if (!texture) return {};
+    u32 references = texture->dwReference.load(std::memory_order_relaxed);
+    while (references)
+    {
+        R_ASSERT(references != u32(-1));
+        if (texture->dwReference.compare_exchange_weak(references, references + 1,
+            std::memory_order_relaxed, std::memory_order_relaxed))
+            return ref_texture(texture, false);
+    }
+    return {};
+}
+
+void CResourceManager::PrefetchTexture(LPCSTR name)
+{
+    ref_texture texture = _CreateTexture(name);
+    if (!texture) return;
+    xrCriticalSectionGuard guard(creationGuard);
+    // Preserve the existing explicit prefetch API across the owning factory handoff.
+    if (std::find(m_necessary.begin(), m_necessary.end(), texture) == m_necessary.end())
+        m_necessary.push_back(texture);
+}
+
 void CResourceManager::DeferredUpload()
 {
 	if (!RDEVICE.b_is_Ready) return;
@@ -394,19 +418,21 @@ void CResourceManager::DeferredUpload()
 	// concurrently with _CreateTexture's insert into the same std::map, then
 	// release the lock before running Load() across PPL worker threads (some
 	// of which may themselves need creationGuard, e.g. via _CreateTexture).
-	xr_vector<CTexture*> textures;
+	xr_vector<ref_texture> textures;
 	{
 		xrCriticalSectionGuard guard(creationGuard);
 		textures.reserve(m_textures.size());
 		for (auto& pair : m_textures)
-			textures.push_back(pair.second);
+        {
+            ref_texture texture = AcquireTexture(pair.second);
+            if (texture) textures.push_back(texture);
+        }
 	}
 
-	static DWORD this_thread_id = 0;
-	this_thread_id = GetCurrentThreadId();
-	xr_parallel_foreach(textures.begin(), textures.end(), [](CTexture* texture)
+	const DWORD owner_thread = GetCurrentThreadId();
+	xr_parallel_foreach(textures.begin(), textures.end(), [owner_thread](const ref_texture& texture)
 	{
-		if (this_thread_id != GetCurrentThreadId()) { PROF_THREAD("X-Ray PPL Thread") }
+        if (owner_thread != GetCurrentThreadId()) { PROF_THREAD("X-Ray PPL Thread") }
 		texture->Load();
 	});
 
@@ -418,15 +444,18 @@ void CResourceManager::DeferredUnload()
 	if (!RDEVICE.b_is_Ready)
 		return;
 
-	xr_vector<CTexture*> textures;
+	xr_vector<ref_texture> textures;
 	{
 		xrCriticalSectionGuard guard(creationGuard);
 		textures.reserve(m_textures.size());
 		for (auto& pair : m_textures)
-			textures.push_back(pair.second);
+        {
+            ref_texture texture = AcquireTexture(pair.second);
+            if (texture) textures.push_back(texture);
+        }
 	}
 
-	xr_parallel_foreach(textures.begin(), textures.end(), [](CTexture* texture)
+	xr_parallel_foreach(textures.begin(), textures.end(), [](const ref_texture& texture)
 	{
 		texture->Unload();
 	});
@@ -509,6 +538,7 @@ Shader* CResourceManager::_CreateShader(Shader* InShader)
 
 void CResourceManager::_GetMemoryUsage(u32& m_base, u32& c_base, u32& m_lmaps, u32& c_lmaps)
 {
+    xrCriticalSectionGuard guard(creationGuard);
 	m_base = c_base = m_lmaps = c_lmaps = 0;
 
 	map_Texture::iterator I = m_textures.begin();
@@ -531,6 +561,7 @@ void CResourceManager::_GetMemoryUsage(u32& m_base, u32& c_base, u32& m_lmaps, u
 
 void CResourceManager::_DumpMemoryUsage()
 {
+    xrCriticalSectionGuard guard(creationGuard);
 	xr_multimap<u32, std::pair<u32, shared_str>> mtex;
 
 	// sort

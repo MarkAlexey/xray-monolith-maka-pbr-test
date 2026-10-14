@@ -621,7 +621,7 @@ void CResourceManager::DeleteGeom(const SGeometry* Geom)
 
 //--------------------------------------------------------------------------------------------------------------
 xr_task_group textures_load_tasks;
-CTexture* CResourceManager::_CreateTexture(LPCSTR _Name)
+ref_texture CResourceManager::_CreateTexture(LPCSTR _Name)
 {
 	PROF_EVENT("_CreateTexture");
 	// DBG_VerifyTextures	();
@@ -635,24 +635,31 @@ CTexture* CResourceManager::_CreateTexture(LPCSTR _Name)
 	// ***** first pass - search already loaded texture
 	LPSTR N = LPSTR(Name);
 	map_TextureIt I = m_textures.find(N);
-	if (I != m_textures.end()) return I->second;
-	else
+	if (I != m_textures.end())
+    {
+        ref_texture existing = AcquireTexture(I->second);
+        if (existing) return existing;
+        // Last release has begun destruction. Never resurrect the object.
+        I->second->dwFlags &= ~xr_resource_flagged::RF_REGISTERED;
+        m_textures.erase(I);
+    }
+
 	{
 		CTexture* T = xr_new<CTexture>();
+        ref_texture texture(T);
 		T->dwFlags |= xr_resource_flagged::RF_REGISTERED;
 		m_textures.insert(mk_pair(T->set_name(Name), T));
 		T->Preload();
 		if (Device.b_is_Ready)
 		{
-			static DWORD this_thread_id = 0;
-			this_thread_id = GetCurrentThreadId();
-			textures_load_tasks.run([=]()
-			{
-				if (this_thread_id != GetCurrentThreadId()) { PROF_THREAD("X-Ray PPL Thread") }
-				T->Load();
-			});
+            const DWORD owner_thread = GetCurrentThreadId();
+            textures_load_tasks.run([texture, owner_thread]()
+            {
+                if (owner_thread != GetCurrentThreadId()) { PROF_THREAD("X-Ray PPL Thread") }
+                texture->Load();
+            });
 		}
-		return T;
+		return texture;
 	}
 }
 
@@ -660,11 +667,11 @@ void CResourceManager::_DeleteTexture(const CTexture* T)
 {
 	// DBG_VerifyTextures	();
 
-	if (0 == (T->dwFlags & xr_resource_flagged::RF_REGISTERED)) return;
 	xrCriticalSectionGuard guard(creationGuard);
+    if (0 == (T->dwFlags & xr_resource_flagged::RF_REGISTERED)) return;
 	LPSTR N = LPSTR(*T->cName);
 	map_Texture::iterator I = m_textures.find(N);
-	if (I != m_textures.end())
+	if (I != m_textures.end() && I->second == T)
 	{
 		m_textures.erase(I);
 		return;
