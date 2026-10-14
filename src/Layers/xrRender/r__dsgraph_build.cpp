@@ -675,7 +675,7 @@ void CDSGraphManager::add_Static_MultiFrustum(IRenderVisual* piVisual, const xr_
 			anyVisible = true;
 			hasFullyVisibleFrustum = true;
 			childMasks[i] = FULLY_VISIBLE_MASK;
-			continue;
+            break;
 		}
 
 		EFC_Visible VIS = frustums[i].testSAABB(vis.sphere.P, vis.sphere.R, vis.box.data(), planeMask);
@@ -691,6 +691,7 @@ void CDSGraphManager::add_Static_MultiFrustum(IRenderVisual* piVisual, const xr_
 			// Preserve union semantics by marking this frustum as fully visible.
 			hasFullyVisibleFrustum = true;
 			childMasks[i] = FULLY_VISIBLE_MASK;
+            break;
 		}
 		else
 		{

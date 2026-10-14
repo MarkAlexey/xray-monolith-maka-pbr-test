@@ -444,7 +444,7 @@ void CDSGraphManager::r_dsgraph_render_distort()
 #include"LightTrack.h"
 void CDSGraphManager::r_dsgraph_capture_static()
 {
-	PROF_EVENT("r_dsgraph_capture_static")
+    PROF_EVENT("Render.Static.UnionFrustumCapture");
 	const bool dbg_enabled = PortalTraverseDbg_Enabled();
 	PortalTraverseDebugStats* dbg = dbg_enabled ? &PortalTraverseDbg_Get() : nullptr;
 	const bool opt_bucket = PortalTraverseDbg_IsOptions(i_options);
