@@ -4,6 +4,8 @@
 #include "dx10BufferUtils.h"
 #include "../xrRender/dxRenderDeviceRender.h"
 
+dx10ConstantBuffer::Stats dx10ConstantBuffer::s_stats{};
+
 dx10ConstantBuffer::~dx10ConstantBuffer()
 {
 	if (Device.m_pRender && DEV)
@@ -50,6 +52,7 @@ dx10ConstantBuffer::dx10ConstantBuffer(ID3DShaderReflectionConstantBuffer* pTabl
 	VERIFY(m_pBuffer);
 	m_pBufferData = xr_malloc(Desc.Size);
 	VERIFY(m_pBufferData);
+    ZeroMemory(m_pBufferData, Desc.Size);
 }
 
 bool dx10ConstantBuffer::Similar(dx10ConstantBuffer& _in)
@@ -85,6 +88,7 @@ void dx10ConstantBuffer::Flush()
 {
     if (m_bChanged)
     {
+        PROF_EVENT("Render.Constants.Upload");
         void    *pData;
 #ifdef USE_DX11
         D3D11_MAPPED_SUBRESOURCE    pSubRes;
@@ -102,5 +106,25 @@ void dx10ConstantBuffer::Flush()
         m_pBuffer->Unmap();
 #endif
         m_bChanged = false;
+#if XRCORE_PROFILER == PROFILER_OPTICK
+        ++s_stats.uploads;
+        s_stats.bytes += m_uiBufferSize;
+#endif
     }
+}
+
+void dx10ConstantBuffer::ResetStats()
+{
+#if XRCORE_PROFILER == PROFILER_OPTICK
+	s_stats = {};
+#endif
+}
+
+void dx10ConstantBuffer::ProfileStats()
+{
+	PROF_TAG("Render.Constants.TypedWrites", s_stats.typed);
+	PROF_TAG("Render.Constants.CleanWritesSkipped", s_stats.skipped);
+	PROF_TAG("Render.Constants.DirectAccesses", s_stats.direct);
+	PROF_TAG("Render.Constants.Uploads", s_stats.uploads);
+	PROF_TAG("Render.Constants.UploadBytes", s_stats.bytes);
 }

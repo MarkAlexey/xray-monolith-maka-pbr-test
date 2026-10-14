@@ -15,6 +15,9 @@
 
 void CBackend::OnFrameEnd()
 {
+#if defined(USE_DX11) || defined(USE_DX10)
+    { PROF_EVENT("Render.Constants.Stats"); dx10ConstantBuffer::ProfileStats(); }
+#endif
 	//#ifndef DEDICATED_SERVER
 #ifndef _EDITOR
 	if (!g_dedicated_server)
@@ -51,6 +54,9 @@ void CBackend::unbind_CS_textures()
 
 void CBackend::OnFrameBegin()
 {
+#if defined(USE_DX11) || defined(USE_DX10)
+    dx10ConstantBuffer::ResetStats();
+#endif
 	//#ifndef DEDICATED_SERVER
 #ifndef _EDITOR
 	if (!g_dedicated_server)

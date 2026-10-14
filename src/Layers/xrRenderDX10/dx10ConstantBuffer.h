@@ -15,6 +15,8 @@ public:
 	ID3DBuffer* GetBuffer() { return m_pBuffer; }
 
 	void Flush();
+    static void ResetStats();
+    static void ProfileStats();
 
 	u32 GetSize() const { return m_uiBufferSize; }
 	const void* GetData() const { return m_pBufferData; }
@@ -35,7 +37,10 @@ public:
 	void* AccessDirect(R_constant_load& L, u32 DataSize);
 
 private:
-	Fvector4* Access(u16 offset);
+	void Write(u32 offset, const void* value, u32 size);
+    void WriteMatrix(R_constant* C, R_constant_load& L, u32 element, const Fmatrix& value);
+    struct Stats { u32 typed = 0, skipped = 0, direct = 0, uploads = 0, bytes = 0; };
+    static Stats s_stats;
 
 private:
 	shared_str m_strBufferName;
