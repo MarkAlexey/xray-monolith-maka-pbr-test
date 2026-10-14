@@ -261,6 +261,7 @@ IC void CBackend::set_Constants(R_constant_table* C)
 	// caching
 	if (ctable == C) return;
 	ctable = C;
+    ++ctable_serial;
 	xforms.unmap();
 	hemi.unmap();
 	bus_object.unmap();

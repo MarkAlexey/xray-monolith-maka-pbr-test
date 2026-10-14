@@ -158,6 +158,7 @@ private:
 	// Pixel/Vertex constants
 	ALIGN(16) R_constants constants;
 	R_constant_table* ctable;
+    u64 ctable_serial = 0;
 
 	// Shaders/State
 	ID3DState* state;
@@ -298,6 +299,7 @@ public:
 
 	IC void set_Constants(R_constant_table* C);
 	IC void set_Constants(ref_ctable& C) { set_Constants(&*C); }
+    IC u64 get_ConstantsSerial() const { return ctable_serial; }
 
 	void set_Textures(STextureList* T);
 #ifdef USE_DX11

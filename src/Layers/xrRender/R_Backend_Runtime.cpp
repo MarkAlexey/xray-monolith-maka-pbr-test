@@ -114,6 +114,7 @@ void CBackend::Invalidate()
 	cs = 0;
 #endif
 	ctable = NULL;
+    ++ctable_serial;
 
 	T = NULL;
 	M = NULL;
