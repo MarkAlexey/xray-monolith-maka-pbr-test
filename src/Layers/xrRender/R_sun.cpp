@@ -303,6 +303,10 @@ void CRender::prepare_sun_cascade(u32 cascade_ind, const Fmatrix& inverse)
 			}
 
 			cascade.xform = cull_xform;
+            const bool caster_frustum_fallback = cull_frustum.p_count == 0;
+            if (caster_frustum_fallback)
+                cull_frustum.CreateFromMatrix(cull_xform, FRUSTUM_P_LRTB);
+            PROF_TAG("Caster frustum fallback", caster_frustum_fallback);
 
 			s32 limit = o.smapsize - 1;
 			fuckingsun->X.D.minX = 0;
