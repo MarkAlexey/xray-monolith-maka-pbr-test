@@ -160,21 +160,9 @@ class pred_fb
 {
 public:
 	occTri* m_pTris;
-	Fvector camera;
 public:
 	pred_fb(occTri* _t) : m_pTris(_t)
 	{
-	}
-
-	pred_fb(occTri* _t, Fvector& _c) : m_pTris(_t), camera(_c)
-	{
-	}
-
-	ICF bool operator()(const CDB::RESULT& _1, const CDB::RESULT& _2) const
-	{
-		occTri& t0 = m_pTris[_1.id];
-		occTri& t1 = m_pTris[_2.id];
-		return camera.distance_to_sqr(t0.center) < camera.distance_to_sqr(t1.center);
 	}
 
 	ICF bool operator()(const CDB::RESULT& _1) const
@@ -214,7 +202,16 @@ void CHOM::Render_DB(CFrustum& base)
 
 	Fvector COP = Device.vCameraPosition;
 	end = std::remove_if(it, end, pred_fb(m_pTris));
-	std::sort(it, end, pred_fb(m_pTris, COP));
+	{
+        PROF_EVENT("Render.HOM.SortOccluders");
+        PROF_TAG("Triangles", u32(end - it));
+        for (CDB::RESULT* cursor = it; cursor != end; ++cursor)
+            cursor->range = COP.distance_to_sqr(m_pTris[cursor->id].center);
+        std::sort(it, end, [](const CDB::RESULT& left, const CDB::RESULT& right)
+        {
+            return left.range < right.range;
+        });
+    }
 
 	// Build frustum with near plane only
 	CFrustum clip;
