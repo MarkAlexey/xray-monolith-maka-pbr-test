@@ -36,11 +36,17 @@ FTreeVisual::~FTreeVisual(void)
 
 void FTreeVisual::Release()
 {
+#if RENDER != R_R1
+    prepared_valid = false;
+#endif
 	dxRender_Visual::Release();
 }
 
 void FTreeVisual::Load(const char* N, IReader* data, u32 dwFlags)
 {
+#if RENDER != R_R1
+    prepared_valid = false;
+#endif
 	dxRender_Visual::Load(N, data, dwFlags);
 
 	D3DVERTEXELEMENT9* vFormat = NULL;
@@ -159,9 +165,17 @@ void FTreeVisual::Render(float LOD)
 	}
 	// setup constants
 #if RENDER!=R_R1
-	Fmatrix xform_v;
-	xform_v.mul_43(RCache.get_xform_view(), xform);
-	RCache.tree.set_m_xform_v(xform_v); // matrix
+	const Fmatrix& view = RCache.get_xform_view();
+    const bool matched = prepared_valid && !memcmp(&prepared_view, &view, sizeof(Fmatrix)) &&
+        !memcmp(&prepared_world, &xform, sizeof(Fmatrix));
+    if (!matched)
+    {
+        PROF_EVENT("Render.Trees.PrepareViewMatrix");
+        Fmatrix combined;
+        combined.mul_43(view, xform);
+        PublishPreparedView(view, xform, combined);
+    }
+    RCache.tree.set_m_xform_v(prepared_combined);
 #endif
 	float s = ps_r__Tree_SBC;
 	RCache.tree.set_m_xform(xform); // matrix
@@ -248,6 +262,9 @@ void FTreeVisual::Render(float LOD)
 
 void FTreeVisual::Copy(dxRender_Visual* pSrc)
 {
+#if RENDER != R_R1
+    prepared_valid = false;
+#endif
 	dxRender_Visual::Copy(pSrc);
 
 	FTreeVisual* pFrom = fast_dynamic_cast<FTreeVisual*>(pSrc);

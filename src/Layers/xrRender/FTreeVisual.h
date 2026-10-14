@@ -19,6 +19,19 @@ protected:
 	_5color c_scale;
 	_5color c_bias;
 	Fmatrix xform;
+#if RENDER != R_R1
+    Fmatrix prepared_view, prepared_world, prepared_combined;
+    bool prepared_valid = false;
+public:
+    const Fmatrix& PreparationTransform() const { return xform; }
+    void PublishPreparedView(const Fmatrix& view, const Fmatrix& world, const Fmatrix& combined)
+    {
+        prepared_view = view;
+        prepared_world = world;
+        prepared_combined = combined;
+        prepared_valid = true;
+    }
+#endif
 public:
 	virtual void Render(float LOD); // LOD - Level Of Detail  [0.0f - min, 1.0f - max], Ignored
 	virtual void Load(LPCSTR N, IReader* data, u32 dwFlags);
