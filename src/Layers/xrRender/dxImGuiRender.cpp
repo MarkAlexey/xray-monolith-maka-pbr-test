@@ -2,6 +2,9 @@
 #include "dxImGuiRender.h"
 
 #include <imgui.h>
+#if defined(USE_DX11) || defined(USE_DX10)
+#include "../xrRenderDX10/StateManager/dx10SamplerStateCache.h"
+#endif
 
 #if defined(USE_DX11)
 #include <backends/imgui_impl_dx11.h>
@@ -66,6 +69,13 @@ void dxImGuiRender::Frame()
 
 void dxImGuiRender::Render(ImDrawData* data)
 {
+#if defined(USE_DX11) || defined(USE_DX10)
+    SSManager.BeginExternalState();
+    struct SamplerScope
+    {
+        ~SamplerScope() { SSManager.EndExternalState(); }
+    } sampler_scope;
+#endif
 #if defined(USE_DX11)
     ImGui_ImplDX11_RenderDrawData(data);
 #elif defined(USE_DX10)

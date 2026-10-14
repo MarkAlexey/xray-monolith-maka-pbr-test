@@ -10,6 +10,7 @@
 
 #if defined(USE_DX10) || defined(USE_DX11)
 #include "../xrRenderDX10/StateManager/dx10StateManager.h"
+#include "../xrRenderDX10/StateManager/dx10SamplerStateCache.h"
 #include "../xrRenderDX10/StateManager/dx10ShaderResourceStateCache.h"
 #endif	USE_DX10
 
@@ -17,6 +18,7 @@ void CBackend::OnFrameEnd()
 {
 #if defined(USE_DX11) || defined(USE_DX10)
     { PROF_EVENT("Render.Constants.Stats"); dx10ConstantBuffer::ProfileStats(); }
+    { PROF_EVENT("Render.Samplers.Stats"); SSManager.ProfileStats(); }
 #endif
 	//#ifndef DEDICATED_SERVER
 #ifndef _EDITOR
@@ -56,6 +58,7 @@ void CBackend::OnFrameBegin()
 {
 #if defined(USE_DX11) || defined(USE_DX10)
     dx10ConstantBuffer::ResetStats();
+    SSManager.ResetStats();
 #endif
 	//#ifndef DEDICATED_SERVER
 #ifndef _EDITOR

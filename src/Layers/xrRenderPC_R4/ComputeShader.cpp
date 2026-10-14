@@ -5,6 +5,7 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
+#include "../xrRenderDX10/StateManager/dx10SamplerStateCache.h"
 #include "ComputeShader.h"
 
 void ComputeShader::Construct(
@@ -85,7 +86,10 @@ void ComputeShader::Dispatch(u32 dimx, u32 dimy, u32 dimz)
 		HW.pContext->CSSetShaderResources(0, m_Textures.size(), &m_Textures[0]);
 
 	if (!m_Samplers.empty())
+	{
 		HW.pContext->CSSetSamplers(0, m_Samplers.size(), &m_Samplers[0]);
+        SSManager.InvalidateComputeSamplers();
+	}
 
 	if (!m_Outputs.empty())
 	{
