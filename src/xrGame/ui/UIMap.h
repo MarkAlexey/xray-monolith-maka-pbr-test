@@ -144,6 +144,7 @@ public:
 	virtual ~CUILevelMap();
 	const Frect& GlobalRect() const { return m_GlobalRect; }
 	virtual void Draw();
+    virtual void DrawTexture() override;
 	virtual void Show(bool status);
 	virtual void Update();
 	virtual bool OnMouseAction(float x, float y, EUIMessages mouse_action);
