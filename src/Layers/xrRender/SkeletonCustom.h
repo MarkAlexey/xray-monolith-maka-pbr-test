@@ -131,6 +131,10 @@ protected:
 
 	// Globals
 	CInifile* pUserData;
+#if defined(USE_DX11) && RENDER == R_R4
+    xr_vector<Fmatrix> palette_source[2];
+    xr_vector<Fvector4> palette_rows[2];
+#endif
 	CBoneInstance* bone_instances; // bone instances
 	vecBones* bones; // all bones	(shared)
 	u16 bones_size;
@@ -341,6 +345,9 @@ public:
 	// Main functionality
 	virtual void CalculateBones(BOOL bForceExact = FALSE); // Recalculate skeleton
 	void CalculateBones_Invalidate();
+#if defined(USE_DX11) && RENDER == R_R4
+    const Fvector4* RenderPalette(u32 count, bool previous);
+#endif
 	bool CopyBonesFrom(IKinematics* from);
 
 	void Callback(UpdateCallback C, void* Param)

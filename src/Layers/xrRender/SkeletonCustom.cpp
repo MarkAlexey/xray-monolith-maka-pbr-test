@@ -125,6 +125,13 @@ CKinematics::~CKinematics()
 
 void CKinematics::IBoneInstances_Create()
 {
+#if defined(USE_DX11) && RENDER == R_R4
+    for (u32 i = 0; i < 2; ++i)
+    {
+        palette_source[i].clear();
+        palette_rows[i].clear();
+    }
+#endif
 	// VERIFY2				(bones->size() < 64, "More than 64 bones is a crazy thing!");
 	u32 size = bones->size();
 	bone_instances = xr_alloc<CBoneInstance>(size);
@@ -134,6 +141,13 @@ void CKinematics::IBoneInstances_Create()
 
 void CKinematics::IBoneInstances_Destroy()
 {
+#if defined(USE_DX11) && RENDER == R_R4
+    for (u32 i = 0; i < 2; ++i)
+    {
+        palette_source[i].clear();
+        palette_rows[i].clear();
+    }
+#endif
 	if (bone_instances)
 	{
 		xr_free(bone_instances);
@@ -444,6 +458,30 @@ void CKinematics::Copy(dxRender_Visual* P)
 
 	m_lod = (pFrom->m_lod) ? (dxRender_Visual*)::Render->model_Duplicate(pFrom->m_lod) : 0;
 }
+
+#if defined(USE_DX11) && RENDER == R_R4
+const Fvector4* CKinematics::RenderPalette(u32 count, bool previous)
+{
+    PROF_EVENT("Render.Skinning.ValidatePalette");
+    if (!count || count > LL_BoneCount()) return nullptr;
+    auto& source = palette_source[previous ? 1 : 0];
+    auto& rows = palette_rows[previous ? 1 : 0];
+    const u32 initialized = u32(source.size());
+    if (count > initialized) { source.resize(count); rows.resize(count * 3); }
+    for (u32 bone = 0; bone < count; ++bone)
+    {
+        const Fmatrix& m = previous ? bone_instances[bone].mRenderTransform_prev : bone_instances[bone].mRenderTransform;
+        if (bone < initialized && !memcmp(&source[bone], &m, sizeof(m))) continue;
+        source[bone] = m;
+        Fvector4* packed = rows.data() + bone * 3;
+        packed[0].set(m._11, m._21, m._31, m._41);
+        packed[1].set(m._12, m._22, m._32, m._42);
+        packed[2].set(m._13, m._23, m._33, m._43);
+    }
+    return rows.data();
+}
+
+#endif
 
 void CKinematics::CalculateBones_Invalidate()
 {

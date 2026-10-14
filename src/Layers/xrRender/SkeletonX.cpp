@@ -135,7 +135,21 @@ void CSkeletonX::_Render(ref_geom& hGeom, u32 vCount, u32 iOffset, u32 pCount)
 			{
 				PROF_EVENT("SEND_MATRICES");
 				u32 count = RMS_bonecount;
-				for (u32 mid = 0; mid < count; mid++)
+#if defined(USE_DX11) && RENDER == R_R4
+                const Fvector4* current_rows = Parent->RenderPalette(count, false);
+                const bool previous_needed = RImplementation.phase == RImplementation.PHASE_NORMAL && RImplementation.o.ssfx_motionvectors;
+                const Fvector4* previous_rows = previous_needed ? Parent->RenderPalette(count, true) : nullptr;
+                if (current_rows && (!previous_needed || previous_rows))
+                {
+                    for (u32 row = 0; row < count * 3; ++row)
+                    {
+                        RCache.set_ca(array, row, current_rows[row]);
+                        if (previous_rows) RCache.set_ca(array_prev, row, previous_rows[row]);
+                    }
+                }
+                else
+#endif
+                for (u32 mid = 0; mid < count; mid++)
 				{
 					Fmatrix& M = Parent->LL_GetTransform_R(u16(mid));
 					u32 id = mid * 3;
