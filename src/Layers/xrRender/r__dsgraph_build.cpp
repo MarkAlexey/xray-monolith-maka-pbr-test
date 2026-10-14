@@ -650,8 +650,13 @@ void CDSGraphManager::add_Static(IRenderVisual* piVisual, CFrustum& frustum, u32
 		if (ssa > r_ssaLOD_B)
 #endif
 		{
-			// Add all children, perform tests
-			add_leafs_Static(pV->children);
+            if (fcvPartial == VIS)
+            {
+                for (auto V : pV->children)
+                    add_Static(V, frustum, planes);
+            }
+            else
+                add_leafs_Static(pV->children);
 		}
 	}break;
 
@@ -767,7 +772,13 @@ void CDSGraphManager::add_Static_MultiFrustum(IRenderVisual* piVisual, const xr_
 		if (ssa > r_ssaLOD_B)
 #endif
 		{
-			add_leafs_Static(pV->children);
+            if (hasFullyVisibleFrustum)
+                add_leafs_Static(pV->children);
+            else
+            {
+                for (auto V : pV->children)
+                    add_Static_MultiFrustum(V, frustums, childMasks);
+            }
 		}
 	}break;
 
