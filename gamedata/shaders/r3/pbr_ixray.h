@@ -270,6 +270,66 @@ Texture2D		s_env_fwd;		// rgb = gamma colour x coverage, a = coverage (premultip
 // the first full capture) the reflection is plain magenta.
 // #define VSLR_DEBUG
 uniform float4	vslr_params;	// x = intensity (0 until captured), y = mip count, z = capture distance
+
+// LEWD: localized lookup (Szirmay-Kalos, Aszodi, Lazanyi, Premecz 2005, "Approximate Ray-Tracing on
+// the GPU with Distance Impostors"). The panorama is a single probe at the camera: a plain direction
+// lookup treats everything as infinitely far, so nearby walls slide across a reflection. s_env_dist
+// holds, per panorama direction, the distance from the capture point to what was captured; the
+// false-position iteration below finds where the reflected ray from THIS pixel meets that surface,
+// and the panorama is read in the direction of the hit. vslr_center.w = refinement steps
+// (r4_vslr_localize, 0 = plain lookup as in IX-Ray).
+Texture2D<float>	s_env_dist;		// R16F, metres from vslr_center.xyz (10 km where nothing was drawn)
+uniform float4		vslr_center;	// xyz = capture position (world), w = refinement steps
+
+float vslr_dist( float3 d )
+{
+	return s_env_dist.SampleLevel( smp_nofilter, vslr_panorama_uv( normalize( d ) ), 0 );
+}
+
+// x = ray origin relative to the capture point, R = unit ray direction (world). Returns the hit
+// approximation relative to the capture point (the paper's Hit(), false-position refinement).
+float3 vslr_localize( float3 x, float3 R, int steps )
+{
+	float rl	= vslr_dist( R );						// |r|: the plain lookup's distance
+	float dp	= rl - dot( x, R );						// perpendicular-surface guess
+	float3 p	= x + R * dp;
+	float ppp	= length( p ) / max( vslr_dist( p ), 1e-3 );
+	float dun	= 0.0, dov = 0.0, pun = ppp, pov = ppp;
+	if( ppp < 1.0 ) dun = dp; else dov = dp;
+	float dl	= max( dp + rl * ( 1.0 - ppp ), 0.0 );	// planar-surface guess
+	float3 l	= x + R * dl;
+	[loop] for( int i = 0; i < steps; ++i )
+	{
+		float llp	= length( l ) / max( vslr_dist( l ), 1e-3 );
+		float ddl;
+		if( llp < 1.0 )		// undershooting: in front of the surface
+		{
+			dun = dl; pun = llp;
+			ddl = ( dov == 0.0 ) ? rl * ( 1.0 - llp ) : ( dl - dov ) * ( 1.0 - llp ) / ( llp - pov );
+		}
+		else				// overshooting: behind it
+		{
+			dov = dl; pov = llp;
+			ddl = ( dun == 0.0 ) ? rl * ( 1.0 - llp ) : ( dl - dun ) * ( 1.0 - llp ) / ( llp - pun );
+		}
+		dl	= max( dl + ddl, 0.0 );
+		l	= x + R * dl;
+	}
+	return l;
+}
+
+// Panorama direction for a reflection from world position pw: localized for sharp reflections,
+// faded back to the plain direction for rough ones (their blur hides the parallax, and the
+// distance panorama has no mips)
+float3 vslr_lookup_dir( float3 rw, float3 pw, float roughness )
+{
+	int steps	= int( vslr_center.w );
+	[branch] if( steps <= 0 || roughness > 0.6 )
+		return rw;
+	float3 l	= vslr_localize( pw - vslr_center.xyz, rw, steps );
+	float3 d	= dot( l, l ) > 1e-6 ? normalize( l ) : rw;
+	return normalize( lerp( d, rw, smoothstep( 0.3, 0.6, roughness ) ) );
+}
 #endif
 uniform float4	L_sky_color;	// rgb = sky colour of the current weather, w = blend factor
 uniform float4	L_sky_rotation;	// x = cos, y = sin of the skybox rotation around Y
@@ -352,7 +412,8 @@ float3 pbr_diffuse_irradiance( float3 N, float hemi )
 
 float pbr_luminance( float3 c ) { return dot( c, float3( 0.2126, 0.7152, 0.0722 ) ); }
 
-float3 pbr_specular_irradiance( float3 R, float hemi, float roughness )
+// P = view-space position of the shaded pixel (LEWD: for the localized VSLR lookup)
+float3 pbr_specular_irradiance( float3 R, float hemi, float roughness, float3 P )
 {
 	float3 rw	= mul( m_inv_V, R );
 
@@ -417,7 +478,10 @@ float3 pbr_specular_irradiance( float3 R, float hemi, float roughness )
 #	else
 		float  vslr_lod	= min( 6.0, max( vslr_params.y - 1.0, 0.0 ) ) * roughness;
 #	endif
-		float4 vslr		= s_env_fwd.SampleLevel( smp_linear, vslr_panorama_uv( normalize( rw ) ), vslr_lod );
+		// LEWD: localized direction (distance impostor), plain direction with r4_vslr_localize 0
+		float3 pw		= mul( m_inv_V, float4( P, 1.0 ) ).xyz;
+		float3 vdir		= vslr_lookup_dir( normalize( rw ), pw, roughness );
+		float4 vslr		= s_env_fwd.SampleLevel( smp_linear, vslr_panorama_uv( vdir ), vslr_lod );
 		float3 vslr_sky	= lerp( sky, env, env_blend ) * saturate( hemi * 3.0 );
 		result			= lerp( result, vslr.rgb + vslr_sky * ( 1.0 - vslr.a ), vslr_params.x );
 #	ifdef VSLR_DEBUG
@@ -433,6 +497,12 @@ float3 pbr_specular_irradiance( float3 R, float hemi, float roughness )
 #endif
 }
 
+// Without a position (callers that have none): the camera, i.e. the unlocalized lookup
+float3 pbr_specular_irradiance( float3 R, float hemi, float roughness )
+{
+	return pbr_specular_irradiance( R, hemi, roughness, (float3)0.0 );
+}
+
 // Linear ambient radiance (IX-Ray AmbientLightingImpl). occ = SSAO * material AO.
 // diffuse_scale multiplies the diffuse part only (SSS indirect light).
 float3 pbr_ambient_ex( pbr_material M, float3 P, float3 N, float hemi, float occ, float3 diffuse_scale )
@@ -445,7 +515,7 @@ float3 pbr_ambient_ex( pbr_material M, float3 P, float3 N, float hemi, float occ
 	float3 diffuse	= pbr_to_linear( pbr_diffuse_irradiance( N, hemi ) ) * M.diffuse * diffuse_scale;
 	// IX-Ray SSLR replaces the cubemap reflection where its rays hit something (gamma space,
 	// before linearisation; see sslr_apply.h). P is the unnormalised view position.
-	float3 specular	= pbr_to_linear( sslr_blend( pbr_specular_irradiance( R, hemi, M.roughness ), P ) );
+	float3 specular	= pbr_to_linear( sslr_blend( pbr_specular_irradiance( R, hemi, M.roughness, P ), P ) );
 #if defined(PBR_UNIFIED) && defined(SSFX_NEWGLOSS)
 	// SSS "Improved gloss & wet surfaces": flora reflects a quarter of the environment
 	specular		*= M.flora ? 0.25 : 1.0;

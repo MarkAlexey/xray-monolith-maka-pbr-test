@@ -192,6 +192,20 @@ static class cl_vslr_params : public R_constant_setup
 	}
 } binder_vslr_params;
 
+// LEWD: localized VSLR lookup (Szirmay-Kalos et al. 2005, "Approximate Ray-Tracing on the GPU with
+// Distance Impostors"): xyz = world position the panorama was captured from, w = refinement steps
+// (0 = plain direction lookup, r4_vslr_localize)
+static class cl_vslr_center : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		const CRenderTarget* T = RImplementation.Target;
+		const bool ok = T && T->vslr_valid && T->rt_vslr_envdist_uav;
+		const Fvector c = T ? T->vslr_center : Fvector().set(0.f, 0.f, 0.f);
+		RCache.set_c(C, c.x, c.y, c.z, ok ? float(ps_r4_vslr_localize) : 0.f);
+	}
+} binder_vslr_center;
+
 #ifdef TREE_WIND_EFFECT
 static class cl_tree_amplitude_intensity : public R_constant_setup
 {
@@ -577,6 +591,7 @@ void CRender::create()
 	RM->RegisterConstantSetup("water_intensity", &binder_water_intensity);
 	RM->RegisterConstantSetup("sslr_params", &binder_sslr_params);
 	RM->RegisterConstantSetup("vslr_params", &binder_vslr_params);
+	RM->RegisterConstantSetup("vslr_center", &binder_vslr_center);
 	RM->RegisterConstantSetup("sun_shafts_intensity", &binder_sun_shafts_intensity);
 	RM->RegisterConstantSetup("m_AlphaRef", &binder_alpha_ref);
 	RM->RegisterConstantSetup("pos_decompression_params", &binder_pos_decompress_params);

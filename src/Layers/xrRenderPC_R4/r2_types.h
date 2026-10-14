@@ -92,6 +92,7 @@
 // Monolith: IX-Ray VSLR (offscreen reflections, r4_rendertarget_phase_vslr.cpp)
 #define		r2_RT_vslr_color		"$user$vslr_color"	// cubemap, R11G11B10F: linear radiance of the scene around the camera
 #define		r2_RT_vslr_dist			"$user$vslr_dist"	// cubemap, R16F: distance from the camera (cleared to "far")
+#define		r2_RT_vslr_envdist		"$user$vslr_envdist"	// LEWD: octahedral panorama, R16F: distance from the capture point (localized VSLR lookup)
 #define		r2_RT_vslr_env			"$user$vslr_env"	// octahedral panorama + mips, RGBA16F: rgb gamma colour, a sky/fog weight; read by combine as s_env_fwd
 #define		r2_RT_ssfx_temp2		"$user$ssfx_temp2" // SSS Temp3
 #define		r2_RT_ssfx_temp3		"$user$ssfx_temp3"

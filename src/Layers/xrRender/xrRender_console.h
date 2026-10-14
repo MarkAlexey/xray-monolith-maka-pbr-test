@@ -182,6 +182,7 @@ extern ECORE_API int ps_r4_vslr_size;
 extern ECORE_API int ps_r4_vslr_faces;
 extern ECORE_API float ps_r4_vslr_far;
 extern ECORE_API float ps_r4_vslr_intensity;
+extern ECORE_API int ps_r4_vslr_localize;
 
 // IX-Ray CSM
 extern ECORE_API int ps_r4_sun_csm;

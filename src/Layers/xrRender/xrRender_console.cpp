@@ -245,6 +245,7 @@ int ps_r4_vslr_size = 256; // r4_vslr_size, cubemap face size in pixels, needs a
 int ps_r4_vslr_faces = 2; // r4_vslr_faces, cube faces re-rendered per frame (6 = all, every frame)
 float ps_r4_vslr_far = 0.4f; // r4_vslr_far, capture distance as a fraction of the weather's far plane
 float ps_r4_vslr_intensity = 1.0f; // r4_vslr_intensity, how strongly the capture replaces the sky reflection
+int ps_r4_vslr_localize = 2; // LEWD r4_vslr_localize: 0 = direction lookup (IX-Ray), 1..4 = distance-impostor refinement steps
 
 // IX-Ray CSM
 int ps_r4_sun_csm = 1; // r4_sun_csm, needs a game restart (read in CRender::create)
@@ -1395,6 +1396,7 @@ void xrRender_initconsole()
 	CMD4(CCC_Integer, "r4_vslr_faces", &ps_r4_vslr_faces, 1, 6);
 	CMD4(CCC_Float, "r4_vslr_far", &ps_r4_vslr_far, 0.05f, 1.f);
 	CMD4(CCC_Float, "r4_vslr_intensity", &ps_r4_vslr_intensity, 0.f, 1.f);
+	CMD4(CCC_Integer, "r4_vslr_localize", &ps_r4_vslr_localize, 0, 4);
 
 	// IX-Ray CSM
 	CMD4(CCC_Integer, "r4_sun_csm", &ps_r4_sun_csm, 0, 1);

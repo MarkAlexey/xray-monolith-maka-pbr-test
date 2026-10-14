@@ -141,6 +141,26 @@ void CRenderTarget::create_vslr(u32 size)
 		return;
 	}
 
+	// LEWD: distance panorama for the localized lookup (r4_vslr_localize). Same layout as the
+	// colour panorama, mip 0 only (the lookup is for sharp reflections; rough ones use the plain
+	// direction). Without it VSLR still works, unlocalized.
+	{
+		D3D11_TEXTURE2D_DESC dd2 = ed;
+		dd2.MipLevels = 1;
+		dd2.Format = DXGI_FORMAT_R16_FLOAT;
+		dd2.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
+		dd2.MiscFlags = 0;
+		D3D11_UNORDERED_ACCESS_VIEW_DESC uv2 = uv;
+		uv2.Format = dd2.Format;
+		if (FAILED(HW.pDevice->CreateTexture2D(&dd2, nullptr, &t_vslr_envdist_surf))
+			|| FAILED(HW.pDevice->CreateUnorderedAccessView(t_vslr_envdist_surf, &uv2, &rt_vslr_envdist_uav)))
+		{
+			Msg("! LEWD VSLR: cannot create the distance panorama, reflections stay unlocalized");
+			_RELEASE(rt_vslr_envdist_uav);
+			_RELEASE(t_vslr_envdist_surf);
+		}
+	}
+
 	// CTexture::surface_set creates the views: TextureCube for the cubes, Texture2D (all mips)
 	// for the panorama (dx10SH_Texture.cpp)
 	t_vslr_color.create(r2_RT_vslr_color);
@@ -149,6 +169,13 @@ void CRenderTarget::create_vslr(u32 size)
 	t_vslr_dist->surface_set(t_vslr_dist_surf);
 	t_vslr_env.create(r2_RT_vslr_env);
 	t_vslr_env->surface_set(t_vslr_env_surf);
+	t_vslr_envdist.create(r2_RT_vslr_envdist);
+	t_vslr_envdist->surface_set(t_vslr_envdist_surf);
+	if (rt_vslr_envdist_uav)
+	{
+		const FLOAT far_d[4] = { VSLR_SKY_DISTANCE, VSLR_SKY_DISTANCE, VSLR_SKY_DISTANCE, VSLR_SKY_DISTANCE };
+		HW.pContext->ClearUnorderedAccessViewFloat(rt_vslr_envdist_uav, far_d);
+	}
 
 	// Until every face has been captured the panorama reads as pure sky (a = 1); the consumer
 	// also gets intensity 0 until then (binder_vslr_params, r4.cpp)
@@ -172,9 +199,14 @@ void CRenderTarget::destroy_vslr()
 		t_vslr_dist->surface_set(nullptr);
 	if (t_vslr_env)
 		t_vslr_env->surface_set(nullptr);
+	if (t_vslr_envdist)
+		t_vslr_envdist->surface_set(nullptr);
 	t_vslr_color.destroy();
 	t_vslr_dist.destroy();
 	t_vslr_env.destroy();
+	t_vslr_envdist.destroy();
+	_RELEASE(rt_vslr_envdist_uav);
+	_RELEASE(t_vslr_envdist_surf);
 	for (u32 f = 0; f < 6; ++f)
 	{
 		_RELEASE(rt_vslr_color_rtv[f]);
@@ -212,12 +244,13 @@ void CRenderTarget::phase_vslr_panorama()
 	const u32 env = vslr_size * 2;
 	RCache.set_c("vslr_panorama_params", float(env), 1.f / float(env), vslr_far, 0.f);
 
-	ID3D11UnorderedAccessView* uav[1] = { rt_vslr_env_uav };
-	ID3D11UnorderedAccessView* nulluav[1] = { nullptr };
-	UINT counts[1] = { 0 };
-	HW.pContext->CSSetUnorderedAccessViews(0, 1, uav, counts);
+	// u1 = LEWD distance panorama (null when it could not be created: the shader's writes are dropped)
+	ID3D11UnorderedAccessView* uav[2] = { rt_vslr_env_uav, rt_vslr_envdist_uav };
+	ID3D11UnorderedAccessView* nulluav[2] = { nullptr, nullptr };
+	UINT counts[2] = { 0, 0 };
+	HW.pContext->CSSetUnorderedAccessViews(0, 2, uav, counts);
 	RCache.Compute((env + 7u) / 8u, (env + 7u) / 8u, 1);
-	HW.pContext->CSSetUnorderedAccessViews(0, 1, nulluav, counts);
+	HW.pContext->CSSetUnorderedAccessViews(0, 2, nulluav, counts);
 	RCache.unbind_CS_textures();
 	RCache.set_CS(nullptr);
 
@@ -316,6 +349,7 @@ void CRender::render_reflections()
 		GMReflect.clear();
 	}
 	vslr_next_face = (vslr_next_face + faces) % 6;
+	Target->vslr_center = position;	// LEWD: capture point of the localized lookup (vslr_center)
 
 	phase = saved_phase;
 

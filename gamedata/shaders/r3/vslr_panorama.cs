@@ -23,6 +23,7 @@ TextureCube			s_vslr_color;	// linear colour
 TextureCube<float>	s_vslr_dist;	// distance from the camera, metres
 
 RWTexture2D<float4>	u_vslr_env : register( u0 );
+RWTexture2D<float>	u_vslr_envdist : register( u1 );	// LEWD: distance panorama (localized lookup in pbr_ixray.h)
 
 uniform float4		vslr_panorama_params;	// x = size, y = 1 / size, z = capture distance (m)
 
@@ -47,4 +48,5 @@ void main( uint3 id : SV_DispatchThreadID )
 
 	float3 g	= pow( max( col, 0.0 ), 1.0 / VSLR_GAMMA );
 	u_vslr_env[ id.xy ] = float4( g * cover, cover );
+	u_vslr_envdist[ id.xy ] = dist;
 }

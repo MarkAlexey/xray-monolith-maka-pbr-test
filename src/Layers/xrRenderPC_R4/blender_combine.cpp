@@ -46,6 +46,7 @@ void CBlender_combine::Compile(CBlender_Compile& C)
 		C.r_dx10Texture("s_occ", r2_RT_ssao_temp);
 		C.r_dx10Texture("s_refl", r2_RT_sslr); // IX-Ray SSLR (only declared with USE_SSLR_REFLECTIONS)
 		C.r_dx10Texture("s_env_fwd", r2_RT_vslr_env); // IX-Ray VSLR (only declared with USE_OFFSCREEN_REFLECTIONS)
+		C.r_dx10Texture("s_env_dist", r2_RT_vslr_envdist); // LEWD: localized VSLR (same condition)
 		C.r_dx10Texture("s_half_depth", r2_RT_half_depth);
 
 		C.r_dx10Texture("ssfx_ao", r2_RT_ssfx_temp);

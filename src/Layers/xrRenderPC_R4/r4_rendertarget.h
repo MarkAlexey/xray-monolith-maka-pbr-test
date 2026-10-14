@@ -266,6 +266,11 @@ public: // read by CRender::render_reflections() and binder_vslr_params
 	ID3DRenderTargetView* rt_vslr_dist_rtv[6] = {};
 	ID3DDepthStencilView* rt_vslr_depth_dsv = nullptr;
 	ID3D11UnorderedAccessView* rt_vslr_env_uav = nullptr; // mip 0
+	// LEWD: distance panorama for the localized lookup (r4_vslr_localize), R16F, mip 0 only
+	ID3DTexture2D* t_vslr_envdist_surf = nullptr;
+	ID3D11UnorderedAccessView* rt_vslr_envdist_uav = nullptr;
+	ref_texture t_vslr_envdist;
+	Fvector vslr_center = { 0.f, 0.f, 0.f };	// camera position of the last capture (vslr_center)
 	ref_texture t_vslr_color;
 	ref_texture t_vslr_dist;
 	ref_texture t_vslr_env;
