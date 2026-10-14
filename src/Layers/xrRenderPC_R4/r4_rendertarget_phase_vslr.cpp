@@ -243,6 +243,13 @@ void CRenderTarget::phase_vslr_panorama()
 
 	const u32 env = vslr_size * 2;
 	RCache.set_c("vslr_panorama_params", float(env), 1.f / float(env), vslr_far, 0.f);
+	// Where each face was captured from, relative to this frame's capture point (localized lookup)
+	for (u32 f = 0; f < 6; ++f)
+	{
+		Fvector o;
+		o.sub(vslr_face_center[f], vslr_center);
+		RCache.set_ca("vslr_face_offset", f, o.x, o.y, o.z, 0.f);
+	}
 
 	// u1 = LEWD distance panorama (null when it could not be created: the shader's writes are dropped)
 	ID3D11UnorderedAccessView* uav[2] = { rt_vslr_env_uav, rt_vslr_envdist_uav };
@@ -347,6 +354,7 @@ void CRender::render_reflections()
 
 		GMReflect.r_dsgraph_render_graph(0);
 		GMReflect.clear();
+		Target->vslr_face_center[f] = position;
 	}
 	vslr_next_face = (vslr_next_face + faces) % 6;
 	Target->vslr_center = position;	// LEWD: capture point of the localized lookup (vslr_center)

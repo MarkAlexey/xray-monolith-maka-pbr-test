@@ -271,6 +271,9 @@ public: // read by CRender::render_reflections() and binder_vslr_params
 	ID3D11UnorderedAccessView* rt_vslr_envdist_uav = nullptr;
 	ref_texture t_vslr_envdist;
 	Fvector vslr_center = { 0.f, 0.f, 0.f };	// camera position of the last capture (vslr_center)
+	// Camera position each cube face was last captured from: with r4_vslr_faces < 6 the faces come
+	// from different frames, and the panorama pass re-measures their distances from vslr_center
+	Fvector vslr_face_center[6] = {};
 	ref_texture t_vslr_color;
 	ref_texture t_vslr_dist;
 	ref_texture t_vslr_env;

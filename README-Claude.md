@@ -546,6 +546,7 @@ Console (renderer options need a game restart):
 | `r4_vslr_faces` | 2 | cube faces re-rendered per frame, 1-6; a full update takes 6 / this many frames |
 | `r4_vslr_far` | 0.4 | capture distance, fraction of the weather's far plane |
 | `r4_vslr_intensity` | 1 | how strongly the capture replaces the sky reflection |
+| `r4_vslr_localize` | 2 | localized (parallax-corrected) lookup for sharp reflections: search steps 1-4, 0 = plain direction lookup as in IX-Ray |
 
 How it is built (`r4_rendertarget_phase_vslr.cpp`):
 
@@ -564,8 +565,19 @@ How it is built (`r4_rendertarget_phase_vslr.cpp`):
   `pbr_ixray.h` (`pbr_specular_irradiance`, `USE_OFFSCREEN_REFLECTIONS`) samples it by
   reflection direction, roughness picking the mip, as IX-Ray's `CompureSpecularIrradance` does.
 
-Limits: one probe centred on the camera (reflections of far-away surfaces are increasingly off,
-no parallax correction); objects the main view draws as LOD billboards are left out; only PBR
+Localized lookup (by L4U6H1N6-LUN4T1C, "Approximate Ray-Tracing on the GPU with Distance
+Impostors", Szirmay-Kalos, Aszodi, Lazanyi and Premecz, 2005): the panorama pass also stores, per
+direction, the distance from the capture point to the captured surface (R16F, no mips), and
+`pbr_ixray.h` searches along the reflected ray from the shaded pixel for where it meets that
+surface (false-position iteration, `r4_vslr_localize` steps), then reads the panorama in the
+direction of the hit. Nearby walls then stay in place in reflections instead of sliding across
+them. Used for sharp reflections only (faded out between roughness 0.3 and 0.6, where the blur
+hides the parallax). With `r4_vslr_faces` below 6 the faces come from different frames; their
+distances are re-measured from the current capture point in the panorama pass, so the distance
+field stays consistent while moving (directions are not re-projected: small offsets only).
+
+Limits: one probe centred on the camera (localized lookup only for sharp reflections, and only as
+good as the captured distances); objects the main view draws as LOD billboards are left out; only PBR
 textures read it (legacy textures keep their cubemap reflections); not recaptured for a scope's
 second viewport. Cost: `r4_vslr_faces` extra traversals and draws of the opaque scene per frame
 at `r4_vslr_size`. Checked: the shaders compile with DXC on vanilla, SSS/ES/Atmospherics (both

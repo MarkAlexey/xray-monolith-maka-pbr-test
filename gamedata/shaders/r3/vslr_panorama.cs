@@ -27,6 +27,23 @@ RWTexture2D<float>	u_vslr_envdist : register( u1 );	// LEWD: distance panorama (
 
 uniform float4		vslr_panorama_params;	// x = size, y = 1 / size, z = capture distance (m)
 
+// Capture point of each cube face (+X, -X, +Y, -Y, +Z, -Z) relative to this frame's capture point
+// (vslr_center). With r4_vslr_faces < 6 the faces were captured on different frames, from where the
+// camera was then; their distances are re-measured from vslr_center so the localized lookup in
+// pbr_ixray.h sees one consistent distance field while the camera moves.
+uniform float4		vslr_face_offset[6];
+
+// Distance of "nothing drawn" (r4_rendertarget_phase_vslr.cpp VSLR_SKY_DISTANCE): left as is
+#define VSLR_SKY_DISTANCE 10000.0
+
+uint vslr_cube_face( float3 d )
+{
+	float3 a = abs( d );
+	if( a.x >= a.y && a.x >= a.z )	return d.x >= 0.0 ? 0 : 1;
+	if( a.y >= a.z )				return d.y >= 0.0 ? 2 : 3;
+	return d.z >= 0.0 ? 4 : 5;
+}
+
 [numthreads( 8, 8, 1 )]
 void main( uint3 id : SV_DispatchThreadID )
 {
@@ -48,5 +65,7 @@ void main( uint3 id : SV_DispatchThreadID )
 
 	float3 g	= pow( max( col, 0.0 ), 1.0 / VSLR_GAMMA );
 	u_vslr_env[ id.xy ] = float4( g * cover, cover );
-	u_vslr_envdist[ id.xy ] = dist;
+	// Re-measured from this frame's capture point (radial part of the face's position offset)
+	float dist_c	= dist >= VSLR_SKY_DISTANCE * 0.9 ? dist : length( vslr_face_offset[ vslr_cube_face( dir ) ].xyz + dir * dist );
+	u_vslr_envdist[ id.xy ] = dist_c;
 }
