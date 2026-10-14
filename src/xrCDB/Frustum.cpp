@@ -140,12 +140,12 @@ EFC_Visible CFrustum::testSAABB(Fvector& c, float r, const float* mM, u32& test_
 		if (test_mask & bit)
 		{
 			float cls = planes[i].classify(c);
-			if (cls > r)
+            if (!(planes[i].aabb_overlap_id & fplane::AABB_ONLY) && cls > r)
 			{
 				test_mask = 0;
 				return fcvNone;
 			} // none  - return
-			if (_abs(cls) >= r) test_mask &= ~bit; // fully - no need to test this plane
+            if (!(planes[i].aabb_overlap_id & fplane::AABB_ONLY) && _abs(cls) >= r) test_mask &= ~bit; // fully - no need to test this plane
 			else
 			{
 				EFC_Visible r = AABB_OverlapPlane(planes[i], mM);
@@ -159,6 +159,33 @@ EFC_Visible CFrustum::testSAABB(Fvector& c, float r, const float* mM, u32& test_
 		}
 	}
 	return test_mask ? fcvPartial : fcvFully;
+}
+
+void CFrustum::CreateFromCamera(Fmatrix& M)
+{
+    CreateFromMatrix(M, FRUSTUM_P_LRTB | FRUSTUM_P_FAR);
+    // Perspective clip w is view-space forward distance from the camera.
+    Fplane eye;
+    eye.n.set(-M._14, -M._24, -M._34);
+    eye.d = -M._44;
+    if (eye.n.square_magnitude() > EPS_S * EPS_S)
+    {
+        eye.normalize();
+        _add(eye);
+        planes[p_count - 1].aabb_overlap_id |= fplane::AABB_ONLY;
+    }
+}
+
+void CFrustum::AddCameraPlane(const CFrustum& source)
+{
+    for (int i = 0; i < source.p_count; ++i)
+    {
+        if (!(source.planes[i].aabb_overlap_id & fplane::AABB_ONLY)) continue;
+        Fplane eye = source.planes[i];
+        _add(eye);
+        planes[p_count - 1].aabb_overlap_id |= fplane::AABB_ONLY;
+        return;
+    }
 }
 
 BOOL CFrustum::testPolyInside_dirty(Fvector* p, int count) const

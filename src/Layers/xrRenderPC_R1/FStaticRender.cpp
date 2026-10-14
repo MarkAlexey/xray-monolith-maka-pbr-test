@@ -447,7 +447,7 @@ void CRender::Calculate()
 	r_ssaHZBvsTEX = _sqr(ps_r__ssaHZBvsTEX / 3) / g_fSCREEN;
 
 	// Frustum & HOM rendering
-	ViewBase.CreateFromMatrix(Device.mFullTransform, FRUSTUM_P_LRTB | FRUSTUM_P_FAR);
+    ViewBase.CreateFromCamera(Device.mFullTransform);
     HOM.MT_RENDER();
 	gm_SetNearer(FALSE);
 	phase = PHASE_NORMAL;

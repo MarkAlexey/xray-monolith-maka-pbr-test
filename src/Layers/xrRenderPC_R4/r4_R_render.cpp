@@ -108,7 +108,8 @@ void CRender::Render()
 	// Msg						("sstatic: %s, sun: %s",o.sunstatic?;"true":"false", bSUN?"true":"false");
 
 	// HOM
-	ViewBase.CreateFromMatrix(Device.mFullTransform, FRUSTUM_P_LRTB + FRUSTUM_P_FAR);
+    ViewBase.CreateFromCamera(Device.mFullTransform);
+    PROF_TAG("Camera frustum planes", ViewBase.p_count);
     HOM.MT_RENDER();
 
 	// IX-Ray VSLR: capture the surroundings for the reflections (r4_rendertarget_phase_vslr.cpp).

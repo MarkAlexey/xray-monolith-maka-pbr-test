@@ -67,7 +67,8 @@ static bool IsSameFrustum(const CFrustum& left, const CFrustum& right)
         const CFrustum::fplane& left_plane = left.planes[i];
         const CFrustum::fplane& right_plane = right.planes[i];
         if (left_plane.n.x != right_plane.n.x || left_plane.n.y != right_plane.n.y ||
-            left_plane.n.z != right_plane.n.z || left_plane.d != right_plane.d)
+            left_plane.n.z != right_plane.n.z || left_plane.d != right_plane.d ||
+            ((left_plane.aabb_overlap_id ^ right_plane.aabb_overlap_id) & CFrustum::fplane::AABB_ONLY))
             return false;
     }
 
@@ -279,7 +280,9 @@ void CSector::traverse(CFrustum &&F, CDSGraphManager& DM)
 				else
 					++dbg->portals_recursed_noopt;
 			}
-			pSector->traverse(CreateFrustumFromPortal(P, DM.i_vBase, DM.i_mXFORM), DM);
+            CFrustum clipped = CreateFrustumFromPortal(P, DM.i_vBase, DM.i_mXFORM);
+            clipped.AddCameraPlane(F);
+            pSector->traverse(std::move(clipped), DM);
 		}
 	}
 }

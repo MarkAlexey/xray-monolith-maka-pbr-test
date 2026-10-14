@@ -35,7 +35,8 @@ class XRCDB_API CFrustum
 public:
 	struct fplane : public Fplane
 	{
-		u32 aabb_overlap_id; // [0..7]
+        enum { AABB_INDEX_MASK = 7, AABB_ONLY = 8 };
+        u32 aabb_overlap_id; // Low bits: corner lookup [0..7]; AABB_ONLY: camera eye plane.
 		void cache();
 	};
 
@@ -46,7 +47,7 @@ public:
 	ICF EFC_Visible AABB_OverlapPlane(const fplane& P, const float* mM) const
 	{
 		// calc extreme pts (neg,pos) along normal axis (pos in dir of norm, etc.)
-		u32* id = frustum_aabb_remap[P.aabb_overlap_id];
+        u32* id = frustum_aabb_remap[P.aabb_overlap_id & fplane::AABB_INDEX_MASK];
 
 		Fvector Neg;
 		Neg.set(mM[id[3]], mM[id[4]], mM[id[5]]);
@@ -71,6 +72,8 @@ public:
 	// returns 'false' if creation failed
 	void CreateFromPoints(Fvector* p, int count, Fvector& vBase);
 	void CreateFromMatrix(Fmatrix& M, u32 mask);
+    void CreateFromCamera(Fmatrix& M);
+    void AddCameraPlane(const CFrustum& source);
 	void CreateFromPortal(sPoly* P, Fvector& vPN, Fvector& vBase, Fmatrix& mFullXFORM);
 	void CreateFromPlanes(Fplane* p, int count);
 
