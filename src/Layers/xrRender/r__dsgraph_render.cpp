@@ -8,6 +8,7 @@
 
 #include "FBasicVisual.h"
 #include "FVisual.h"
+#include "FTreeVisual.h"
 #if defined(USE_DX11) && RENDER == R_R4
 #include "StaticDrawPacketPolicy.h"
 #endif
@@ -155,13 +156,20 @@ void CDSGraphManager::r_dsgraph_render_graph(RenderQueueArray& queues, u32 _prio
             for (size_t first = 0; first < queue.size();)
             {
                 const auto* pass = queue[first].source_pass;
+                const u32 type = queue[first].item.pVisual->Type;
                 size_t end = first;
-                while (end < queue.size() && queue[end].source_pass == pass && queue[end].item.pVisual->Type == MT_NORMAL) ++end;
-                if (end - first > 1 && pass && Fvisual::ShadowBatchPassSafe(*pass))
+                while (end < queue.size() && queue[end].source_pass == pass && queue[end].item.pVisual->Type == type && (type == MT_NORMAL || type == MT_TREE_ST)) ++end;
+                if (end - first > 1 && pass && (type == MT_TREE_ST || Fvisual::ShadowBatchPassSafe(*pass)))
                 {
                     if (!++serial) ++serial;
                     for (size_t i = first; i < end; ++i)
                     {
+                        if (type == MT_TREE_ST)
+                        {
+                            static_cast<FTreeVisual*>(queue[i].item.pVisual)->SelectShadowBatch(serial);
+                            queue[i].shadow_ticket = serial;
+                            continue;
+                        }
                         auto& mesh = *static_cast<Fvisual*>(queue[i].item.pVisual);
                         if (!mesh.shadow_batch || !mesh.ShadowBatchMemberValid()) continue;
                         auto& batch = *mesh.shadow_batch;
@@ -322,6 +330,8 @@ void CDSGraphManager::r_dsgraph_render_graph(RenderQueueArray& queues, u32 _prio
             }
 #endif
 #if defined(USE_DX11) && RENDER == R_R4
+            if (static_geometry && item.pVisual->Type == MT_TREE_ST && !RCache.is_TessEnabled() &&
+                static_cast<FTreeVisual*>(item.pVisual)->DrawShadowBatch(LOD, packet.shadow_ticket)) continue;
             if (static_geometry && mesh && !RCache.is_TessEnabled() &&
                 !memcmp(&RCache.xforms.m_w, &Fidentity, sizeof(Fmatrix)) && mesh->DrawShadowBatch(packet.shadow_ticket)) continue;
 #endif

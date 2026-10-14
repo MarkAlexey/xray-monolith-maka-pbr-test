@@ -1087,6 +1087,54 @@ static bool shadow_depth_shader_safe(ID3DShaderReflection* reflection)
     return true;
 }
 
+static u32 tree_shadow_inputs(ID3DShaderReflection* reflection)
+{
+    if (!static_draw_shader_safe(reflection)) return 0;
+    D3D11_SHADER_DESC desc{};
+    if (FAILED(reflection->GetDesc(&desc))) return 0;
+    u32 mask = 0;
+    for (UINT i = 0; i < desc.InputParameters; ++i)
+    {
+        D3D11_SIGNATURE_PARAMETER_DESC input{};
+        if (FAILED(reflection->GetInputParameterDesc(i, &input)) || input.SystemValueType != D3D_NAME_UNDEFINED || input.SemanticIndex) return 0;
+        if (!_stricmp(input.SemanticName, "POSITION")) mask |= 1;
+        else if (!_stricmp(input.SemanticName, "TEXCOORD")) mask |= 2;
+        else return 0;
+    }
+    return (mask & 1) ? mask : 0;
+}
+
+static bool tree_shadow_batch_safe(ID3DShaderReflection* reflection)
+{
+    if (tree_shadow_inputs(reflection) != 1) return false;
+    D3D11_SHADER_DESC desc{};
+    if (FAILED(reflection->GetDesc(&desc))) return false;
+    for (UINT i = 0; i < desc.BoundResources; ++i)
+    {
+        D3D11_SHADER_INPUT_BIND_DESC resource{};
+        if (FAILED(reflection->GetResourceBindingDesc(i, &resource)) || resource.Type != D3D_SIT_CBUFFER) return false;
+    }
+    static const char* allowed[] = {"m_xform", "m_xform_v", "m_VP", "m_V", "m_P", "consts",
+        "wave", "wind", "prev_wave", "prev_wind", "wind_params", "ssfx_wsetup_trees",
+        "ssfx_wind_anim", "ssfx_wind_anim_prev", "c_scale", "c_bias", "c_sun", "timers", "eye_position"};
+    for (UINT i = 0; i < desc.ConstantBuffers; ++i)
+    {
+        auto* buffer = reflection->GetConstantBufferByIndex(i);
+        D3D11_SHADER_BUFFER_DESC info{};
+        if (FAILED(buffer->GetDesc(&info))) return false;
+        for (UINT j = 0; j < info.Variables; ++j)
+        {
+            D3D11_SHADER_VARIABLE_DESC variable{};
+            if (FAILED(buffer->GetVariableByIndex(j)->GetDesc(&variable))) return false;
+            if (!(variable.uFlags & D3D_SVF_USED)) continue;
+            bool known = false;
+            for (const char* name : allowed) known |= !xr_strcmp(name, variable.Name);
+            if (!known) return false;
+        }
+    }
+    return true;
+}
+
 #endif
 template <typename T>
 static HRESULT create_shader(
@@ -1184,6 +1232,8 @@ static HRESULT create_shader(
 		SVS* svs_result = (SVS*)result;
 #ifdef USE_DX11
         svs_result->static_draw_safe = false;
+        svs_result->tree_shadow_inputs = 0;
+        svs_result->tree_shadow_batch_safe = false;
         svs_result->shadow_depth_cache_safe = false;
         ++svs_result->shadow_shader_revision;
 #endif
@@ -1228,6 +1278,8 @@ static HRESULT create_shader(
 #ifdef USE_DX11
             svs_result->static_draw_safe = static_draw_shader_safe(pReflection);
             svs_result->shadow_depth_cache_safe = shadow_depth_shader_safe(pReflection);
+            svs_result->tree_shadow_inputs = tree_shadow_inputs(pReflection);
+            svs_result->tree_shadow_batch_safe = tree_shadow_batch_safe(pReflection);
 #endif
 
 			_RELEASE(pReflection);

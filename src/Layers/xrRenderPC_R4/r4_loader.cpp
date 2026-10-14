@@ -15,6 +15,7 @@
 
 #include "../xrRender/FHierrarhyVisual.h"
 #include "../xrRender/FVisual.h"
+#include "../xrRender/FTreeVisual.h"
 
 #pragma warning(push)
 #pragma warning(disable:4995)
@@ -120,6 +121,8 @@ void CRender::level_Unload()
 	if (!b_loaded) return;
 
 	GMBase.clear();
+    levelTreeVBData.clear_and_free();
+    levelTreeVBBytes = 0;
     levelShadowIBData.clear_and_free();
     levelIBData.clear_and_free();
 	GMRainWet.clear();
@@ -219,6 +222,7 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 		u32 count = fs->r_u32();
 		_DC.resize(count);
 		_VB.resize(count);
+        if (!_alternative) levelTreeVBData.resize(count);
 		u32 bufferSize = (MAXD3DDECLLENGTH + 1) * sizeof(D3DVERTEXELEMENT9);
 		D3DVERTEXELEMENT9* dcl = (D3DVERTEXELEMENT9*)_alloca(bufferSize);
 		for (u32 i = 0; i < count; i++)
@@ -249,6 +253,22 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 			BYTE* pData = xr_alloc<BYTE>(vCount * vSize);
 			fs->r(pData, vCount * vSize);
 			dx10BufferUtils::CreateVertexBuffer(&_VB[i], pData, vCount * vSize);
+            // Retain only the native tree layout, bounded and only until visuals load.
+            if (!_alternative && vSize == 32 && dcl_len == 6 &&
+                dcl[0].Stream == 0 && dcl[0].Offset == 0 && dcl[0].Type == D3DDECLTYPE_FLOAT3 &&
+                dcl[0].Usage == D3DDECLUSAGE_POSITION && !dcl[0].UsageIndex &&
+                dcl[4].Stream == 0 && dcl[4].Offset == 24 && dcl[4].Type == D3DDECLTYPE_SHORT4 &&
+                dcl[4].Usage == D3DDECLUSAGE_TEXCOORD && !dcl[4].UsageIndex &&
+                vCount <= (64u * 1024u * 1024u - levelTreeVBBytes) / 20u)
+            {
+                auto& keys = levelTreeVBData[i]; keys.resize(vCount);
+                for (u32 vertex = 0; vertex < vCount; ++vertex)
+                {
+                    CopyMemory(keys[vertex].data(), pData + size_t(vertex) * vSize, 12);
+                    CopyMemory(keys[vertex].data() + 12, pData + size_t(vertex) * vSize + 24, 8);
+                }
+                levelTreeVBBytes += vCount * 20u;
+            }
 			xr_free(pData);
 
 			//			fs->advance			(vCount*vSize);
@@ -312,6 +332,9 @@ void CRender::LoadVisuals(IReader* fs)
         if (visual->Type == MT_NORMAL) static_cast<Fvisual*>(visual)->immutable_level_geometry = true;
     Fvisual::BuildStaticBatches(Visuals);
     Fvisual::BuildShadowBatches(Visuals);
+    FTreeVisual::BuildShadowGeometry(Visuals);
+    levelTreeVBData.clear_and_free();
+    levelTreeVBBytes = 0;
     levelShadowIBData.clear_and_free();
     levelIBData.clear_and_free();
 }

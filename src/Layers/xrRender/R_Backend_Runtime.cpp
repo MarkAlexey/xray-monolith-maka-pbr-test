@@ -7,6 +7,9 @@
 #pragma warning(pop)
 
 #include "../../xrCDB/frustum.h"
+#if defined(USE_DX11) && RENDER == R_R4
+#include "FTreeVisual.h"
+#endif
 
 #if defined(USE_DX10) || defined(USE_DX11)
 #include "../xrRenderDX10/StateManager/dx10StateManager.h"
@@ -16,6 +19,9 @@
 
 void CBackend::OnFrameEnd()
 {
+#if defined(USE_DX11) && RENDER == R_R4
+    { PROF_EVENT("Render.Shadow.TreeStats"); FTreeVisual::ProfileShadowStats(); }
+#endif
 #if defined(USE_DX11) || defined(USE_DX10)
     { PROF_EVENT("Render.Constants.Stats"); dx10ConstantBuffer::ProfileStats(); }
     { PROF_EVENT("Render.Samplers.Stats"); SSManager.ProfileStats(); }
@@ -56,6 +62,9 @@ void CBackend::unbind_CS_textures()
 
 void CBackend::OnFrameBegin()
 {
+#if defined(USE_DX11) && RENDER == R_R4
+    FTreeVisual::ResetShadowStats();
+#endif
 #if defined(USE_DX11) || defined(USE_DX10)
     dx10ConstantBuffer::ResetStats();
     SSManager.ResetStats();
