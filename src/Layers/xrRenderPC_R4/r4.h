@@ -168,6 +168,7 @@ public:
 	xr_vector<dxRender_Visual*> Visuals;
     xr_vector<xr_vector<std::array<u8, 20>>> levelTreeVBData;
     u32 levelTreeVBBytes = 0;
+    xr_vector<ISpatialShared> sun_query_results[3];
     xr_vector<xr_vector<u16>> levelShadowIBData;
     xr_vector<xr_vector<u16>> levelIBData; // Temporary immutable batch input, released after visuals load.
 	CPSLibrary PSLibrary;
@@ -236,7 +237,8 @@ public:
 	void render_menu();
 	void render_rain();
 
-	void render_sun_cascade(u32 cascade_ind);
+	void prepare_sun_cascade(u32 cascade_ind, const Fmatrix& inverse);
+    void render_sun_cascade(u32 cascade_ind, const xr_vector<ISpatialShared>* prepared = nullptr, u64 revision = 0);
 	void init_cacades();
 	void render_sun_cascades();
 

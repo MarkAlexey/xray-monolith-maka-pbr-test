@@ -71,3 +71,41 @@ void ISpatial_DB::q_frustum(xr_vector<ISpatialShared>& R, u32 _o, u32 _mask, con
 	spatial_frustum_walker W(this,_mask,&_frustum);
 	W.walk(R,m_root,m_center,m_bounds,_frustum.getMask());
 }
+
+u64 ISpatial_DB::q_frustums(xr_vector<ISpatialShared> (&results)[3], u32 mask, const CFrustum* const (&views)[3])
+{
+    PROF_EVENT("ISpatial_DB::q_frustum.cascades");
+    for (auto& list : results) list.clear_not_free();
+    xrSRWLockGuard guard(&db_lock, true);
+    u32 initial[3]{};
+    u32 active = 0;
+    for (u32 i = 0; i < 3; ++i) if (views[i]) { initial[i] = views[i]->getMask(); active |= 1u << i; }
+    auto walk = [&](auto&& self, ISpatial_NODE* node, const Fvector& center, float radius,
+        const u32* parent_masks, u32 bits) -> void
+    {
+        Fbox box; box.setb(center, Fvector().set(2 * radius, 2 * radius, 2 * radius));
+        u32 masks[3] = {parent_masks[0], parent_masks[1], parent_masks[2]};
+        for (u32 i = 0; i < 3; ++i)
+            if ((bits & (1u << i)) && views[i]->testAABB(box.data(), masks[i]) == fcvNone) bits &= ~(1u << i);
+        if (!bits) return;
+        for (const ISpatialShared& spatial : node->items)
+        {
+            if (!spatial || !(spatial->spatial.type & mask)) continue;
+            const Fsphere& sphere = spatial->spatial.sphere;
+            Fvector position = sphere.P;
+            for (u32 i = 0; i < 3; ++i)
+            {
+                u32 item_mask = masks[i];
+                if ((bits & (1u << i)) && views[i]->testSphere(position, sphere.R, item_mask) != fcvNone)
+                    results[i].emplace_back(spatial);
+            }
+        }
+        for (u32 i = 0; i < 8; ++i) if (node->children[i])
+        {
+            Fvector child; child.mad(center, c_spatial_offset[i], radius * .5f);
+            self(self, node->children[i], child, radius * .5f, masks, bits);
+        }
+    };
+    if (m_root && active) walk(walk, m_root, m_center, m_bounds, initial, active);
+    return query_revision.load(std::memory_order_relaxed);
+}

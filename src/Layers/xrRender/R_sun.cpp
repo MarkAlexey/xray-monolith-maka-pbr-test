@@ -81,6 +81,11 @@ void CRender::render_sun_cascades()
 	if (b_need_to_render_sunshafts)
 		m_sun_cascades[m_sun_cascades.size() - 1].reset_chain = true;
 
+    Fmatrix full, inverse;
+    full.mul(Device.mProject, Device.mView);
+    D3DXMatrixInverse((D3DXMATRIX*)&inverse, nullptr, (D3DXMATRIX*)&full);
+    for (u32 i = 0; i < m_sun_cascades.size(); ++i) prepare_sun_cascade(i, inverse);
+
 #ifdef USE_DX11
 	// IX-Ray CSM: all array slices are cleared once, so a cascade with nothing to draw
 	// does not keep last frame's depth
@@ -88,16 +93,31 @@ void CRender::render_sun_cascades()
 		Target->clear_smap_csm();
 #endif
 
-	for (u32 i = 0; i < m_sun_cascades.size(); ++i)
-		render_sun_cascade(i);
+#if RENDER == R_R4
+    auto& candidates = sun_query_results;
+    const CFrustum* frustums[3]{};
+    const bool compatible = m_sun_cascades.size() == 3 &&
+        m_sun_cascades[0].GMCascade.i_doptions == m_sun_cascades[1].GMCascade.i_doptions &&
+        m_sun_cascades[0].GMCascade.i_doptions == m_sun_cascades[2].GMCascade.i_doptions;
+    u64 revision = 0;
+    if (compatible)
+    {
+        for (u32 i = 0; i < 3; ++i) frustums[i] = &m_sun_cascades[i].cull_frustum;
+        revision = g_SpatialSpace->q_frustums(candidates, m_sun_cascades[0].GMCascade.i_doptions, frustums);
+    }
+    for (u32 i = 0; i < m_sun_cascades.size(); ++i)
+        render_sun_cascade(i, compatible ? &candidates[i] : nullptr, revision);
+#else
+    for (u32 i = 0; i < m_sun_cascades.size(); ++i) render_sun_cascade(i);
+#endif
 
 	if (b_need_to_render_sunshafts)
 		m_sun_cascades[m_sun_cascades.size() - 1].reset_chain = last_cascade_chain_mode;
 }
 
-void CRender::render_sun_cascade(u32 cascade_ind)
+void CRender::prepare_sun_cascade(u32 cascade_ind, const Fmatrix& inverse)
 {
-	PROF_EVENT("Render Cascade");
+	PROF_EVENT("Render Cascade: PrepareView");
 	light* fuckingsun = (light*)Lights.sun_adapted._get();
 	sun::cascade& cascade = m_sun_cascades[cascade_ind];
 
@@ -110,12 +130,7 @@ void CRender::render_sun_cascade(u32 cascade_ind)
 		PROF_EVENT("Render Cascade: Prepass");
 
 		// calculate view-frustum bounds in world space
-		Fmatrix ex_project, ex_full, ex_full_inverse;
-		{
-			ex_project = Device.mProject;
-			ex_full.mul(ex_project, Device.mView);
-			D3DXMatrixInverse((D3DXMATRIX*)&ex_full_inverse, 0, (D3DXMATRIX*)&ex_full);
-		}
+		const Fmatrix& ex_full_inverse = inverse;
 
 		// Compute volume(s) - something like a frustum for infinite directional light
 		// Also compute virtual light position and sector it is inside
@@ -300,6 +315,15 @@ void CRender::render_sun_cascade(u32 cascade_ind)
 		}
 	}
 
+}
+
+void CRender::render_sun_cascade(u32 cascade_ind, const xr_vector<ISpatialShared>* prepared, u64 revision)
+{
+    PROF_EVENT("Render Cascade");
+    light* fuckingsun = (light*)Lights.sun_adapted._get();
+    sun::cascade& cascade = m_sun_cascades[cascade_ind];
+    Fmatrix& cull_xform = cascade.cull_xform;
+
 	// Begin SMAP-render
     {
         PROF_EVENT("Render Cascade: SMAP traverse");
@@ -403,7 +427,8 @@ void CRender::render_sun_cascade(u32 cascade_ind)
             PROF_TAG("Receiver clipping active", true);
         }
 #endif
-        cascade.GMCascade.r_dsgraph_capture(false, true);
+        cascade.GMCascade.r_dsgraph_capture_static();
+        cascade.GMCascade.r_dsgraph_capture_dynamic(nullptr, prepared, revision);
     }
 
     // Finalize & Cleanup

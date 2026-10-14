@@ -196,7 +196,8 @@ public:
 	void render_menu();
 	void render_rain();
 
-	void render_sun_cascade(u32 cascade_ind);
+	void prepare_sun_cascade(u32 cascade_ind, const Fmatrix& inverse);
+    void render_sun_cascade(u32 cascade_ind, const xr_vector<ISpatialShared>* prepared = nullptr, u64 revision = 0);
 	void init_cacades();
 	void render_sun_cascades();
 

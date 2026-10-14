@@ -159,7 +159,7 @@ public:
 	void r_dsgraph_capture(bool lights = false, bool dynamic = false, CObject* O = nullptr);
 	void r_dsgraph_capture_lights();
 	void r_dsgraph_capture_static();
-	void r_dsgraph_capture_dynamic(CObject* O = nullptr);
+	void r_dsgraph_capture_dynamic(CObject* O = nullptr, const xr_vector<ISpatialShared>* prepared = nullptr, u64 revision = 0);
 
 	void clear()
 	{

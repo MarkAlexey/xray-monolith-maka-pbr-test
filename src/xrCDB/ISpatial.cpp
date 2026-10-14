@@ -139,6 +139,7 @@ void ISpatial::Move()
         xrSRWLockGuard guard(&spatial.space->db_lock, false);
         if (spatial.node_ptr)
         {
+            spatial.space->query_revision.fetch_add(1, std::memory_order_release);
             //*** check if we are supposed to correct it's spatial location
             if (spatial_inside())
                 return;		// ???
@@ -211,6 +212,7 @@ void ISpatial_NODE::_insert(ISpatialShared S)
     S->spatial.items_idx = u32(items.size());
 	items.push_back(S);
 	S->spatial.space->stat_objects ++;
+    S->spatial.space->query_revision.fetch_add(1, std::memory_order_release);
 }
 
 void ISpatial_NODE::_remove(ISpatialShared S)
@@ -228,6 +230,7 @@ void ISpatial_NODE::_remove(ISpatialShared S)
     S->spatial.node_ptr = nullptr;
     S->spatial.items_idx = u32(-1);
 	S->spatial.space->stat_objects --;
+    S->spatial.space->query_revision.fetch_add(1, std::memory_order_release);
 }
 
 //////////////////////////////////////////////////////////////////////////

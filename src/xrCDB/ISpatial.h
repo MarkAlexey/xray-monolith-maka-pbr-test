@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <atomic>
 #include "../xrCore/xrPool.h"
 
 #include "xr_collide_defs.h"
@@ -223,6 +224,7 @@ private:
 	ISpatialShared					rt_insert_object;
 public:
 	xrSRWLock db_lock;
+    std::atomic<u64> query_revision{1};
 	ISpatial_NODE* m_root;
 	Fvector m_center;
 	float m_bounds;
@@ -272,6 +274,7 @@ public:
 	void							q_box			(xr_vector<ISpatialShared>& R, u32 _o, u32 _mask_or, const Fvector& _center, const Fvector& _size);
 	void							q_sphere		(xr_vector<ISpatialShared>& R, u32 _o, u32 _mask_or, const Fvector& _center, const float _radius);
 	void							q_frustum		(xr_vector<ISpatialShared>& R, u32 _o, u32 _mask_or, const CFrustum& _frustum);
+    u64 q_frustums(xr_vector<ISpatialShared> (&results)[3], u32 mask, const CFrustum* const (&views)[3]);
 };
 
 XRCDB_API extern ISpatial_DB* g_SpatialSpace;
