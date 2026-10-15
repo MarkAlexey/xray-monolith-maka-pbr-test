@@ -843,3 +843,75 @@ shares the `r3` shader folder). That is in this repository's `gbuffer_stage.h` (
 works without SSS) and in the SSS `gbuffer_stage.h` the compatibility patch generates, which keeps SSS's
 own heat output. The heat vision post-process itself comes from a shader mod (upstream ships only a
 stub `r2/heatvision.ps`); it reads `s_heat`, so it does not care which slot the heat was written to.
+
+## The `pbr-test-s3ds-mt-sss-lass` branch: LASS first person, jiggle bones, alpha test
+
+This branch is `pbr-test-s3ds-mt-sss` plus Zira3l137's work from
+[xray-monolith-lass](https://github.com/Zira3l137/xray-monolith-lass): the first-person body fix,
+jiggle bones, the honoured alpha-test ref, and the skeleton loader fixes jiggle bones need. LASS's
+picture-in-picture scopes (every `pip:` commit) are **not** in it; they come later. Every commit
+keeps Zira3l137 as its author; the ones that had to be adapted to this branch say so in their
+message.
+
+| LASS commit | Here | What it does |
+|---|---|---|
+| `16a4613b` first person view actor body mesh handling | ported | The first-person body is a second, never-animated instance of the actor visual, so `Bone_Calculate()` on it welded the spine sub-tree to its parent. The spine offset is now a plain translation of the copied pose (`shift_bone_subtree_y`). `g_legs_spine_offset_y` defaults to 0. Upstream has since split the legs into a main and a shadow model and copies bones by name, so only the spine part was needed. |
+| `485a1cf9` + `300f21bc` jiggle bones spring controller | as is | `CBoneSpringController` (`bone_spring.cpp/.h`): spring-damped secondary motion on configured bones, driven by `bctCustom` callbacks on the actor visual, so first person, third person and shadows all follow. |
+| `5ebca8e5` + `300f21bc` honor alpha ref authored value | ported | Alpha-tested shaders clip against the ref their pass sets (`m_AlphaRef`) instead of the fixed `def_aref` 200/255, and can dither the threshold for TAA (`aref_patch.h` rewrites the served `common_defines.h` / `common_iostructs.h` at compile time). `uber_deffer` keeps the PBR texture options; only the two alpha switches of LASS's console block were taken. |
+| `0e62cbb0`, `48d57c34`, `7d49bce0`, `95b3a100`, `9f38a37a`, `bbd0b362` skeleton fixes | ported, one commit | An outfit model with extra bones loaded through stock actor `.omf` files: the loader now reads the file's own tracks (it used to read one per model bone and run off the end), every visual owns its partition bound to its own skeleton (it used to share the first model's bone indices: heap corruption), bones without a track hold their bind pose instead of snapping to their parent, and the two HUD hand models agree on their partition layout. |
+| `d9ce2032` reclaim orphaned shared-memory blocks | as is | Animation key blocks dropped by discarded motion sets are freed at load boundaries. |
+
+### Jiggle bones
+
+Bones are listed in the outfit's section, or in `[actor]` for every outfit:
+
+```ini
+jiggle_bones = bip01_l_boob, bip01_r_boob   ; the default when neither section has the line
+jiggle_stiffness = 140      ; spring constant: higher = snappier
+jiggle_damping = 11         ; lower = more overshoot
+jiggle_max_offset = 0.035   ; metres, hard clamp
+jiggle_translate_gain = 1.0
+jiggle_rotate_gain = 1.6
+jiggle_bone_length = 0.075  ; virtual length that turns lag into a swing angle
+jiggle_world_gain = 0.9     ; jump / landing response
+jiggle_axis = 2             ; bone-local "length" axis: 0 = i, 1 = j, 2 = k
+```
+
+The same names exist as `g_jiggle_*` console commands (plus `g_jiggle_enabled`) for tuning live;
+the outfit's values win again on the next re-equip. A visual without any of the listed bones
+costs nothing.
+
+### Alpha test
+
+| Command | Default | Effect |
+|---|---|---|
+| `r__alpha_ref_live` | 1 | `def_aref` reads the pass's ref (`m_AlphaRef`); 0 = the old fixed 200/255 |
+| `r__alpha_dither` | 1 | hashed threshold per pixel so TAA resolves soft edges (not with MSAA) |
+
+Both change the shaders that get compiled: delete `appdata/shaders_cache/r4` after changing them
+and restart. Model and tree blenders now pass their authored ref (`oAREF`); grass, terrain-aref
+and branch passes keep 200, the old value.
+
+### Caveats
+
+- The skeleton fixes log a lot on purpose: every model bone without a motion track prints a
+  `[MODEL-BIND] ... holding bind pose` line when the model loads, so an intentional extra bone
+  can be told from a broken export. A model whose motions cannot bind at all still stops with
+  the stock assert, which now points at those log lines. (In LASS that case opens an in-game
+  exit prompt; that is part of its `pip:` model-loader work and is not here.)
+- Atmospherics already hashes its alpha test (`hashed_alpha.h`) around `def_aref`; with
+  `r__alpha_dither 1` the two stack. If foliage edges look noisier than before under
+  Atmospherics/GAMMA, try `r__alpha_dither 0`.
+- A pixel shader the dither cannot be added to (its input is not named `I`, or is not one of
+  `p_flat` / `p_bumped` / `p_shadow_direct_aref`) is compiled again without it, automatically.
+
+### How it was checked
+
+- `tools/check_cpp.py --base pbr-test-s3ds-mt-sss --changed`: the remaining "new" errors are the
+  known clang environment noise (`xr_vector` not resolving as `std::vector`, class hierarchies
+  not resolving in xrGame, both present for the same constructs in unchanged code).
+- The alpha-ref header rewrite was reproduced in Python and every alpha-tested pixel shader of
+  vanilla + this repository and of the GAMMA stack (SSS, ES, Atmospherics, Beef's NVGs, GAMMA's
+  overrides) was compiled with DXC, plain alias and dithered: no new errors, VSLR capture shaders
+  included.
+- Not run in the game: that, and the MSVC build, are CI's and yours.

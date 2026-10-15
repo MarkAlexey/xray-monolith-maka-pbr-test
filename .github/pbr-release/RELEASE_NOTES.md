@@ -1,7 +1,12 @@
 # STALKER Anomaly – Modded Exes with IX-Ray PBR (PBR-Test)
 
-Automatic build of [`pbr-test-s3ds-mt-sss`](https://github.com/{{REPO}}/tree/{{SHA}}) at commit
+Automatic build of [`pbr-test-s3ds-mt-sss-lass`](https://github.com/{{REPO}}/tree/{{SHA}}) at commit
 `{{SHORT_SHA}}`, built {{DATE}} (UTC).
+
+This branch adds Zira3l137's [xray-monolith-lass](https://github.com/Zira3l137/xray-monolith-lass)
+work on top of the PBR build: the first-person body fix, jiggle bones (with the skeleton loader fixes
+they need) and alpha-tested surfaces that honour their authored ref. LASS's picture-in-picture scopes
+are not included.
 
 Demonized's Modded Exes (multithreaded build) with physically based materials ported from IX-Ray,
 IX-Ray screen-space reflections (SSLR), single-pass cascaded sun shadows (CSM) and HDR reflections,
@@ -91,5 +96,11 @@ exports (gloss is inverted to roughness, packed normals are unpacked).
 `r4_sslr_skip_ssfx_ssr`, `r4_sun_csm`, `r4_sun_csm_blend`, `r4_vslr_enable` (IX-Ray offscreen
 reflections, off by default, needs a restart), `r4_vslr_size`, `r4_vslr_faces`, `r4_vslr_far`,
 `r4_vslr_intensity`, `r4_vslr_localize` (parallax-corrected VSLR reflections, by L4U6H1N6-LUN4T1C).
+
+From LASS (Zira3l137): `g_jiggle_enabled`, `g_jiggle_stiffness`, `g_jiggle_damping`,
+`g_jiggle_max_offset`, `g_jiggle_translate_gain`, `g_jiggle_rotate_gain`, `g_jiggle_bone_length`,
+`g_jiggle_world_gain`, `g_jiggle_axis` (jiggle bones; the outfit's `jiggle_*` lines win on re-equip),
+`r__alpha_ref_live` and `r__alpha_dither` (delete `shaders_cache/r4` and restart after changing them).
+`g_legs_spine_offset_y` now defaults to 0.
 
 Details, caveats and the full change list: [README-Claude.md](https://github.com/{{REPO}}/blob/{{SHA}}/README-Claude.md).

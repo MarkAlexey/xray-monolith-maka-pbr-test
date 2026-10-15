@@ -17,6 +17,10 @@
 #          today's date, e.g. 2026.10.13), kept alongside the rolling one;
 #        - manual "none": build only, the files are attached to the workflow run (GitHub login
 #          needed to download those, and they expire after RETENTION_DAYS).
+#     Branches built from pbr-test-s3ds-mt-sss get their own releases, named after what follows
+#     that name: pbr-test-s3ds-mt-sss-lass publishes "pbr-test-lass-latest" /
+#     "pbr-test-lass-<version>" and STALKER-Anomaly-PBR-Test-lass_*.zip, so it never replaces
+#     the main branch's release. Any other branch gets "pbr-test-<branch>-...".
 #
 # Settings: the env block below and the build matrix (add "DX10" etc. if you want the other
 # renderers; they do not run PBR).
@@ -51,7 +55,7 @@ name: PBR-Test build
 
 on:
   push:
-    branches: [ "pbr-test-s3ds-mt-sss" ]
+    branches: [ "pbr-test-s3ds-mt-sss", "pbr-test-s3ds-mt-sss-lass" ]
     paths:
       - "src/**"
       - "gamedata/**"
@@ -82,7 +86,6 @@ env:
   SOLUTION_FILE_PATH: src/engine-vs2022.sln
   PACK_GAMEDATA_NAME: 00_modded_exes_gamedata.db0
   PACKAGE_NAME: STALKER-Anomaly-PBR-Test
-  LATEST_TAG: pbr-test-latest
   RETENTION_DAYS: 3
 
 jobs:
@@ -238,12 +241,18 @@ jobs:
           echo "mode=$mode" >> "$GITHUB_OUTPUT"
           version="${{ inputs.version }}"
           [ -z "$version" ] && version="$date"
+          # Per-branch release names: "" for pbr-test-s3ds-mt-sss, "-lass" for
+          # pbr-test-s3ds-mt-sss-lass, "-<branch>" for anything else
+          branch="${GITHUB_REF_NAME}"
+          suffix="${branch#pbr-test-s3ds-mt-sss}"
+          [ "$suffix" = "$branch" ] && suffix="-${branch//\//-}"
+          echo "suffix=$suffix" >> "$GITHUB_OUTPUT"
           if [ "$mode" = "versioned" ]; then
-            echo "tag=pbr-test-$version" >> "$GITHUB_OUTPUT"
-            echo "name=${{ env.PACKAGE_NAME }}_$version" >> "$GITHUB_OUTPUT"
+            echo "tag=pbr-test${suffix}-$version" >> "$GITHUB_OUTPUT"
+            echo "name=${{ env.PACKAGE_NAME }}${suffix}_$version" >> "$GITHUB_OUTPUT"
           else
-            echo "tag=${{ env.LATEST_TAG }}" >> "$GITHUB_OUTPUT"
-            echo "name=${{ env.PACKAGE_NAME }}_latest" >> "$GITHUB_OUTPUT"
+            echo "tag=pbr-test${suffix}-latest" >> "$GITHUB_OUTPUT"
+            echo "name=${{ env.PACKAGE_NAME }}${suffix}_latest" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Assemble packages
@@ -295,13 +304,13 @@ jobs:
           if [ "${{ steps.v.outputs.mode }}" = "latest" ]; then
             # Rolling release: replace the previous one and move its tag to this commit
             gh release delete "$tag" --cleanup-tag --yes 2>/dev/null || true
-            title="PBR-Test latest build (${{ steps.v.outputs.date }}, ${{ steps.v.outputs.sha }})"
+            title="PBR-Test${{ steps.v.outputs.suffix }} latest build (${{ steps.v.outputs.date }}, ${{ steps.v.outputs.sha }})"
             flags="--prerelease"
           else
             if gh release view "$tag" >/dev/null 2>&1; then
               echo "::error::Release $tag already exists; pass another version"; exit 1
             fi
-            title="PBR-Test ${tag#pbr-test-}"
+            title="PBR-Test${{ steps.v.outputs.suffix }} ${tag#pbr-test${{ steps.v.outputs.suffix }}-}"
             flags=""
           fi
           gh release create "$tag" *.zip --target "$GITHUB_SHA" --title "$title" --notes-file notes.md $flags
