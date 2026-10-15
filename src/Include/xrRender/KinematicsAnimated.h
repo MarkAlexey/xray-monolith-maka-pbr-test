@@ -109,6 +109,12 @@ public:
 
 	virtual const CPartition& partitions() const = 0;
 
+	// Adopt another skeleton's partition LAYOUT. Only the declared bone names
+	// travel; indices are re-resolved against this model's own bones, so it is
+	// safe between two different armatures. Names this skeleton does not have
+	// are dropped.
+	virtual void adopt_partition(const CPartition& layout) = 0;
+
 	virtual IRenderVisual* _BCL dcast_RenderVisual() = 0;
 	virtual IKinematics* _BCL dcast_PKinematics() = 0;
 

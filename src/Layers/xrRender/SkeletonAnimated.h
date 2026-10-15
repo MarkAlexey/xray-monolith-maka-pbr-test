@@ -86,7 +86,23 @@ private:
 	DEFINE_VECTOR(SMotionsSlot, MotionsSlotVec, MotionsSlotVecIt);
 	MotionsSlotVec m_Motions;
 
+	// The partition a visual animates through is skeleton-specific: it holds indices
+	// into this model's vecBones. It used to point straight at the CPartition owned
+	// by the shared motions_value, so every model loading the same OMF rewrote the
+	// same object with its own bone ids and the last one to load won. Own it here
+	// instead, built from the motion file's declared bone NAMES.
+	//
+	// m_Partition still points rather than being the storage, because instances made
+	// by CKinematicsAnimated::Copy share the base model's skeleton and therefore its
+	// partition, exactly as before.
+	CPartition m_own_partition;
 	CPartition* m_Partition;
+
+	// True for every bone at least one loaded motion set actually drives. This is a
+	// fixed property of the model, decided in Load(), NOT a per-frame condition:
+	// a bone that is normally animated still has frames with no blends while one
+	// cycle fades out and the next has not started.
+	xr_vector<bool> m_bone_has_motion;
 
 	IBlendDestroyCallback* m_blend_destroy_callback;
 	IUpdateTracksCallback* m_update_tracks_callback;
@@ -131,9 +147,22 @@ public:
 	u16 LL_MotionsSlotCount() { return (u16)m_Motions.size(); }
 	const shared_motions& LL_MotionsSlot(u16 idx) { return m_Motions[idx].motions; }
 
-	IC CMotionDef* LL_GetMotionDef(MotionID id) { return m_Motions[id.slot].motions.motion_def(id.idx); }
-	IC CMotion* LL_GetRootMotion(MotionID id) { return &m_Motions[id.slot].bone_motions[iRoot]->at(id.idx); }
-	IC CMotion* LL_GetMotion(MotionID id, u16 bone_id) { return &m_Motions[id.slot].bone_motions[bone_id]->at(id.idx); }
+	IC CMotionDef* LL_GetMotionDef(MotionID id) { return id.valid() ? m_Motions[id.slot].motions.motion_def(id.idx) : nullptr; }
+
+	// bone_motions[] holds a null for any bone the motion set does not cover, and
+	// the slot/bone ids reaching here can come from a partition written by another
+	// skeleton. Both used to be dereferenced blind.
+	IC CMotion* LL_GetMotion(MotionID id, u16 bone_id)
+	{
+		if (!id.valid() || id.slot >= m_Motions.size()) return nullptr;
+		const BoneMotionsVec& bm = m_Motions[id.slot].bone_motions;
+		if (bone_id >= bm.size()) return nullptr;
+		MotionVec* mv = bm[bone_id];
+		if (!mv || id.idx >= mv->size()) return nullptr;
+		return &(*mv)[id.idx];
+	}
+
+	IC CMotion* LL_GetRootMotion(MotionID id) { return LL_GetMotion(id, iRoot); }
 
 	virtual IBlendDestroyCallback* GetBlendDestroyCallback();
 	virtual void SetBlendDestroyCallback(IBlendDestroyCallback* cb);
@@ -181,6 +210,8 @@ public:
 	CBlend* PlayFX_Safe (LPCSTR N, float power_scale) override;
 
 	const CPartition& partitions() const { return *m_Partition; };
+	virtual void adopt_partition(const CPartition& layout);
+
 
 	// General "Visual" stuff
 	virtual void Copy(dxRender_Visual* pFrom);

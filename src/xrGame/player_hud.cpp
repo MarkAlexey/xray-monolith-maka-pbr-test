@@ -865,6 +865,31 @@ void player_hud::load(const shared_str& player_hud_sect, bool force)
 	bool b_reload = (m_attached_items[0] != nullptr || m_attached_items[1] != nullptr);
 
 	::Render->hud_loading = false;
+
+	// m_model and m_model_2 are the two halves of one pair of hands: play_blend()
+	// and re_sync_anim() address both through the same partition ids, and scripts
+	// assume a fixed meaning for each id (0 right, 1 left, 2 both).
+	//
+	// A partition layout comes from <visual>.ltx, and CPartition::load() keys that
+	// lookup on the visual's own path. Since every visual now owns its partition
+	// instead of sharing the motion file's, a mod that points visual_2 at a mesh
+	// under a different path silently loses the override and falls back to the
+	// motion file's layout - typically a single part holding every bone. The two
+	// models then disagree about what part 1 means.
+	//
+	// Reconcile them here, while nothing is playing. The richer layout wins, on
+	// the grounds that an .ltx override only ever adds parts to what the motion
+	// file declares. Only bone NAMES are adopted; each model re-resolves them
+	// against its own skeleton, so this stays correct for two different armatures.
+	{
+		const u16 parts_r = m_model->partitions().count();
+		const u16 parts_l = m_model_2->partitions().count();
+		if (parts_r > parts_l)
+			m_model_2->adopt_partition(m_model->partitions());
+		else if (parts_l > parts_r)
+			m_model->adopt_partition(m_model_2->partitions());
+	}
+
 	u16 l_arm = m_model->dcast_PKinematics()->LL_BoneID("l_clavicle");
 	u16 r_arm = m_model_2->dcast_PKinematics()->LL_BoneID("r_clavicle");
 
@@ -1063,6 +1088,7 @@ u32 player_hud::motion_length(const MotionID& M, const CMotionDef*& md, float sp
 	if (md != nullptr && md->flags & esmStopAtEnd)
 	{
 		CMotion* motion = m_model->LL_GetRootMotion(M);
+		if (!motion) return 0;
 		return iFloor(0.5f + 1000.f * motion->GetLength() / (md->Dequantize(md->speed) * speed));
 	}
 	return 0;
@@ -1777,23 +1803,39 @@ void player_hud::re_sync_anim(u8 part)
 
 		MotionID M = BR->motionID;
 
-		u16 pc = m_model->partitions().count(); //same on both armatures
+		// player_hud::load() reconciles the two layouts, but re_sync_anim must not
+		// be the thing that discovers a model where that did not hold: drive the
+		// loop by whichever model has fewer parts, and check every blend. Both
+		// models range-check the partition id and return null for one they do not
+		// have, which the old code wrote through.
+		const u16 parts_r = m_model->partitions().count();
+		const u16 parts_l = m_model_2->partitions().count();
+		const u16 pc = (parts_r < parts_l) ? parts_r : parts_l;
 		for (u16 pid = 0; pid < pc; ++pid)
 		{
 			if (pid == 0)
 			{
 				CBlend* B = m_model->PlayCycle(0, M, TRUE);
-				B->timeCurrent = BR->timeCurrent;
-				B->speed = BR->speed;
+				if (B)
+				{
+					B->timeCurrent = BR->timeCurrent;
+					B->speed = BR->speed;
+				}
 				B = m_model_2->PlayCycle(0, M, TRUE);
-				B->timeCurrent = BR->timeCurrent;
-				B->speed = BR->speed;
+				if (B)
+				{
+					B->timeCurrent = BR->timeCurrent;
+					B->speed = BR->speed;
+				}
 			}
 			else if (pid != part)
 			{
 				CBlend* B = part == 1 ? m_model->PlayCycle(pid, M, TRUE) : m_model_2->PlayCycle(pid, M, TRUE);
-				B->timeCurrent = BR->timeCurrent;
-				B->speed = BR->speed;
+				if (B)
+				{
+					B->timeCurrent = BR->timeCurrent;
+					B->speed = BR->speed;
+				}
 			}
 		}
 	}

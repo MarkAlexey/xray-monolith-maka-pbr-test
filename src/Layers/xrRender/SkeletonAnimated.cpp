@@ -43,6 +43,28 @@ void CBlendInstance::blend_remove(CBlend* H)
 	if (I != Blend.end()) Blend.erase(I);
 }
 
+// The CPartition a visual animates through is owned by the shared motions_value, so
+// it can have been written by a different skeleton (see CKinematicsAnimated::Load),
+// and CPartition::load() historically stored BI_NONE for bones the model does not
+// have. Either way, indexing vecBones with the raw value yields a garbage
+// CBoneData*, whose GetSelfID() is then used to index blend_instances - an out of
+// bounds write into the xr_alloc'd CBlendInstance array, i.e. silent heap
+// corruption that only surfaces later somewhere unrelated. Filter here.
+static CBoneData* part_bone(vecBones* bones, u32 bone_id, LPCSTR dbg)
+{
+	if (bone_id < bones->size())
+		return (*bones)[bone_id];
+
+	static u32 s_reported = 0;
+	if (s_reported < 16)
+	{
+		++s_reported;
+		Msg("! [MODEL] partition references bone %u, model '%s' has %u bones - skipped",
+		    bone_id, dbg ? dbg : "?", u32(bones->size()));
+	}
+	return nullptr;
+}
+
 // Motion control
 void CKinematicsAnimated::Bone_Motion_Start(CBoneData* bd, CBlend* handle)
 {
@@ -279,7 +301,8 @@ void CKinematicsAnimated::LL_CloseCycle(u16 part, u8 mask_channel /*= (1<<0)*/)
 		CPartDef* P = (*m_Partition)[B.bone_or_part];
 		if (nullptr == P) return;
 		for (u32 i = 0; i < P->bones.size(); i++)
-			Bone_Motion_Stop_IM((*bones)[P->bones[i]], *I);
+			if (CBoneData* bd = part_bone(bones, P->bones[i], *getDebugName()))
+				Bone_Motion_Stop_IM(bd, *I);
 
 		blend_cycles[part].erase(I); // ?
 		E = blend_cycles[part].end();
@@ -294,17 +317,14 @@ float CKinematicsAnimated::get_animation_length(MotionID motion_ID)
 
 	SMotionsSlot& slot = m_Motions[motion_ID.slot];
 
-	VERIFY(LL_GetBoneRoot() < slot.bone_motions.size());
-
-	MotionVec* bone_motions = slot.bone_motions[LL_GetBoneRoot()];
-
-	VERIFY(motion_ID.idx < bone_motions->size());
+	CMotion* const rootM = LL_GetRootMotion(motion_ID);
+	if (!rootM) return 0.f;
 
 	CMotionDef* const m_def = slot.motions.motion_def(motion_ID.idx);
 
 	float const anim_speed = m_def ? m_def->Speed() : 1.f;
 
-	return bone_motions->at(motion_ID.idx).GetLength() / anim_speed;
+	return rootM->GetLength() / anim_speed;
 }
 
 void CKinematicsAnimated::IBlendSetup(CBlend& B, u16 part, u8 channel, MotionID motion_ID, BOOL bMixing,
@@ -332,7 +352,10 @@ void CKinematicsAnimated::IBlendSetup(CBlend& B, u16 part, u8 channel, MotionID 
 	B.speed = Speed;
 	B.motionID = motion_ID;
 	B.timeCurrent = 0;
-	B.timeTotal = m_Motions[B.motionID.slot].bone_motions[LL_GetBoneRoot()]->at(motion_ID.idx).GetLength();
+	{
+		CMotion* rootM = LL_GetRootMotion(motion_ID);
+		B.timeTotal = rootM ? rootM->GetLength() : SAMPLE_SPF;
+	}
 	B.bone_or_part = part;
 	B.stop_at_end = noloop;
 	B.playing = TRUE;
@@ -356,7 +379,10 @@ void CKinematicsAnimated::IFXBlendSetup(CBlend& B, MotionID motion_ID, float ble
 	B.speed = Speed;
 	B.motionID = motion_ID;
 	B.timeCurrent = 0;
-	B.timeTotal = m_Motions[B.motionID.slot].bone_motions[bone]->at(motion_ID.idx).GetLength();
+	{
+		CMotion* boneM = LL_GetMotion(motion_ID, bone);
+		B.timeTotal = boneM ? boneM->GetLength() : SAMPLE_SPF;
+	}
 	B.bone_or_part = bone;
 
 	B.playing = TRUE;
@@ -397,6 +423,7 @@ CBlend* CKinematicsAnimated::LL_PlayCycle(u16 part, MotionID motion_ID, BOOL bMi
 		else LL_CloseCycle(part, 1 << channel);
 	}
 	CPartDef* P = (*m_Partition)[part];
+	if (!P) return 0;
 	CBlend* B = IBlend_Create();
 	if (!B) return 0;
 
@@ -405,10 +432,11 @@ CBlend* CKinematicsAnimated::LL_PlayCycle(u16 part, MotionID motion_ID, BOOL bMi
 	            CallbackParam);
 	for (u32 i = 0; i < P->bones.size(); i++)
 	{
-		if (!(*bones)[P->bones[i]])
-			Debug.fatal(DEBUG_INFO, "! MODEL: missing bone/wrong armature? : %s", *getDebugName());
-
-		Bone_Motion_Start_IM((*bones)[P->bones[i]], B);
+		// was Debug.fatal() on a null bone, which both crashed the game on a
+		// recoverable authoring mistake and did nothing at all about an index past
+		// the end of vecBones - the case that actually corrupts the heap
+		if (CBoneData* bd = part_bone(bones, P->bones[i], *getDebugName()))
+			Bone_Motion_Start_IM(bd, B);
 	}
 	blend_cycles[part].push_back(B);
 	return B;
@@ -513,13 +541,15 @@ CBlend* CKinematicsAnimated::LL_PlayFX(u16 bone, MotionID motion_ID, float blend
 	if (!motion_ID.valid()) return 0;
 	if (blend_fx.size() >= MAX_BLENDED) return 0;
 	if (BI_NONE == bone) bone = iRoot;
+	CBoneData* fx_bone = part_bone(bones, bone, *getDebugName());
+	if (!fx_bone) return 0;
 
 	CBlend* B = IBlend_Create();
 	if (!B) return 0;
 
 	_DBG_SINGLE_USE_MARKER;
 	IFXBlendSetup(*B, motion_ID, blendAccrue, blendFalloff, Power, Speed, bone);
-	Bone_Motion_Start((*bones)[bone], B);
+	Bone_Motion_Start(fx_bone, B);
 
 	blend_fx.push_back(B);
 	return B;
@@ -534,7 +564,8 @@ void CKinematicsAnimated::DestroyCycle(CBlend& B)
 	const CPartDef* P = m_Partition->part(B.bone_or_part);
 	if (nullptr == P) return;
 	for (u32 i = 0; i < P->bones.size(); i++)
-		Bone_Motion_Stop_IM((*bones)[P->bones[i]], &B);
+		if (CBoneData* bd = part_bone(bones, P->bones[i], *getDebugName()))
+			Bone_Motion_Stop_IM(bd, &B);
 }
 
 
@@ -707,7 +738,11 @@ void CKinematicsAnimated::Copy(dxRender_Visual* P)
 
 	CKinematicsAnimated* pFrom = (CKinematicsAnimated*)P;
 	PCOPY(m_Motions);
+	// An instance shares the base model's skeleton, so it shares its partition;
+	// m_own_partition stays empty here. CModelPool refcounts a base for as long as
+	// any instance of it exists, so this pointer cannot outlive its owner.
 	PCOPY(m_Partition);
+	m_bone_has_motion = pFrom->m_bone_has_motion;
 
 	IBlend_Startup();
 }
@@ -773,6 +808,24 @@ CBlend* CKinematicsAnimated::IBlend_Create()
 	return 0;
 }
 
+void CKinematicsAnimated::adopt_partition(const CPartition& layout)
+{
+	// Self-assignment would destroy the CPartDefs out from under copy_from().
+	if (&layout == m_Partition) return;
+
+	// Take the layout by value, then re-resolve it. The copy carries the
+	// declared bone NAMES, which are the authoritative part of a partition;
+	// the indices that come with it belong to the donor's skeleton and are
+	// overwritten by rebind() below.
+	m_own_partition = layout;
+	m_Partition = &m_own_partition;
+	m_Partition->rebind(this);
+
+	// blend_cycles is a fixed MAX_PARTS array, so nothing about the blend pool
+	// depends on the partition count and no IBlend_Startup() is needed here.
+	// Callers are expected to do this before anything is playing.
+}
+
 void CKinematicsAnimated::Load(const char* N, IReader* data, u32 dwFlags)
 {
 	inherited::Load(N, data, dwFlags);
@@ -781,6 +834,41 @@ void CKinematicsAnimated::Load(const char* N, IReader* data, u32 dwFlags)
 	blend_instances = NULL;
 	m_Partition = NULL;
 	Update_LastTime = 0;
+
+	// A motions_value in g_pMotionsContainer was bound against whichever model loaded
+	// it first, and the has() fast path below skips motions_value::load entirely, so
+	// nothing re-examines it for this skeleton. Coverage is not required - a bone
+	// with no track holds its bind pose - but it is worth naming once per model,
+	// because it is the difference between an intentional extra bone and a broken
+	// export. Returns false only when the set drives none of our bones at all.
+	const auto check_motion_coverage = [&](shared_motions& M) -> bool
+	{
+		u32 covered = 0, missing = 0;
+		for (u32 i = 0; i < bones->size(); ++i)
+		{
+			CBoneData* BD = (*bones)[i];
+			if (!BD) return false;
+			if (M.bone_motions(BD->name))
+			{
+				++covered;
+				continue;
+			}
+			++missing;
+			Msg("! [MODEL-BIND] model '%s': bone '%s' has no motion track, holding bind pose",
+			    N, BD->name.c_str());
+		}
+		if (0 == covered)
+		{
+			Msg("! [MODEL-BIND] model '%s': motion set drives none of its bones", N);
+			return false;
+		}
+		if (missing && !M.bone_motions((*bones)[LL_GetBoneRoot()]->name))
+		{
+			Msg("! [MODEL-BIND] model '%s': motion set does not drive the root bone", N);
+			return false;
+		}
+		return true;
+	};
 
 	const auto loadOMF = [&](LPCSTR _path)
 	{
@@ -797,12 +885,23 @@ void CKinematicsAnimated::Load(const char* N, IReader* data, u32 dwFlags)
 		if (!g_pMotionsContainer->has(_path)) //optimize fs operations
 		{
 			IReader* MS = FS.r_open(fn);
+			if (!MS)
+			{
+				Msg("! error in model [%s]. Can't open motion file '%s'.", N, _path);
+				m_Motions.pop_back();
+				return;
+			}
 			create_res = m_Motions.back().motions.create(_path, MS, bones);
 			FS.r_close(MS);
 		}
 		if (create_res)
-			m_Motions.back().motions.create(_path, NULL, bones);
-		else
+			create_res = m_Motions.back().motions.create(_path, NULL, bones);
+
+		// cache hit or not, the shared motions have to be checked against THIS skeleton
+		if (create_res && !check_motion_coverage(m_Motions.back().motions))
+			create_res = false;
+
+		if (!create_res)
 		{
 			m_Motions.pop_back();
 			Msg("! error in model [%s]. Unable to load motion file '%s', section '%s'.", N, _path, current_player_hud_sect.c_str());
@@ -902,13 +1001,30 @@ void CKinematicsAnimated::Load(const char* N, IReader* data, u32 dwFlags)
 		string_path nm;
 		strconcat(sizeof(nm), nm, N, ".ogf");
 		m_Motions.push_back(SMotionsSlot());
-		m_Motions.back().motions.create(nm, data, bones);
+		// an unbound slot leaves shared_motions::p_ null; every accessor on it only
+		// VERIFYs, so keeping it here turns into a null deref in release below
+		if (!m_Motions.back().motions.create(nm, data, bones) ||
+			!check_motion_coverage(m_Motions.back().motions))
+		{
+			m_Motions.pop_back();
+			Msg("! error in model [%s]. Unable to bind embedded motions.", N);
+		}
 	}
 
-	R_ASSERT2(m_Motions.size(), make_string("section '%s'\nmodel '%s'", current_player_hud_sect.c_str(), N).c_str());
+	// The bone-level detail of a failed bind is in the log ([MODEL-BIND] / [MODEL-FATAL])
+	R_ASSERT2(m_Motions.size(), make_string("section '%s'\nmodel '%s'\nno motion set could be bound, see the log",
+	                                        current_player_hud_sect.c_str(), N).c_str());
 
-	m_Partition = m_Motions[0].motions.partition();
-	m_Partition->load(this, N);
+	// Take our own copy of the motion file's partition and bind it to THIS skeleton.
+	// The copy carries the declared bone names, so a model whose bone list differs
+	// from whichever model first loaded this OMF resolves its own indices instead of
+	// inheriting the other one's.
+	m_own_partition = *m_Motions[0].motions.partition();
+	m_Partition = &m_own_partition;
+	m_Partition->load(this, N); // .ltx override, names only
+	m_Partition->rebind(this); // names -> indices, against this vecBones
+
+	m_bone_has_motion.assign(bones->size(), false);
 
 	// initialize motions
 	for (MotionsSlotVecIt m_it = m_Motions.begin(); m_it != m_Motions.end(); m_it++)
@@ -919,6 +1035,11 @@ void CKinematicsAnimated::Load(const char* N, IReader* data, u32 dwFlags)
 		{
 			CBoneData* BD = (*bones)[i];
 			MS.bone_motions[i] = MS.motions.bone_motions(BD->name);
+			// A null here is legal and means "this motion set does not drive this
+			// bone": LL_GetMotion() returns null and the blend is skipped. Remember
+			// which bones ARE driven, by any slot, so LL_BoneMatrixBuild can tell a
+			// permanently unanimated bone from one that is merely between cycles.
+			if (MS.bone_motions[i]) m_bone_has_motion[i] = true;
 		}
 	}
 
@@ -945,8 +1066,10 @@ void CKinematicsAnimated::LL_BuldBoneMatrixDequatize(const CBoneData* bd, u8 cha
 			continue;
 		u8 channel = B->channel;
 		//keys.blend_factors[channel][b_count]	=  B->blendAmount;
+		CMotion* pM = LL_GetMotion(B->motionID, SelfID);
+		if (!pM) continue; // no track for this bone in that motion set
 		keys.blends[channel][b_count] = B;
-		CMotion& M = *LL_GetMotion(B->motionID, SelfID);
+		CMotion& M = *pM;
 		Dequantize(*D, *B, M);
 		QR2Quat(M._keysR[0], BK[channel][b_count].Q);
 		if (M.test_flag(flTKeyPresent))
@@ -988,7 +1111,27 @@ void CKinematicsAnimated::LL_BoneMatrixBuild(u16 bone_id, CBoneInstance& bi, con
 	MixChannels(Result, channel_keys, BC, ch_count);
 
 	Fmatrix RES;
-	RES.mk_xform(Result.Q, Result.T);
+
+	// With zero blends MixInterlerp yields Q = (0,0,0,0) / T = 0, mk_xform turns that
+	// zero quaternion into the identity, and the bone ends up welded to its parent.
+	// For a bone no motion set drives that is wrong - it should hold its bind pose,
+	// which is what the rigid path (CKinematics::BuildBoneMatrix) already does.
+	//
+	// But zero blends is ALSO the normal transient state of a bone whose partition is
+	// between cycles, and those frames must keep stock behaviour: swapping such a bone
+	// to bind pose for one frame and back the next makes it alternate between two
+	// unrelated transforms, which reads as a violent shake on whichever partition is
+	// transitioning. So gate on the bone, decided once in Load(), not on this frame.
+	const bool bone_never_animated = (bone_id < m_bone_has_motion.size())
+		                                 && !m_bone_has_motion[bone_id];
+	u32 total_blends = 0;
+	for (u16 j = 0; MAX_CHANNELS > j; ++j)
+		total_blends += u32(keys.chanel_blend_conts[j]);
+
+	if (bone_never_animated && 0 == total_blends)
+		RES.set(LL_GetData(bone_id).bind_transform);
+	else
+		RES.mk_xform(Result.Q, Result.T);
 	
 	if (LL_GetBoneVisible(bone_id))
 	{

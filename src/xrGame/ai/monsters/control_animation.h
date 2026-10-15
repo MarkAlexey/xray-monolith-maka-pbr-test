@@ -123,5 +123,6 @@ IC float CControlAnimation::motion_time(MotionID motion_id, IRenderVisual* visua
 	VERIFY(motion_def);
 	CMotion* motion = skeleton_animated->LL_GetRootMotion(motion_id);
 	VERIFY(motion);
+	if (!motion || !motion_def) return 0.f;
 	return (motion->GetLength() / motion_def->Speed());
 }

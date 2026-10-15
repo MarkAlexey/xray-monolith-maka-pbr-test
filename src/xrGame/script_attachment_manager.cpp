@@ -612,6 +612,7 @@ u32 script_attachment::motion_length(const MotionID& M, const CMotionDef*& md, f
 	if (md->flags & esmStopAtEnd)
 	{
 		CMotion* motion = k->LL_GetRootMotion(M);
+		if (!motion) return 0;
 		return iFloor(0.5f + 1000.f * motion->GetLength() / (md->Dequantize(md->speed) * speed));
 	}
 	return 0;

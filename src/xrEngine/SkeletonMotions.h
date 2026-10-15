@@ -171,40 +171,83 @@ DEFINE_VECTOR(MotionVec*, BoneMotionsVec, BoneMotionsVecIt);
 DEFINE_MAP(shared_str, MotionVec, BoneMotionMap, BoneMotionMapIt);
 
 // partition
+//
+// A partition is skeleton-specific: `bones` holds indices into a particular
+// vecBones. `bone_names` is the authoritative content - it is what the OMF and the
+// model .ltx actually declare - and `bones` is derived from it by rebind() against
+// whichever skeleton is going to animate through this partition. Keeping the names
+// is what lets one motion file serve two models whose bone lists differ.
 class ENGINE_API CPartDef
 {
 public:
 	shared_str Name;
-	xr_vector<u32> bones;
+	xr_vector<u32> bones; // derived; valid only for the skeleton rebind() was given
+	xr_vector<shared_str> bone_names; // authoritative
 
 	CPartDef() : Name(0)
 	{
 	};
 
-	u32 mem_usage() { return sizeof(*this) + bones.size() * sizeof(u32) + sizeof(Name); }
+	void set_bone_names(const xr_vector<shared_str>& names)
+	{
+		bone_names = names;
+		bones.clear_not_free();
+	}
+
+	// resolves bone_names against V, dropping names this skeleton does not have
+	void rebind(IKinematics* V);
+
+	u32 mem_usage()
+	{
+		return sizeof(*this) + bones.size() * sizeof(u32)
+			+ bone_names.size() * sizeof(shared_str) + sizeof(Name);
+	}
 };
 
 class ENGINE_API CPartition
 {
 	xr_vector<CPartDef*> P;
+
+	void copy_from(const CPartition& rhs);
 public:
 	IC CPartDef* operator[](u16 id) { return P.size() > id ? P.at(id) : nullptr; }
 	IC const CPartDef* part(u16 id) const { return P.size() > id ? P.at(id) : nullptr; }
 	CPartDef* create()
 	{
-		if (P.size() > MAX_PARTS) return nullptr;
+		// was '>', which let P grow to MAX_PARTS + 1 while every consumer of a
+		// partition iterates and range-checks against MAX_PARTS
+		if (P.size() >= MAX_PARTS) return nullptr;
 		P.emplace_back(xr_new<CPartDef>());
 		return P.back();
 	}
 	u16 part_id(const shared_str& name) const;
-	u32 mem_usage() { return P[0]->mem_usage() * P.size(); }
+	u32 mem_usage();
+	// reads <model_name>.ltx and overrides the declared bone NAMES; call rebind()
+	// afterwards to turn them into indices
 	void load(IKinematics* V, LPCSTR model_name);
+	// resolves every part against V's skeleton
+	void rebind(IKinematics* V);
 
 	u8 count() const { return P.size(); };
 
 	CPartition()
 	{
 		P.reserve(MAX_PARTS);
+	}
+
+	// P owns its CPartDefs, so the compiler-generated copy was a double free waiting
+	// for its first caller. It now has one: every visual takes its own copy of the
+	// motion file's partition instead of pointing at the shared original.
+	CPartition(const CPartition& rhs)
+	{
+		P.reserve(MAX_PARTS);
+		copy_from(rhs);
+	}
+
+	CPartition& operator=(const CPartition& rhs)
+	{
+		if (this != &rhs) copy_from(rhs);
+		return *this;
 	}
 
 	~CPartition()
