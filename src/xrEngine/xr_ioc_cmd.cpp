@@ -36,6 +36,7 @@ xr_token vid_bpp_token[] =
 };
 
 extern float r_wallmarks_ssa_k;
+extern float psShedulerBudgetMax;
 extern BOOL r_wallmarks_static;
 extern BOOL r_wallmarks_dynamic;
 //-----------------------------------------------------------------------
@@ -1156,6 +1157,8 @@ void CCC_Register()
     CMD4(CCC_Integer, "r_wallmarks_static", &r_wallmarks_static, 0, 1);
     CMD4(CCC_Integer, "r_wallmarks_dynamic", &r_wallmarks_dynamic, 0, 1);
     CMD4(CCC_Float, "r_wallmarks_ssa_k", &r_wallmarks_ssa_k, 0.25f, 10.f);
+    // Scheduler (AI / object updates) time budget ceiling in ms per frame. 5 = IX-Ray, 66 = old Monolith
+    CMD4(CCC_Float, "sheduler_budget_max", &psShedulerBudgetMax, 5.f, 66.f);
 
 	CMD4(CCC_Float, "r2_sunshafts_min", &ps_r2_sun_shafts_min, 0.0, 0.5);
 	CMD4(CCC_Float, "r2_sunshafts_value", &ps_r2_sun_shafts_value, 0.5, 2.0);

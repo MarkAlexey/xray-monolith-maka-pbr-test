@@ -8,6 +8,11 @@
 float psShedulerCurrent = 10.f;
 float psShedulerTarget = 10.f;
 const float psShedulerReaction = 0.1f;
+// Ceiling of the adaptive scheduler budget (ms per frame), console "sheduler_budget_max".
+// IX-Ray cf2f5f9c clamps the budget to 1..5 ms so object updates cannot eat the frame.
+// Caveat: under heavy load (many NPCs) updates are spread over more frames, so AI can react
+// a little later; 66 restores the old Monolith ceiling (the old floor was 3 ms, now 1 ms).
+float psShedulerBudgetMax = 5.f;
 
 //-------------------------------------------------------------------------------------
 void CSheduler::Initialize()
@@ -378,7 +383,7 @@ void CSheduler::ProcessStep()
 			// Stop if really underestimated the cost of batch, check every 8th item
 			if ((i % 8) == 0 && Device.dwPrecacheFrame == 0 && CPU::QPC() > cycles_limit)
 			{
-				psShedulerTarget += (psShedulerReaction * 3);
+				psShedulerTarget += psShedulerReaction * 1.5f;
 				break;
 			}
 
@@ -531,8 +536,8 @@ void CSheduler::UpdateFinalize()
 {
 	PROF_EVENT();
 
-	clamp(psShedulerTarget, 3.f, 66.f);
-	psShedulerCurrent = 0.9f * psShedulerCurrent + 0.1f * psShedulerTarget;
+	clamp(psShedulerTarget, 1.f, psShedulerBudgetMax);
+	psShedulerCurrent = _inertion(psShedulerCurrent, psShedulerTarget, .9f);
 	Device.Statistic->fShedulerLoad = psShedulerCurrent;
 
 	// Finalize
