@@ -6,7 +6,8 @@
 
 namespace dlss
 {
-enum class Quality : unsigned { Off, DLAA, Quality, Balanced, Performance, UltraPerformance };
+// Append new modes to preserve existing console/config IDs.
+enum class Quality : unsigned { Off, DLAA, Quality, Balanced, Performance, UltraPerformance, UltraQuality };
 // NGX Super Resolution preset values. F is deprecated in runtime 310.9.1;
 // reserved presets are deliberately not exposed as working choices.
 enum class Preset : unsigned { Default = 0, J = 10, K = 11, L = 12, M = 13 };
@@ -23,6 +24,15 @@ struct Size
     bool operator!=(const Size& other) const { return !(*this == other); }
     bool Valid() const { return width != 0 && height != 0; }
 };
+
+// Midpoint in each dimension between native and the backend's Quality size.
+inline Size UltraQualitySize(Size quality, Size display)
+{
+    if (!quality.Valid() || !display.Valid() || quality.width > display.width || quality.height > display.height)
+        return {};
+    return {quality.width + (display.width - quality.width) / 2,
+        quality.height + (display.height - quality.height) / 2};
+}
 
 struct Offset { float x = 0, y = 0; };
 

@@ -14,7 +14,7 @@ u32 ps_r_upscaler = 1;
 u32 ps_r_fsr3_quality = 1;
 xr_token upscaler_token[] = {{"off", 0}, {"dlss", 1}, {"fsr3", 2}, {nullptr, 0}};
 xr_token fsr3_quality_token[] = {
-    {"native_aa", 0}, {"quality", 1}, {"balanced", 2},
+    {"native_aa", 0}, {"ultra_quality", 5}, {"quality", 1}, {"balanced", 2},
     {"performance", 3}, {"ultra_performance", 4}, {nullptr, 0}
 };
 u32 ps_r_dlss_preset = 0;
@@ -23,7 +23,7 @@ xr_token dlss_preset_token[] = {
     {"default", 0}, {"j", 10}, {"k", 11}, {"l", 12}, {"m", 13}, {nullptr, 0}
 };
 xr_token dlss_quality_token[] = {
-    {"off", 0}, {"dlaa", 1}, {"quality", 2}, {"balanced", 3},
+    {"off", 0}, {"dlaa", 1}, {"ultra_quality", 6}, {"quality", 2}, {"balanced", 3},
     {"performance", 4}, {"ultra_performance", 5}, {nullptr, 0}
 };
 xr_token qpreset_token [ ] = {
