@@ -28,6 +28,12 @@ Files it can patch (the same edits as make_pbr_compat_patch.py, applied to the w
                                        cubemap remap, HDR reflections
     screenspace_common.h               SSS sky/env lookups through the cubemap remap
     ssfx_ssr_combine.ps                SSS SSR off where IX-Ray SSLR owns the pixel
+  Instanced grass (PATCH_GRASS_INST)
+    deffer_grass.vs, deffer_detail_s_flat.vs
+                                       DT_INST paths for TheLostInPlace's instanced grass
+                                       (r__detail_inst ...): the exe's deffer_grass_inst*.vs
+                                       wrappers include these. Optional: a grass shader the
+                                       anchors do not fit stays on the stock path
 
 Per file, one of:
   patched     the winning version was patched and goes into the overlay
@@ -87,6 +93,11 @@ PATCH_PBR_TEXTURES = True
 # keep their mods' look exactly.
 PATCH_LEGACY_IXRAY = True
 
+# Add the instanced-grass paths (DT_INST) to the stack's grass shaders. Needs exes with
+# TheLostInPlace's grass rework; older exes never define DT_INST, so the patched shaders
+# behave exactly like the originals there.
+PATCH_GRASS_INST = True
+
 # Copy this repository's PBR-only headers into the overlay (see the caveat above).
 INCLUDE_REPO_HEADERS = True
 REPO_HEADERS = ["pbr_ixray.h", "pbr_hud.h", "ixray_brdf.h", "hdr_ibl.h", "sslr_apply.h", "sslr_settings.h",
@@ -124,7 +135,12 @@ LEGACY_FILES = {
 
 # A winner containing one of these already has PBR code written by this repository
 # (the exe's own shaders): nothing to patch.
-NATIVE_MARKERS = ('#include "pbr_ixray.h"', "#define PBR_GBUFFER", "ES_IXRAY_BRDF", "ixr_env_dir(")
+NATIVE_MARKERS = ('#include "pbr_ixray.h"', "#define PBR_GBUFFER", "ES_IXRAY_BRDF", "ixr_env_dir(",
+                  '#include "dt_inst.h"')
+GRASS_FILES = {
+    "deffer_grass.vs": compat.patch_grass_inst,
+    "deffer_detail_s_flat.vs": compat.patch_grass_inst,
+}
 
 R3 = re.compile(r"(?:^|/)shaders/r3/(.+)$", re.I)
 
@@ -178,6 +194,8 @@ def main():
         jobs.update(PBR_FILES)
     if PATCH_LEGACY_IXRAY:
         jobs.update(LEGACY_FILES)
+    if PATCH_GRASS_INST:
+        jobs.update(GRASS_FILES)
 
     out, report, failed, stale = [], [], [], []
     for name, fn in jobs.items():

@@ -107,7 +107,8 @@ From LASS (Zira3l137): `g_jiggle_enabled`, `g_jiggle_stiffness`, `g_jiggle_dampi
 Grass (TheLostInPlace's rework): `r__detail_shadow_cull`, `r__detail_rows`, `r__detail_inst`,
 `r__detail_inst_res`, `r__detail_merge`, `r__detail_occ`, `r__detail_occ_first` (all on),
 `r__detail_thin` with `r__detail_thin_start` / `_keep` / `_band` (off). The instanced grass path
-needs grass shaders with `_inst` variants; under SSS/ES/GAMMA it stays on the stock path for now.
+needs grass shaders with the `DT_INST` paths: the GAMMA zips have them; with your own SSS/ES,
+run the overlay tool or the compat generator (both add them).
 `r__static_screen_quad` (on): repeated screen quads from static vertex buffers.
 
 Details, caveats and the full change list: [README-Claude.md](https://github.com/{{REPO}}/blob/{{SHA}}/README-Claude.md).

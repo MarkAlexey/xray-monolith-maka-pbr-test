@@ -937,12 +937,23 @@ byte-identical to `fps-clean`.
 | `r__detail_thin` | 0 | far merged grass thinned by a per-instance hash (`_start`, `_keep`, `_band`) |
 
 **Under SSS / ES / GAMMA:** the instanced path (`r__detail_inst` and everything after it) only
-engages for a grass shader that has an `<vs>_inst.vs` variant. This repository ships those for the
-stock `deffer_detail_[s|w]_flat.vs`. SSS, ES and GAMMA draw grass with their own
-`deffer_grass.vs` (from `details_blend.s`), which has no such variant yet, so there the engine logs
-`[DT-INST] ... missing` / `old` once and keeps the stock path: the shadow cull, the faster row copy
-and the loop changes still apply, the instancing does not. An `_inst` variant of the mods'
-`deffer_grass.vs` is the next step.
+engages for a grass shader that has `<vs>_inst*.vs` variants. SSS, ES and GAMMA draw grass with their
+own `deffer_grass.vs` (from `details_blend.s`) and SSS replaces `deffer_detail_s_flat.vs`, so:
+
+- `gamedata/shaders/r3/deffer_grass_inst*.vs` (TheLostInPlace): two-line wrappers that define
+  `DT_INST` / `DT_MERGE` / `DT_OCC` / `DT_THIN` and include the stack's `deffer_grass.vs`;
+- the stack's `deffer_grass.vs` / `deffer_detail_s_flat.vs` get the matching `DT_*` paths from the
+  overlay tool (`PATCH_GRASS_INST`) and the compat generator (`patch_grass_inst`): the edits
+  TheLostInPlace made to SSS 23.5's copies, applied to whichever copy wins. Run on SSS's own files
+  the generator reproduces TheLostInPlace's shaders exactly. SSS's per-instance terrain normal and
+  alpha (`exdata[61]`) move to the `dt_ex` buffer the engine fills; ES's grass has none.
+- The GAMMA zips from CI carry the patched shaders; with an unpatched stack the engine logs
+  `[DT-INST] ... old` once and keeps the stock path (the shadow cull, the faster row copy and the loop
+  changes still apply).
+
+Checked: the GAMMA zips were built locally with the CI script; every grass variant compiles (no new
+DXC errors) and binds `dt_rows` (+ `dt_ex` for SSS, + `dt_verts` / `dt_idx` for merge / occ); ES's
+patched grass compiles and binds the same minus `dt_ex`.
 
 `r__static_screen_quad` (default 1): the idea of IX-Ray `1eea3317` (LVutner) applied to this engine.
 65 screen passes (SSS AO/IL/SSR blur, bloom, rain, DOF, NVG, SMAA, LUT, gasmask, post-process) used to

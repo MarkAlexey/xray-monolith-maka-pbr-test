@@ -86,6 +86,10 @@ CHECK_SHADERS = [
     "deffer_base_bump.ps", "deffer_base_aref_bump.ps",
     "deffer_base_hud_bump.ps", "deffer_base_hud_aref_bump.ps",
     "ssfx_ssr_combine.ps",
+    # Instanced grass: the stack's grass shaders with the DT_INST paths (overlay), every variant
+    "deffer_grass.vs", "deffer_grass_inst.vs", "deffer_grass_inst_merge.vs", "deffer_grass_inst_merge_occ.vs",
+    "deffer_grass_inst_merge_thin.vs", "deffer_grass_inst_merge_occ_thin.vs",
+    "deffer_detail_s_flat.vs", "deffer_detail_s_flat_inst.vs", "deffer_detail_s_flat_inst_merge_occ_thin.vs",
     # IX-Ray VSLR capture / panorama (engine-owned, compiled against the stack's sload.h)
     "deffer_vslr_bump.ps", "deffer_vslr_lmh_aref_bump.ps", "vslr_panorama.cs",
 ]

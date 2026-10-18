@@ -46,6 +46,11 @@ What the patch does
       SSLR, HDR reflections) with SSS AO, the HUD hemi boost and SSS Indirect Light on the
       ambient diffuse (PBR_IL_INTENSITY); PBR_DEBUG_VIEW works (7 = IL factor).
       Not applied to PBR pixels: the r2 static-sun term.
+  Instanced grass (exes with TheLostInPlace's grass rework, r__detail_inst and later):
+    - deffer_grass.vs (ES 01 PBR, SSS 00 MV / 09 / 10 / 91) and deffer_detail_s_flat.vs (SSS
+      00 MV): DT_INST / DT_MERGE / DT_OCC / DT_THIN paths, the edits TheLostInPlace made to
+      SSS's copies (the generator reproduces their files). The exe's deffer_grass_inst*.vs
+      wrappers include these; without them the engine keeps the stock grass path.
 
 Install order (Mod Organizer priority / JSGME order), after everything else:
   ES 1.10 -> SSS 23.5 modules (incl. "00 - PATCH - [ Enhanced Shaders 1.10 ]") -> this patch.
@@ -103,6 +108,8 @@ SSS_HUDRAIN = "05 - Rain - HUD Raindrops/gamedata/shaders/r3"
 SSS_SSS = "02 - SSS/gamedata/shaders/r3"
 SSS_SHADOWS = "08 - New Shadow & Light Features/gamedata/shaders/r3"
 SSS_FLORA = "91 - FLORA FIXES & IMPROVEMENTS/gamedata/shaders/r3"
+SSS_INTGRASS = "09 - Interactive Grass/gamedata/shaders/r3"
+SSS_WIND = "10 - Wind/gamedata/shaders/r3"
 
 # Output folder names (prefix sorts them after the modules they override)
 OUT = {
@@ -118,6 +125,8 @@ OUT = {
     "sss_sss": "99 - PBR compat - SSS (02 - SSS)",
     "sss_shadows": "99 - PBR compat - SSS (08 - New Shadow & Light Features)",
     "sss_flora": "99 - PBR compat - SSS (91 - FLORA FIXES & IMPROVEMENTS)",
+    "sss_intgrass": "99 - PBR compat - SSS (09 - Interactive Grass)",
+    "sss_wind": "99 - PBR compat - SSS (10 - Wind)",
 }
 
 # ------------------------------------------------------------------------------------------
@@ -614,6 +623,71 @@ def patch_gbuffer_stage(text, what):
     return text
 
 
+# ------------------------------------------------------------------------------------------
+# Instanced grass (TheLostInPlace's grass rework, r__detail_inst and later)
+# ------------------------------------------------------------------------------------------
+# The engine draws a grass object instanced only when its vertex shader has "<vs>_inst.vs"
+# (and _inst_merge, _inst_merge_occ, ..._thin) variants that read the instance buffers
+# (dt_inst.h: dt_rows, dt_draw, dt_verts, dt_idx). The variants are two-line wrappers shipped
+# with the exe; they define DT_INST / DT_MERGE / DT_OCC / DT_THIN and #include the stack's
+# grass shader, so THAT shader needs the DT_* paths. This adds them, the same edits
+# TheLostInPlace made to SSS 23.5's deffer_grass.vs / deffer_detail_s_flat.vs:
+#   - array[61*4] (and SSS's exdata[61]) become the instance buffers under DT_INST; SSS's
+#     per-instance terrain normal / alpha moves to dt_ex (t11), which the engine fills from
+#     the same data;
+#   - main() takes SV_VertexID / SV_InstanceID under DT_MERGE / DT_INST;
+#   - the row fetch reads dt_row(n, k) instead of array[i + k];
+#   - DT_THIN scales far instances down and drops the ones whose scale reaches 0.
+# Without DT_* defined the shader compiles exactly as before (the stock constant-array path).
+# A shader whose fetch block does not look like stock / SSS / ES (a rewritten grass shader)
+# fails the anchors and is left alone: the engine then logs "[DT-INST] ... old" and keeps the
+# stock path for it.
+
+DT_DECL_INST = '#ifdef DT_INST\n#include "dt_inst.h"\n'
+DT_DECL_EX = 'Buffer<uint4>\tdt_ex\t: register(t11);\t// terrain normal and grass alpha per instance\n'
+DT_FETCH_INST = ("#ifdef DT_INST\n#ifdef DT_MERGE\n\tuint\tn;\n\tv_detail\tv\t= dt_vertex(vid, iid, n);\n"
+                 "#ifdef\tDT_OCC\n\tn\t= dt_idx[n];\n#endif\n#else\n\tuint\tn\t= dt_inst(iid);\n#endif\n"
+                 "\tfloat4  m0 \t= dt_row(n, 0);\n\tfloat4  m1 \t= dt_row(n, 1);\n\tfloat4  m2 \t= dt_row(n, 2);\n"
+                 "\tfloat4  c0 \t= asfloat(dt_rows[n * 4 + 3]);\n")
+DT_FETCH_EX = "\n\tfloat4 data = asfloat(dt_ex[n]);\n"
+DT_THIN_SCALE = ("\n#ifdef\tDT_THIN\n\tfloat\tthin\t= dt_thin_scale(float3(m0.w, m1.w, m2.w));\n"
+                 "\tm0.xyz\t*= thin;\n\tm1.xyz\t*= thin;\n\tm2.xyz\t*= thin;\n#endif\n")
+DT_THIN_DROP = "#ifdef\tDT_THIN\n\tif (thin <= 0)\n\t\tO.hpos\t= float4(0, 0, -1, 1);\n#endif\n"
+
+
+def patch_grass_inst(text, what):
+    """deffer_grass.vs (SSS / ES) and deffer_detail_s_flat.vs (SSS): add the DT_INST paths."""
+    if "DT_INST" in text:
+        raise PatchError(f"{what}: already has the DT_INST paths")
+    # SSS's per-instance terrain normal / alpha
+    ex = re.search(r"^[ \t]*(?:uniform[ \t]+)?float4[ \t]+exdata[ \t]*\[[ \t]*61[ \t]*\][ \t]*;[^\n]*\n", text, re.M)
+    if ex:
+        text = text[:ex.start()] + "#ifndef DT_INST\n" + ex.group(0) + "#endif\n" + text[ex.end():]
+    # the constant array -> instance buffers
+    text = regex_once(text, r"^([ \t]*(?:uniform[ \t]+)?float4[ \t]+array[ \t]*\[[ \t]*61[ \t]*\*[ \t]*4[ \t]*\][ \t]*;[^\n]*\n)",
+                      lambda m: DT_DECL_INST + (DT_DECL_EX if ex else "") + "#else\n" + m.group(1) + "#endif\n",
+                      what, flags=re.M)
+    # entry point
+    text = regex_once(text, r"^(v2p_\w+)([ \t]+)main[ \t]*\([ \t]*v_detail[ \t]+v[ \t]*\)[ \t]*\n",
+                      lambda m: (f"#if defined(DT_MERGE)\n{m.group(1)}{m.group(2)}main (uint vid : SV_VertexID, uint iid : SV_InstanceID)\n"
+                                 f"#elif defined(DT_INST)\n{m.group(1)}{m.group(2)}main (v_detail v, uint iid : SV_InstanceID)\n"
+                                 f"#else\n{m.group(0)}#endif\n"), what, flags=re.M)
+    # row fetch (+ SSS's exdata fetch right after it)
+    fetch = (r"((?:^[ \t]*// index[ \t]*\n)?^[ \t]*int[ \t]+i[ \t]*=[ \t]*v\.misc\.w[ \t]*;[^\n]*\n"
+             r"(?:^[ \t]*float4[ \t]+m[012][ \t]*=[ \t]*array[ \t]*\[[ \t]*i[ \t]*\+[ \t]*[012][ \t]*\][ \t]*;[^\n]*\n){3}"
+             r"^[ \t]*float4[ \t]+c0[ \t]*=[ \t]*array[ \t]*\[[ \t]*i[ \t]*\+[ \t]*3[ \t]*\][ \t]*;[^\n]*\n"
+             r"(?:[ \t]*\n^[ \t]*float4[ \t]+data[ \t]*=[ \t]*exdata[^\n]*\n)?)")
+    def fetch_sub(m):
+        has_ex = "exdata" in m.group(1)
+        if has_ex != bool(ex):
+            raise PatchError(f"{what}: exdata is declared but not fetched after the rows (or the other way round)")
+        return DT_FETCH_INST + (DT_FETCH_EX if has_ex else "") + "#else\n" + m.group(1) + "#endif\n" + DT_THIN_SCALE
+    text = regex_once(text, fetch, fetch_sub, what, flags=re.M)
+    # drop thinned-out instances right where the clip position is written
+    text = regex_once(text, r"^([ \t]*O\.hpos[ \t]*=[^\n]*\n)", lambda m: m.group(1) + DT_THIN_DROP, what, flags=re.M)
+    return text
+
+
 # (source, path in archive, output key, patch function)
 JOBS = [
     ("sss", SSS_MAIN + "/gbuffer_stage.h", "sss_main", patch_gbuffer_stage),
@@ -653,6 +727,14 @@ JOBS = [
     ("sss", SSS_SHADOWS + "/accum_base.ps", "sss_shadows", make_light_patch("local")),
     ("sss", SSS_FLORA + "/accum_base.ps", "sss_flora", make_light_patch("local")),
     ("sss", SSS_FLORA + "/accum_omni_unshadowed.ps", "sss_flora", make_light_patch("omni")),
+    # Instanced grass (needs the exes with TheLostInPlace's grass rework, r__detail_inst):
+    # deffer_grass.vs ships in 00 MV, 09, 10 and 91 (91 wins in SSS's order), s_flat in 00 MV
+    ("es", ES_PBR + "/deffer_grass.vs", "es", patch_grass_inst),
+    ("sss", SSS_MV + "/deffer_grass.vs", "sss_mv", patch_grass_inst),
+    ("sss", SSS_MV + "/deffer_detail_s_flat.vs", "sss_mv", patch_grass_inst),
+    ("sss", SSS_INTGRASS + "/deffer_grass.vs", "sss_intgrass", patch_grass_inst),
+    ("sss", SSS_WIND + "/deffer_grass.vs", "sss_wind", patch_grass_inst),
+    ("sss", SSS_FLORA + "/deffer_grass.vs", "sss_flora", patch_grass_inst),
 ]
 
 README = """PBR / IX-Ray SSLR compatibility patch for SSS 23.5 + Enhanced Shaders 1.10
