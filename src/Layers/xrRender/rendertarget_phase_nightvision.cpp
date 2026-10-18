@@ -33,18 +33,13 @@ void CRenderTarget::phase_nightvision()
 	RCache.set_Stencil(FALSE);
 
 	//Fill vertex buffer
-	FVF::TL* pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
-	pv->set(0, float(h), d_Z, d_W, C, p0.x, p1.y); pv++;
-	pv->set(0, 0, d_Z, d_W, C, p0.x, p0.y); pv++;
-	pv->set(float(w), float(h), d_Z, d_W, C, p1.x, p1.y); pv++;
-	pv->set(float(w), 0, d_Z, d_W, C, p1.x, p0.y); pv++;
-	RCache.Vertex.Unlock(4, g_combine->vb_stride);
+	quad_fill(0, 0, float(w), float(h), p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
 
 	//Set pass
 	RCache.set_Element(s_nightvision->E[ps_r2_nightvision]);
 
 	//Set geometry
-	RCache.set_Geometry(g_combine);
+	RCache.set_Geometry(quad_geom());
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 	
 #if defined(USE_DX10) || defined(USE_DX11)
@@ -84,18 +79,13 @@ void CRenderTarget::phase_fakescope()
 	RCache.set_Stencil(FALSE);
 
 	//Fill vertex buffer
-	FVF::TL* pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
-	pv->set(0, float(h), d_Z, d_W, C, p0.x, p1.y); pv++;
-	pv->set(0, 0, d_Z, d_W, C, p0.x, p0.y); pv++;
-	pv->set(float(w), float(h), d_Z, d_W, C, p1.x, p1.y); pv++;
-	pv->set(float(w), 0, d_Z, d_W, C, p1.x, p0.y); pv++;
-	RCache.Vertex.Unlock(4, g_combine->vb_stride);
+	quad_fill(0, 0, float(w), float(h), p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
 
 	//Set pass
 	RCache.set_Element(s_fakescope->E[ps_r2_nightvision]);
 
 	//Set geometry
-	RCache.set_Geometry(g_combine);
+	RCache.set_Geometry(quad_geom());
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 
 	HW.pContext->CopyResource(rt_Generic_0->pTexture->surface_get(), dest_rt->pTexture->surface_get());
@@ -107,18 +97,13 @@ void CRenderTarget::phase_fakescope()
 	RCache.set_Stencil(FALSE);
 
 	//Fill vertex buffer
-	FVF::TL* pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
-	pv->set(0, float(h), d_Z, d_W, C, p0.x, p1.y); pv++;
-	pv->set(0, 0, d_Z, d_W, C, p0.x, p0.y); pv++;
-	pv->set(float(w), float(h), d_Z, d_W, C, p1.x, p1.y); pv++;
-	pv->set(float(w), 0, d_Z, d_W, C, p1.x, p0.y); pv++;
-	RCache.Vertex.Unlock(4, g_combine->vb_stride);
+	quad_fill(0, 0, float(w), float(h), p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
 
 	//Set pass
 	RCache.set_Element(s_fakescope->E[0]);
 
 	//Set geometry
-	RCache.set_Geometry(g_combine);
+	RCache.set_Geometry(quad_geom());
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 
 	//Draw to rt_Generic_0
@@ -128,18 +113,13 @@ void CRenderTarget::phase_fakescope()
 	RCache.set_Stencil(FALSE);
 
 	//Fill vertex buffer
-	pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
-	pv->set(0, float(h), d_Z, d_W, C, p0.x, p1.y); pv++;
-	pv->set(0, 0, d_Z, d_W, C, p0.x, p0.y); pv++;
-	pv->set(float(w), float(h), d_Z, d_W, C, p1.x, p1.y); pv++;
-	pv->set(float(w), 0, d_Z, d_W, C, p1.x, p0.y); pv++;
-	RCache.Vertex.Unlock(4, g_combine->vb_stride);
+	quad_fill(0, 0, float(w), float(h), p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
 
 	//Set pass
 	RCache.set_Element(s_fakescope->E[1]);
 
 	//Set geometry
-	RCache.set_Geometry(g_combine);
+	RCache.set_Geometry(quad_geom());
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 #endif
 };
@@ -178,18 +158,13 @@ void CRenderTarget::phase_heatvision()
 	RCache.set_Stencil(FALSE);
 
 	//Fill vertex buffer
-	FVF::TL* pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
-	pv->set(0, float(h), d_Z, d_W, C, p0.x, p1.y); pv++;
-	pv->set(0, 0, d_Z, d_W, C, p0.x, p0.y); pv++;
-	pv->set(float(w), float(h), d_Z, d_W, C, p1.x, p1.y); pv++;
-	pv->set(float(w), 0, d_Z, d_W, C, p1.x, p0.y); pv++;
-	RCache.Vertex.Unlock(4, g_combine->vb_stride);
+	quad_fill(0, 0, float(w), float(h), p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
 
 	//Set pass
 	RCache.set_Element(s_heatvision->E[ps_r2_heatvision]);
 
 	//Set geometry
-	RCache.set_Geometry(g_combine);
+	RCache.set_Geometry(quad_geom());
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 
 #if defined(USE_DX10) || defined(USE_DX11)

@@ -170,13 +170,8 @@ void CRenderTarget::accum_direct_csm()
 		p1.set((_w + .5f) / _w, (_h + .5f) / _h);
 		float d_Z = EPS_S, d_W = 1.f;
 
-		FVF::TL* pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
-		pv->set(EPS, float(_h + EPS), d_Z, d_W, C, p0.x, p1.y); pv++;
-		pv->set(EPS, EPS, d_Z, d_W, C, p0.x, p0.y); pv++;
-		pv->set(float(_w + EPS), float(_h + EPS), d_Z, d_W, C, p1.x, p1.y); pv++;
-		pv->set(float(_w + EPS), EPS, d_Z, d_W, C, p1.x, p0.y); pv++;
-		RCache.Vertex.Unlock(4, g_combine->vb_stride);
-		RCache.set_Geometry(g_combine);
+		quad_fill(EPS, EPS, float(_w + EPS), float(_h + EPS), p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
+		RCache.set_Geometry(quad_geom());
 
 		float intensity = 0.3f * fuckingsun->color.r + 0.48f * fuckingsun->color.g + 0.22f * fuckingsun->color.b;
 		Fvector dir = L_dir;

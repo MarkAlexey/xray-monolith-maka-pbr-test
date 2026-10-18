@@ -132,6 +132,8 @@ float ps_r__Detail_height = 1.0f;
 float ps_r__Detail_rainbow_hemi = 0.75f;
 int ps_r__detail_rows = 1;
 int ps_r__detail_shadow_cull = 1;
+// 1 = repeated screen quads come from static vertex buffers (DX11, ScreenQuad.h), 0 = dynamic as before
+int ps_r__static_screen_quad = 1;
 int ps_r__detail_inst = 1;
 int ps_r__detail_inst_res = 1;
 int ps_r__detail_merge = 1;
@@ -1332,6 +1334,7 @@ void xrRender_initconsole()
 	CMD4(CCC_Float, "r__detail_height", &ps_current_detail_height, 0.5f, 2.0f);
 	CMD4(CCC_Integer, "r__detail_rows", &ps_r__detail_rows, 0, 1);
 	CMD4(CCC_Integer, "r__detail_shadow_cull", &ps_r__detail_shadow_cull, 0, 1);
+	CMD4(CCC_Integer, "r__static_screen_quad", &ps_r__static_screen_quad, 0, 1);
 	CMD4(CCC_Integer, "r__detail_inst", &ps_r__detail_inst, 0, 1);
 	CMD4(CCC_Integer, "r__detail_inst_res", &ps_r__detail_inst_res, 0, 1);
 	CMD4(CCC_Integer, "r__detail_merge", &ps_r__detail_merge, 0, 1);

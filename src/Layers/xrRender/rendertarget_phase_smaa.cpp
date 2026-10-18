@@ -34,16 +34,11 @@ void CRenderTarget::phase_smaa()
 #endif
 
 	// Fill vertex buffer
-	FVF::TL* pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
-	pv->set(0, float(h), d_Z, d_W, C, p0.x, p1.y); pv++;
-	pv->set(0, 0, d_Z, d_W, C, p0.x, p0.y); pv++;
-	pv->set(float(w), float(h), d_Z, d_W, C, p1.x, p1.y); pv++;
-	pv->set(float(w), 0, d_Z, d_W, C, p1.x, p0.y); pv++;
-	RCache.Vertex.Unlock(4, g_combine->vb_stride);
+	quad_fill(0, 0, float(w), float(h), p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
 
 	// Draw COLOR
 	RCache.set_Element(s_smaa->E[0]);
-	RCache.set_Geometry(g_combine);
+	RCache.set_Geometry(quad_geom());
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 
 	//////////////////////////////////////////////////////////////////////////
@@ -58,16 +53,11 @@ void CRenderTarget::phase_smaa()
 #endif
 
 	// Fill vertex buffer
-	pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
-	pv->set(0, float(h), d_Z, d_W, C, p0.x, p1.y); pv++;
-	pv->set(0, 0, d_Z, d_W, C, p0.x, p0.y); pv++;
-	pv->set(float(w), float(h), d_Z, d_W, C, p1.x, p1.y); pv++;
-	pv->set(float(w), 0, d_Z, d_W, C, p1.x, p0.y); pv++;
-	RCache.Vertex.Unlock(4, g_combine->vb_stride);
+	quad_fill(0, 0, float(w), float(h), p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
 
 	// Draw COLOR
 	RCache.set_Element(s_smaa->E[1]);
-	RCache.set_Geometry(g_combine);
+	RCache.set_Geometry(quad_geom());
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 
 	//////////////////////////////////////////////////////////////////////////
@@ -83,16 +73,11 @@ void CRenderTarget::phase_smaa()
 	RCache.set_Stencil(FALSE);
 
 	// Fill vertex buffer
-	pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
-	pv->set(0, float(h), d_Z, d_W, C, p0.x, p1.y); pv++;
-	pv->set(0, 0, d_Z, d_W, C, p0.x, p0.y); pv++;
-	pv->set(float(w), float(h), d_Z, d_W, C, p1.x, p1.y); pv++;
-	pv->set(float(w), 0, d_Z, d_W, C, p1.x, p0.y); pv++;
-	RCache.Vertex.Unlock(4, g_combine->vb_stride);
+	quad_fill(0, 0, float(w), float(h), p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
 
 	// Draw COLOR
 	RCache.set_Element(s_smaa->E[2]);
-	RCache.set_Geometry(g_combine);
+	RCache.set_Geometry(quad_geom());
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 
 #if defined(USE_DX10) || defined(USE_DX11)
@@ -121,17 +106,12 @@ void CRenderTarget::phase_ssfx_taa()
 	RCache.set_CullMode(CULL_NONE);
 	RCache.set_Stencil(FALSE);
 
-	FVF::TL* pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
-	pv->set(0, float(h), d_Z, d_W, C, p0.x, p1.y); pv++;
-	pv->set(0, 0, d_Z, d_W, C, p0.x, p0.y); pv++;
-	pv->set(float(w), float(h), d_Z, d_W, C, p1.x, p1.y); pv++;
-	pv->set(float(w), 0, d_Z, d_W, C, p1.x, p0.y); pv++;
-	RCache.Vertex.Unlock(4, g_combine->vb_stride);
+	quad_fill(0, 0, float(w), float(h), p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
 
 	// Draw COLOR
 	RCache.set_Element(s_ssfx_taa->E[0]);
 
-	RCache.set_Geometry(g_combine);
+	RCache.set_Geometry(quad_geom());
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 	
 	HW.pContext->CopyResource(rt_ssfx_taa->pTexture->surface_get(), rt_ssfx_accum->pTexture->surface_get());
@@ -143,16 +123,11 @@ void CRenderTarget::phase_ssfx_taa()
 	RCache.set_CullMode(CULL_NONE);
 	RCache.set_Stencil(FALSE);
 
-	pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
-	pv->set(0, float(h), d_Z, d_W, C, p0.x, p1.y); pv++;
-	pv->set(0, 0, d_Z, d_W, C, p0.x, p0.y); pv++;
-	pv->set(float(w), float(h), d_Z, d_W, C, p1.x, p1.y); pv++;
-	pv->set(float(w), 0, d_Z, d_W, C, p1.x, p0.y); pv++;
-	RCache.Vertex.Unlock(4, g_combine->vb_stride);
+	quad_fill(0, 0, float(w), float(h), p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
 
 	// Draw COLOR
 	RCache.set_Element(s_ssfx_taa->E[1]);
-	RCache.set_Geometry(g_combine);
+	RCache.set_Geometry(quad_geom());
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 
 	// Accumulate
@@ -163,19 +138,14 @@ void CRenderTarget::phase_ssfx_taa()
 	RCache.set_CullMode(CULL_NONE);
 	RCache.set_Stencil(FALSE);
 
-	pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
-	pv->set(0, float(h), d_Z, d_W, C, p0.x, p1.y); pv++;
-	pv->set(0, 0, d_Z, d_W, C, p0.x, p0.y); pv++;
-	pv->set(float(w), float(h), d_Z, d_W, C, p1.x, p1.y); pv++;
-	pv->set(float(w), 0, d_Z, d_W, C, p1.x, p0.y); pv++;
-	RCache.Vertex.Unlock(4, g_combine->vb_stride);
+	quad_fill(0, 0, float(w), float(h), p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
 
 	// Draw COLOR
 	RCache.set_Element(s_ssfx_taa->E[2]);
 	
 	RCache.set_c("taa_setup", ps_ssfx_taa);
 
-	RCache.set_Geometry(g_combine);
+	RCache.set_Geometry(quad_geom());
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 }
 

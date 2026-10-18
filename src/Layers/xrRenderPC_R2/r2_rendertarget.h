@@ -11,6 +11,8 @@ class light;
 //	no less than 2
 #define	VOLUMETRIC_SLICES	100
 
+#include "../xrRender/ScreenQuad.h"
+
 class CRenderTarget : public IRender_Target
 {
 private:
@@ -396,4 +398,15 @@ public:
 	{
 	}
 #endif
+
+public:
+	// Screen quads (../xrRender/ScreenQuad.h): repeated screen quads from static vertex buffers
+	// (DX11), the rest through the dynamic buffer as before
+	CScreenQuads m_screen_quads;
+	IC void quad_fill(float x0, float y0, float x1, float y1, float u0, float v0, float u1, float v1, float z,
+	                  float w, u32 color, u32& Offset)
+	{
+		m_screen_quads.fill(g_combine, x0, y0, x1, y1, u0, v0, u1, v1, z, w, color, Offset);
+	}
+	IC ref_geom& quad_geom() { return m_screen_quads.geom(); }
 };

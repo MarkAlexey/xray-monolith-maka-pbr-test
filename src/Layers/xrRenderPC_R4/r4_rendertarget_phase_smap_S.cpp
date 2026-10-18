@@ -65,17 +65,8 @@ void CRenderTarget::phase_smap_spot_tsh(light* L)
 		p0.set(.5f / _w, .5f / _h);
 		p1.set((_w + .5f) / _w, (_h + .5f) / _h);
 
-		FVF::TL* pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
-		pv->set(EPS, float(_h + EPS), d_Z, d_W, C, p0.x, p1.y);
-		pv++;
-		pv->set(EPS, EPS, d_Z, d_W, C, p0.x, p0.y);
-		pv++;
-		pv->set(float(_w + EPS), float(_h + EPS), d_Z, d_W, C, p1.x, p1.y);
-		pv++;
-		pv->set(float(_w + EPS), EPS, d_Z, d_W, C, p1.x, p0.y);
-		pv++;
-		RCache.Vertex.Unlock(4, g_combine->vb_stride);
-		RCache.set_Geometry(g_combine);
+		quad_fill(EPS, EPS, float(_w + EPS), float(_h + EPS), p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
+		RCache.set_Geometry(quad_geom());
 
 		// draw
 		RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);

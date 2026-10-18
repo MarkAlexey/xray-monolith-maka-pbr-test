@@ -400,16 +400,11 @@ void CRenderTarget::phase_ssfx_bloom()
 	RCache.set_Stencil(FALSE);
 
 	// Fill vertex buffer
-	FVF::TL* pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
-	pv->set(0, h, EPS_S, 1.0f, C, 0.0f, 1.0f); pv++;
-	pv->set(0, 0, EPS_S, 1.0f, C, 0.0f, 0.0f); pv++;
-	pv->set(w, h, EPS_S, 1.0f, C, 1.0f, 1.0f); pv++;
-	pv->set(w, 0, EPS_S, 1.0f, C, 1.0f, 0.0f); pv++;
-	RCache.Vertex.Unlock(4, g_combine->vb_stride);
+	quad_fill(0, 0, w, h, 0.0f, 0.0f, 1.0f, 1.0f, EPS_S, 1.0f, C, Offset);
 
 	// Draw COLOR
 	RCache.set_Element(s_ssfx_bloom->E[0]);
-	RCache.set_Geometry(g_combine);
+	RCache.set_Geometry(quad_geom());
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 
 	// BLOOM LENS /////////////////////////////////////////////////////
@@ -422,16 +417,11 @@ void CRenderTarget::phase_ssfx_bloom()
 		RCache.set_Stencil(FALSE);
 
 		// Fill vertex buffer
-		pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
-		pv->set(0, h, EPS_S, 1.0f, C, 0.0f, 1.0f); pv++;
-		pv->set(0, 0, EPS_S, 1.0f, C, 0.0f, 0.0f); pv++;
-		pv->set(w, h, EPS_S, 1.0f, C, 1.0f, 1.0f); pv++;
-		pv->set(w, 0, EPS_S, 1.0f, C, 1.0f, 0.0f); pv++;
-		RCache.Vertex.Unlock(4, g_combine->vb_stride);
+		quad_fill(0, 0, w, h, 0.0f, 0.0f, 1.0f, 1.0f, EPS_S, 1.0f, C, Offset);
 
 		// Draw COLOR
 		RCache.set_Element(s_ssfx_bloom_lens->E[0]);
-		RCache.set_Geometry(g_combine);
+		RCache.set_Geometry(quad_geom());
 		RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 
 		// Lens 2 Phase blur
@@ -444,17 +434,12 @@ void CRenderTarget::phase_ssfx_bloom()
 			RCache.set_Stencil(FALSE);
 
 			// Fill vertex buffer
-			pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
-			pv->set(0, h, EPS_S, 1.0f, C, 0.0f, 1.0f); pv++;
-			pv->set(0, 0, EPS_S, 1.0f, C, 0.0f, 0.0f); pv++;
-			pv->set(w, h, EPS_S, 1.0f, C, 1.0f, 1.0f); pv++;
-			pv->set(w, 0, EPS_S, 1.0f, C, 1.0f, 0.0f); pv++;
-			RCache.Vertex.Unlock(4, g_combine->vb_stride);
+			quad_fill(0, 0, w, h, 0.0f, 0.0f, 1.0f, 1.0f, EPS_S, 1.0f, C, Offset);
 
 			// Draw COLOR
 			RCache.set_Element(s_ssfx_bloom_lens->E[1 + lensblur]);
 			RCache.set_c("blur_setup", w / 4, h / 4, 0, 2.0f + (3.0f * lensblur));
-			RCache.set_Geometry(g_combine);
+			RCache.set_Geometry(quad_geom());
 			RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 		}
 	}
@@ -478,17 +463,12 @@ void CRenderTarget::phase_ssfx_bloom()
 		RCache.set_Stencil(FALSE);
 
 		// Fill vertex buffer
-		pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
-		pv->set(0, h, EPS_S, 1.0f, C, 0.0f, 1.0f); pv++;
-		pv->set(0, 0, EPS_S, 1.0f, C, 0.0f, 0.0f); pv++;
-		pv->set(w, h, EPS_S, 1.0f, C, 1.0f, 1.0f); pv++;
-		pv->set(w, 0, EPS_S, 1.0f, C, 1.0f, 0.0f); pv++;
-		RCache.Vertex.Unlock(4, g_combine->vb_stride);
+		quad_fill(0, 0, w, h, 0.0f, 0.0f, 1.0f, 1.0f, EPS_S, 1.0f, C, Offset);
 
 		// Draw COLOR
 		RCache.set_Element(s_ssfx_bloom_downsample->E[downsample]);
 		RCache.set_c("blur_setup", w / SampleScale, h / SampleScale, 0, ps_ssfx_bloom_2.x);
-		RCache.set_Geometry(g_combine);
+		RCache.set_Geometry(quad_geom());
 		RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 	}
 
@@ -509,17 +489,12 @@ void CRenderTarget::phase_ssfx_bloom()
 		RCache.set_Stencil(FALSE);
 
 		// Fill vertex buffer
-		pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
-		pv->set(0, h, EPS_S, 1.0f, C, 0.0f, 1.0f); pv++;
-		pv->set(0, 0, EPS_S, 1.0f, C, 0.0f, 0.0f); pv++;
-		pv->set(w, h, EPS_S, 1.0f, C, 1.0f, 1.0f); pv++;
-		pv->set(w, 0, EPS_S, 1.0f, C, 1.0f, 0.0f); pv++;
-		RCache.Vertex.Unlock(4, g_combine->vb_stride);
+		quad_fill(0, 0, w, h, 0.0f, 0.0f, 1.0f, 1.0f, EPS_S, 1.0f, C, Offset);
 
 		// Draw COLOR
 		RCache.set_Element(s_ssfx_bloom_upsample->E[upsample]);
 		RCache.set_c("blur_setup", w / SampleScale, h / SampleScale, 0, ps_ssfx_bloom_2.x);
-		RCache.set_Geometry(g_combine);
+		RCache.set_Geometry(quad_geom());
 		RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 	}
 
@@ -531,17 +506,12 @@ void CRenderTarget::phase_ssfx_bloom()
 	RCache.set_Stencil(FALSE);
 
 	// Fill vertex buffer
-	pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
-	pv->set(0, h, EPS_S, 1.0f, C, 0.0f, 1.0f); pv++;
-	pv->set(0, 0, EPS_S, 1.0f, C, 0.0f, 0.0f); pv++;
-	pv->set(w, h, EPS_S, 1.0f, C, 1.0f, 1.0f); pv++;
-	pv->set(w, 0, EPS_S, 1.0f, C, 1.0f, 0.0f); pv++;
-	RCache.Vertex.Unlock(4, g_combine->vb_stride);
+	quad_fill(0, 0, w, h, 0.0f, 0.0f, 1.0f, 1.0f, EPS_S, 1.0f, C, Offset);
 
 	// Draw COLOR
 	RCache.set_Element(s_ssfx_bloom->E[1]);
 	RCache.set_c("mask_control", ps_r2_mask_control.x, ps_r2_mask_control.y, ps_r2_mask_control.z, ps_r2_mask_control.w);
-	RCache.set_Geometry(g_combine);
+	RCache.set_Geometry(quad_geom());
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 
 
