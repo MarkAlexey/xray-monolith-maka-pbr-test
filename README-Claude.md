@@ -915,3 +915,42 @@ and branch passes keep 200, the old value.
   overrides) was compiled with DXC, plain alias and dithered: no new errors, VSLR capture shaders
   included.
 - Not run in the game: that, and the MSVC build, are CI's and yours.
+
+### Grass rework (TheLostInPlace) and static screen quads
+
+Also on this branch: TheLostInPlace's grass rework from
+[xray-monolith `fps-clean`](https://github.com/TheLostInPlace/xray-monolith/tree/fps-clean), all eleven
+commits with their author kept (`ae374bd2`, the LUT/DOF change on that branch, is not included).
+Only the console lines of `r__skip_unused_passes` had to be dropped while porting (that switch
+belongs to `b26ede47`, which is not part of this port); every grass source and shader is
+byte-identical to `fps-clean`.
+
+| Command | Default | What it does |
+|---|---|---|
+| `r__detail_shadow_cull` | 1 | grass shadow entries are culled per sun cascade / light by slot sphere |
+| `r__detail_rows` | 1 | per-slot instance rows copied four lanes at once straight into the constant buffer |
+| `r__detail_inst` | 1 | grass instances uploaded once per frame and drawn instanced |
+| `r__detail_inst_res` | 1 | instance rows stay resident on the GPU (compute copy of changed slots only) |
+| `r__detail_merge` | 1 | instanced draws of the same object merged |
+| `r__detail_occ` | 1 | grass spans tested against the live depth buffer, drawn indirect |
+| `r__detail_occ_first` | 1 | near spans drawn first (they become occluders for the rest) |
+| `r__detail_thin` | 0 | far merged grass thinned by a per-instance hash (`_start`, `_keep`, `_band`) |
+
+**Under SSS / ES / GAMMA:** the instanced path (`r__detail_inst` and everything after it) only
+engages for a grass shader that has an `<vs>_inst.vs` variant. This repository ships those for the
+stock `deffer_detail_[s|w]_flat.vs`. SSS, ES and GAMMA draw grass with their own
+`deffer_grass.vs` (from `details_blend.s`), which has no such variant yet, so there the engine logs
+`[DT-INST] ... missing` / `old` once and keeps the stock path: the shadow cull, the faster row copy
+and the loop changes still apply, the instancing does not. An `_inst` variant of the mods'
+`deffer_grass.vs` is the next step.
+
+`r__static_screen_quad` (default 1): the idea of IX-Ray `1eea3317` (LVutner) applied to this engine.
+65 screen passes (SSS AO/IL/SSR blur, bloom, rain, DOF, NVG, SMAA, LUT, gasmask, post-process) used to
+rebuild the same 4-vertex quad in the dynamic vertex buffer on every draw; a quad requested again on a
+later frame now comes from a small immutable buffer (at most 48 per render target, DX11 only), with the
+exact same vertices. `0` restores the old path. IX-Ray `c3f4bb38` (wallmark creation) was already in
+upstream Monolith.
+
+Checked: the 18 new grass shaders compile with DXC on vanilla + this repository and on the GAMMA stack;
+`check_cpp.py` reports only the known clang noise (`xr_vector` / `xr_resource` templates) for the
+grass sources and no new errors for the screen quad change. Not run in the game.

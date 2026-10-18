@@ -5,7 +5,8 @@ Automatic build of [`pbr-test-s3ds-mt-sss-lass`](https://github.com/{{REPO}}/tre
 
 This branch adds Zira3l137's [xray-monolith-lass](https://github.com/Zira3l137/xray-monolith-lass)
 work on top of the PBR build: the first-person body fix, jiggle bones (with the skeleton loader fixes
-they need) and alpha-tested surfaces that honour their authored ref. LASS's picture-in-picture scopes
+they need) and alpha-tested surfaces that honour their authored ref. It also carries TheLostInPlace's
+grass rendering rework. LASS's picture-in-picture scopes
 are not included.
 
 Demonized's Modded Exes (multithreaded build) with physically based materials ported from IX-Ray,
@@ -102,5 +103,11 @@ From LASS (Zira3l137): `g_jiggle_enabled`, `g_jiggle_stiffness`, `g_jiggle_dampi
 `g_jiggle_world_gain`, `g_jiggle_axis` (jiggle bones; the outfit's `jiggle_*` lines win on re-equip),
 `r__alpha_ref_live` and `r__alpha_dither` (delete `shaders_cache/r4` and restart after changing them).
 `g_legs_spine_offset_y` now defaults to 0.
+
+Grass (TheLostInPlace's rework): `r__detail_shadow_cull`, `r__detail_rows`, `r__detail_inst`,
+`r__detail_inst_res`, `r__detail_merge`, `r__detail_occ`, `r__detail_occ_first` (all on),
+`r__detail_thin` with `r__detail_thin_start` / `_keep` / `_band` (off). The instanced grass path
+needs grass shaders with `_inst` variants; under SSS/ES/GAMMA it stays on the stock path for now.
+`r__static_screen_quad` (on): repeated screen quads from static vertex buffers.
 
 Details, caveats and the full change list: [README-Claude.md](https://github.com/{{REPO}}/blob/{{SHA}}/README-Claude.md).
