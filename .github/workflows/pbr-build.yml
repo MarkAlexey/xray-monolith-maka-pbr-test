@@ -163,7 +163,8 @@ jobs:
     name: Shader packs (GAMMA)
     runs-on: ubuntu-latest
     env:
-      SOURCES_REPO: ${{ vars.PBR_SOURCES_REPO }}
+      # The repository name is read as a variable or, if it was added as a secret, as a secret
+      SOURCES_REPO: ${{ vars.PBR_SOURCES_REPO || secrets.PBR_SOURCES_REPO }}
       SOURCES_TOKEN: ${{ secrets.PBR_SOURCES_TOKEN }}
       # DirectX Shader Compiler for the compile check, pinned (version + SHA-256)
       DXC_URL: https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.8.2407/linux_dxc_2024_07_31.x86_64.tar.gz
@@ -175,7 +176,12 @@ jobs:
           if [ -n "$SOURCES_REPO" ] && [ -n "$SOURCES_TOKEN" ]; then
             echo "on=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::notice::PBR_SOURCES_REPO / PBR_SOURCES_TOKEN not set: no GAMMA shader zips in this release"
+            # Say which one is missing (never their values). Both must be repository-level
+            # (Settings > Secrets and variables > Actions), not environment-level: this job
+            # does not use an environment, so environment secrets/variables are invisible to it.
+            [ -z "$SOURCES_REPO" ] && echo "::warning::PBR_SOURCES_REPO is empty: add it as a repository Variable (Variables tab), value owner/name of the private shader repository"
+            [ -z "$SOURCES_TOKEN" ] && echo "::warning::PBR_SOURCES_TOKEN is empty: add it as a repository Secret (Secrets tab)"
+            echo "::notice::no GAMMA shader zips in this release"
             echo "on=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -187,7 +193,7 @@ jobs:
         if: steps.cfg.outputs.on == 'true'
         uses: actions/checkout@v4
         with:
-          repository: ${{ vars.PBR_SOURCES_REPO }}
+          repository: ${{ env.SOURCES_REPO }}
           token: ${{ secrets.PBR_SOURCES_TOKEN }}
           path: shader-sources
           lfs: true
