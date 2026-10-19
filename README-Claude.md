@@ -1091,3 +1091,70 @@ Checked: `tools/check_cpp.py` over every R4 translation unit (228 files, so the 
 `StateManager` macro change is covered everywhere) and the shared files for R3: only the known
 clang noise (`xr_vector` / `vector<bool>` shims, MSVC-only dependent template names). Not built
 with MSVC or run.
+
+## The `pbr-test-s3ds-mt-sss-lass-dlss` branch: DLSS / FSR 3
+
+`pbr-test-s3ds-mt-sss-lass` plus NVIDIA DLSS and AMD FSR 3 super resolution: qkff99's port
+(`bb6988ad`, `de29c960` and the occlusion fix of `c922790d`) of
+[brodrigz's xray-monolith 0.5](https://github.com/brodrigz/xray-monolith) (`854dd279`), which is
+based on OGSR's DLSS implementation (OGSR team, xrSimpAI). Kept as its own branch so the LASS
+branch stays upscaler-free.
+
+How it works: the scene renders at a lower resolution (`RenderScreenWidth()` / `Height()` while
+`dlss::BeginScene()` .. `EndScene()` is active) with a per-frame sub-pixel jitter. After the scene
+the upscaler (DLSS through NGX, or FSR 3.1 compiled into the exe) reconstructs it at display
+resolution from colour, depth and SSS's motion vectors; post-processing, the PDA screen and the UI
+draw at display resolution afterwards.
+
+Requirements (the engine checks them and otherwise renders natively with a red on-screen notice):
+Screen Space Shaders 23.5 (motion vectors), brodrigz's shader compatibility patch (it provides
+`dlss_*.ps` and the jitter-aware SSS files), MSAA off; DLSS needs an RTX GPU and
+`nvngx_dlss.dll` (shipped in `bin/`), FSR 3 needs feature level 11.1.
+
+| Command | Default | What it does |
+|---|---|---|
+| `r_upscaler` | dlss | `off`, `dlss`, `fsr3` |
+| `r_dlss_quality` | off | `off`, `dlaa`, `ultra_quality`, `quality`, `balanced`, `performance`, `ultra_performance` |
+| `r_dlss_preset` | default | DLSS model: `default`, `j`, `k`, `l`, `m` |
+| `r_fsr3_quality` | quality | `native_aa`, `ultra_quality`, `quality`, `balanced`, `performance`, `ultra_performance` |
+| `r_dlss_sharpness` | 0 | CAS sharpening after either upscaler, 0..1, applies immediately |
+
+Method / quality changes need `vid_restart` (the menu's Apply does it). The menu (brodrigz's
+`modxml_dlss_options.script`) has everything except `ultra_quality`, which is console-only.
+
+Adapted to this fork:
+
+- **PBR passes at scene resolution**: SSLR's targets (they copy `rt_Generic_0` / `rt_Position`)
+  and its dispatch, the one-pass CSM sun quad, VSLR's restore of the main viewport, MT local-light
+  volumetrics. The static screen-quad cache needs nothing (quads at the new size are new keys).
+- **MT shadows**: recording contexts get the frame's scene size and jitter for position
+  decompression (`RenderContext::Synchronize`, inside the scene); the recorded light accumulator
+  binds the scene depth; the DLSS shader constants are parallel-safe. The sampler cache is
+  qkff99's variant cache (the upscaler's mip bias switches per scene without recreating samplers)
+  with the workers' copy.
+- **No HDR10** in this tree: the upscalers are created for LDR colour, second-viewport and PDA UI
+  targets stay at display size.
+- **Light occlusion queries** draw depth-only (`c922790d`): the display-size back buffer with the
+  scene-size depth buffer made them fail with an upscaler.
+- **Grass**: the DLSS patch's `deffer_grass.vs` (uniform jitter, previous wind for motion vectors)
+  gets the instanced-grass paths in the GAMMA overlay; the engine already sets `wave_prev` /
+  `dir2D_prev` for every grass path.
+
+Shaders: the DLSS shaders are **not** in this build's db0 (only the menu script and its strings
+are), so a missing patch is reported instead of half-working. CI attaches brodrigz's GAMMA
+compatibility patch 0.5 unchanged, downloads `nvngx_dlss.dll` 310.9.1 from NVIDIA's repository
+(SHA-256 pinned) into `bin/`, and builds the GAMMA shader zips with the patch's `base` and
+`atmos_rc7` components on top (`build_shader_packs.py --top-layer`, `DLSS_PATCH_COMPONENTS` in the
+workflow; set it to `base` alone for Atmospherics 2.68.93 sources).
+
+Caveats:
+
+- Untested in game. qkff99 and brodrigz tested their builds; the PBR-specific parts above are new.
+- SSLR's temporal history is reprojected without removing the jitter, so reflections may be a
+  little softer with an upscaler (`r4_sslr_temporal 0` to compare).
+- PBR without SSS cannot use either upscaler (no motion vectors).
+
+Checked: `tools/check_cpp.py` over every R4 translation unit including `Dlss/`: only the known
+clang noise. The GAMMA zips built with the DLSS components compile with DXC with no new errors;
+the overlay's grass shader carries both the DLSS changes and the `DT_INST` paths. Not built with
+MSVC or run.
