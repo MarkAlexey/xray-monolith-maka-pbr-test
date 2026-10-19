@@ -5,7 +5,11 @@
 
 using dx10StateUtils::operator==;
 
+#undef SSManager
 dx10SamplerStateCache SSManager;
+#if defined(USE_DX11) && RENDER == R_R4
+#define SSManager ActiveSamplerManager()
+#endif
 
 dx10SamplerStateCache::dx10SamplerStateCache():
     m_uiMaxAnisotropy(1), m_uiMipLODBias(0.0f)
@@ -22,6 +26,7 @@ dx10SamplerStateCache::~dx10SamplerStateCache()
 
 dx10SamplerStateCache::SHandle dx10SamplerStateCache::GetState(D3D_SAMPLER_DESC& desc)
 {
+    xrCriticalSectionGuard guard(&m_lock);
     SHandle hResult;
 
     //  MaxAnisitropy is reset by ValidateState if not aplicable
@@ -41,6 +46,7 @@ dx10SamplerStateCache::SHandle dx10SamplerStateCache::GetState(D3D_SAMPLER_DESC&
         CreateState(desc, &rec.m_pState);
         hResult = m_StateArray.size();
         m_StateArray.push_back(rec);
+        ++m_generation; // recording contexts copy the array again
     }
 
     return hResult;
@@ -81,6 +87,8 @@ dx10SamplerStateCache::SHandle dx10SamplerStateCache::FindState(const StateDecs&
 
 void dx10SamplerStateCache::ClearStateArray()
 {
+    xrCriticalSectionGuard guard(&m_lock);
+    ++m_generation;
     ResetDeviceState(); // Invalidate before handles can refer to released/reused objects.
     for (u32 i = 0; i < m_StateArray.size(); ++i)
     {
@@ -88,6 +96,25 @@ void dx10SamplerStateCache::ClearStateArray()
     }
 
     m_StateArray.clear_not_free();
+}
+
+void dx10SamplerStateCache::Synchronize(const dx10SamplerStateCache& source)
+{
+    // Recording contexts (RenderContext) keep their own copy of the owner's sampler objects,
+    // with the same handles. The owner bumps m_generation whenever the array or the objects
+    // in it change (new state, anisotropy / LOD bias change, clear), and the copy is redone.
+    xrCriticalSectionGuard source_guard(&source.m_lock);
+    if (m_source_generation != source.m_generation)
+    {
+        ClearStateArray();
+        m_StateArray = source.m_StateArray;
+        for (auto& record : m_StateArray)
+            if (record.m_pState) record.m_pState->AddRef();
+        m_source_generation = source.m_generation;
+    }
+    m_uiMaxAnisotropy = source.m_uiMaxAnisotropy;
+    m_uiMipLODBias = source.m_uiMipLODBias;
+    ResetDeviceState();
 }
 
 bool dx10SamplerStateCache::PrepareSamplerStates(
@@ -152,7 +179,7 @@ void dx10SamplerStateCache::VSApplySamplers(HArray& samplers)
     u32 uiMin;
     u32 uiMax;
     if (!PrepareSamplerStates(samplers, pSS, m_aVSSamplers, uiMin, uiMax)) return;
-    HW.pContext->VSSetSamplers(uiMin, uiMax - uiMin + 1, &pSS[uiMin]);
+    RenderDeviceContext()->VSSetSamplers(uiMin, uiMax - uiMin + 1, &pSS[uiMin]);
     CommitSamplerStates(samplers, m_aVSSamplers, uiMin, uiMax);
 }
 
@@ -162,7 +189,7 @@ void dx10SamplerStateCache::PSApplySamplers(HArray& samplers)
     u32 uiMin;
     u32 uiMax;
     if (!PrepareSamplerStates(samplers, pSS, m_aPSSamplers, uiMin, uiMax)) return;
-    HW.pContext->PSSetSamplers(uiMin, uiMax - uiMin + 1, &pSS[uiMin]);
+    RenderDeviceContext()->PSSetSamplers(uiMin, uiMax - uiMin + 1, &pSS[uiMin]);
     CommitSamplerStates(samplers, m_aPSSamplers, uiMin, uiMax);
 }
 
@@ -172,7 +199,7 @@ void dx10SamplerStateCache::GSApplySamplers(HArray& samplers)
     u32 uiMin;
     u32 uiMax;
     if (!PrepareSamplerStates(samplers, pSS, m_aGSSamplers, uiMin, uiMax)) return;
-    HW.pContext->GSSetSamplers(uiMin, uiMax - uiMin + 1, &pSS[uiMin]);
+    RenderDeviceContext()->GSSetSamplers(uiMin, uiMax - uiMin + 1, &pSS[uiMin]);
     CommitSamplerStates(samplers, m_aGSSamplers, uiMin, uiMax);
 }
 
@@ -183,7 +210,7 @@ void dx10SamplerStateCache::HSApplySamplers(HArray& samplers)
     u32 uiMin;
     u32 uiMax;
     if (!PrepareSamplerStates(samplers, pSS, m_aHSSamplers, uiMin, uiMax)) return;
-    HW.pContext->HSSetSamplers(uiMin, uiMax - uiMin + 1, &pSS[uiMin]);
+    RenderDeviceContext()->HSSetSamplers(uiMin, uiMax - uiMin + 1, &pSS[uiMin]);
     CommitSamplerStates(samplers, m_aHSSamplers, uiMin, uiMax);
 }
 
@@ -193,7 +220,7 @@ void dx10SamplerStateCache::DSApplySamplers(HArray& samplers)
     u32 uiMin;
     u32 uiMax;
     if (!PrepareSamplerStates(samplers, pSS, m_aDSSamplers, uiMin, uiMax)) return;
-    HW.pContext->DSSetSamplers(uiMin, uiMax - uiMin + 1, &pSS[uiMin]);
+    RenderDeviceContext()->DSSetSamplers(uiMin, uiMax - uiMin + 1, &pSS[uiMin]);
     CommitSamplerStates(samplers, m_aDSSamplers, uiMin, uiMax);
 }
 
@@ -203,7 +230,7 @@ void dx10SamplerStateCache::CSApplySamplers(HArray& samplers)
     u32 uiMin;
     u32 uiMax;
     if (!PrepareSamplerStates(samplers, pSS, m_aCSSamplers, uiMin, uiMax)) return;
-    HW.pContext->CSSetSamplers(uiMin, uiMax - uiMin + 1, &pSS[uiMin]);
+    RenderDeviceContext()->CSSetSamplers(uiMin, uiMax - uiMin + 1, &pSS[uiMin]);
     CommitSamplerStates(samplers, m_aCSSamplers, uiMin, uiMax);
 }
 
@@ -216,6 +243,7 @@ void dx10SamplerStateCache::InvalidateComputeSamplers()
 
 void dx10SamplerStateCache::SetMaxAnisotropy(u32 uiMaxAniso)
 {
+    xrCriticalSectionGuard guard(&m_lock);
     clamp(uiMaxAniso, (u32)1, (u32)16);
 
     if (m_uiMaxAnisotropy == uiMaxAniso)
@@ -223,6 +251,7 @@ void dx10SamplerStateCache::SetMaxAnisotropy(u32 uiMaxAniso)
 
     m_uiMaxAnisotropy = uiMaxAniso;
     ResetDeviceState(); // Sampler objects change even though their handles do not.
+    ++m_generation;
 
     for (u32 i = 0; i < m_StateArray.size(); ++i)
     {
@@ -246,11 +275,13 @@ void dx10SamplerStateCache::SetMaxAnisotropy(u32 uiMaxAniso)
 
 void dx10SamplerStateCache::SetMipLODBias(float uiMipLODBias)
 {
+    xrCriticalSectionGuard guard(&m_lock);
     if (m_uiMipLODBias == uiMipLODBias)
         return;
 
     m_uiMipLODBias = uiMipLODBias;
     ResetDeviceState();
+    ++m_generation;
 
     for (u32 i = 0; i < m_StateArray.size(); ++i)
     {

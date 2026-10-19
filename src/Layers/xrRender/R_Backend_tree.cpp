@@ -35,12 +35,12 @@ void R_tree::set_consts(float x, float y, float z, float w)
 	if (c_consts) RCache.set_c(c_consts, x, y, z, w);
 }
 
-void R_tree::set_wave(Fvector4& vec)
+void R_tree::set_wave(const Fvector4& vec)
 {
 	if (c_wave) RCache.set_c(c_wave, vec);
 }
 
-void R_tree::set_wind(Fvector4& vec)
+void R_tree::set_wind(const Fvector4& vec)
 {
 	if (c_wind) RCache.set_c(c_wind, vec);
 }

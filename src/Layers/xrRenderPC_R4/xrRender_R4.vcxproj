@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="ProfiledDX11|x64">
@@ -563,6 +563,12 @@
     <ClInclude Include="light_gi.h" />
     <ClInclude Include="r2_types.h" />
     <ClInclude Include="r4.h" />
+    <ClInclude Include="LocalLightShadows.h" />
+    <ClInclude Include="SunShadows.h" />
+    <ClInclude Include="LocalShadowVisibility.h" />
+    <ClInclude Include="RenderContext.h" />
+    <ClInclude Include="..\xrRender\RenderContext.h" />
+    <ClInclude Include="..\xrRender\SkeletonRenderSnapshot.h" />
     <ClInclude Include="r4_rendertarget.h" />
     <ClInclude Include="r4_rendertarget_wallmarks.h" />
     <ClInclude Include="R_Backend_LOD.h" />
@@ -793,6 +799,15 @@
     <ClCompile Include="r4_rendertarget_phase_ssao.cpp" />
     <ClCompile Include="r4_R_rain.cpp" />
     <ClCompile Include="r4_R_render.cpp" />
+    <ClCompile Include="LocalLightShadows.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="SunShadows.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="RenderContext.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
     <ClCompile Include="R_Backend_LOD.cpp" />
     <ClCompile Include="..\xrRenderDX10\dx10EventWrapper.cpp" />
     <ClCompile Include="stdafx.cpp">

@@ -116,6 +116,20 @@ public:
     xr_unordered_flat_map<const SPass*, ref_pass> packet_pass_owners;
     Fmatrix prepared_view, prepared_projection;
     u32 prepared_frame = u32(-1);
+    bool local_shadow_recorded = false;
+    // 0: all, 1: recording contexts, 2: owner fallback. The static subset
+    // separates immutable occluders from animated/alpha geometry for smapvis.
+    u32 shadow_execution = 0, shadow_static_subset = 0;
+    bool ShadowPacketEnabled(const R_dsgraph::RenderPacket& packet) const
+    {
+        return (shadow_execution == 0 || !packet.local_shadow_hidden) &&
+            (shadow_execution != 1 || packet.parallel_shadow) &&
+            (shadow_execution != 2 || !packet.parallel_shadow) &&
+            (shadow_static_subset != 1 || packet.local_shadow_eligible) &&
+            (shadow_static_subset != 2 || !packet.local_shadow_eligible);
+    }
+    u32 static_queue_revision = 0;
+    u32 static_sorted_revision[2][SHADER_PASSES_MAX] = {};
     void SetPreparedWorld(const Fmatrix* world);
 #endif
 	void AddToRenderQueue(R_dsgraph::RenderQueue& queue, const R_dsgraph::DSGraphItem<u32, false>& item, const SPass& pass);
@@ -170,6 +184,9 @@ public:
         prepared_worlds.clear();
         packet_pass_owners.clear();
         prepared_frame = u32(-1);
+        local_shadow_recorded = false;
+        shadow_execution = shadow_static_subset = 0;
+        ++static_queue_revision;
 #endif
 		if (m_sector_frustums.size())
 		{

@@ -32,7 +32,7 @@ void CBackend::OnFrameEnd()
 #endif
 	{
 #if defined(USE_DX10) || defined(USE_DX11)
-		HW.pContext->ClearState();
+		RenderDeviceContext()->ClearState();
 		Invalidate();
 #else	//	USE_DX10
 
@@ -92,6 +92,10 @@ void CBackend::OnFrameBegin()
 
 void CBackend::Invalidate()
 {
+#if defined(USE_DX11) && RENDER == R_R4
+    skeleton_snapshot = nullptr;
+    recording_object = nullptr;
+#endif
 	for (auto& rt : pRT)
 		rt = NULL;
 	pZB = NULL;
@@ -235,6 +239,24 @@ void CBackend::set_ClipPlanes(u32 _enable, Fmatrix* _xform /*=NULL */, u32 fmask
 	set_ClipPlanes(_enable, F.planes, F.p_count);
 }
 
+void CBackend::BindTexture(CTexture* surface, u32 stage)
+{
+#if defined(USE_DX11) && RENDER == R_R4
+    if (RenderContextId())
+    {
+        auto* view = ContextTextureView(surface);
+        if (stage < CTexture::rstVertex) SRVSManager.SetPSResource(stage, view);
+        else if (stage < CTexture::rstGeometry) SRVSManager.SetVSResource(stage - CTexture::rstVertex, view);
+        else if (stage < CTexture::rstHull) SRVSManager.SetGSResource(stage - CTexture::rstGeometry, view);
+        else if (stage < CTexture::rstDomain) SRVSManager.SetHSResource(stage - CTexture::rstHull, view);
+        else if (stage < CTexture::rstCompute) SRVSManager.SetDSResource(stage - CTexture::rstDomain, view);
+        else SRVSManager.SetCSResource(stage - CTexture::rstCompute, view);
+        return;
+    }
+#endif
+    surface->bind(stage);
+}
+
 void CBackend::set_Textures(STextureList* _T)
 {
 	PROF_EVENT("set_Textures");
@@ -275,7 +297,7 @@ void CBackend::set_Textures(STextureList* _T)
 				if (load_surf)
 				{
 					PGO(Msg("PGO:tex%d:%s",load_id,load_surf->cName.c_str()));
-					load_surf->bind(load_id);
+					BindTexture(load_surf, load_id);
 					//					load_surf->Apply	(load_id);
 				}
 			}
@@ -300,7 +322,7 @@ void CBackend::set_Textures(STextureList* _T)
 				if (load_surf)
 				{
 					PGO(Msg("PGO:tex%d:%s",load_id,load_surf->cName.c_str()));
-					load_surf->bind(load_id);
+					BindTexture(load_surf, load_id);
 					//					load_surf->Apply	(load_id);
 				}
 			}
@@ -323,7 +345,7 @@ void CBackend::set_Textures(STextureList* _T)
 					if (load_surf)
 					{
 						PGO(Msg("PGO:tex%d:%s",load_id,load_surf->cName.c_str()));
-						load_surf->bind(load_id);
+						BindTexture(load_surf, load_id);
 						//					load_surf->Apply	(load_id);
 					}
 				}
@@ -346,7 +368,7 @@ void CBackend::set_Textures(STextureList* _T)
 					if (load_surf)
 					{
 						PGO(Msg("PGO:tex%d:%s",load_id,load_surf->cName.c_str()));
-						load_surf->bind(load_id);
+						BindTexture(load_surf, load_id);
 						//					load_surf->Apply	(load_id);
 					}
 				}
@@ -368,7 +390,7 @@ void CBackend::set_Textures(STextureList* _T)
 					if (load_surf)
 					{
 						PGO(Msg("PGO:tex%d:%s",load_id,load_surf->cName.c_str()));
-						load_surf->bind(load_id);
+						BindTexture(load_surf, load_id);
 						//					load_surf->Apply	(load_id);
 					}
 				}
@@ -390,7 +412,7 @@ void CBackend::set_Textures(STextureList* _T)
 					if (load_surf)
 					{
 						PGO(Msg("PGO:tex%d:%s",load_id,load_surf->cName.c_str()));
-						load_surf->bind(load_id);
+						BindTexture(load_surf, load_id);
 						//					load_surf->Apply	(load_id);
 					}
 				}

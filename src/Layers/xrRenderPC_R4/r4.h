@@ -7,6 +7,8 @@
 #include "../xrRender/PSLibrary.h"
 
 #include "r2_types.h"
+#include "LocalLightShadows.h"
+#include "SunShadows.h"
 #include "r4_rendertarget.h"
 
 #include "../xrRender/hom.h"
@@ -177,6 +179,9 @@ public:
 	CModelPool* Models;
 	CWallmarksEngine* Wallmarks;
 
+    std::unique_ptr<LocalLightShadows> local_light_shadows;
+    std::unique_ptr<SunShadows> sun_shadows;
+    std::unique_ptr<RainShadows> rain_shadows;
 	CRenderTarget* Target; // Render-target
 
 	CLight_DB Lights;
@@ -236,9 +241,12 @@ public:
 	void render_lights(light_Package& LP);
 	void render_menu();
 	void render_rain();
+    bool prepare_rain_view();
 
 	void prepare_sun_cascade(u32 cascade_ind, const Fmatrix& inverse);
     void render_sun_cascade(u32 cascade_ind, const xr_vector<ISpatialShared>* prepared = nullptr, u64 revision = 0);
+    void capture_sun_cascade(u32 cascade_ind, const xr_vector<ISpatialShared>* prepared, u64 revision, bool static_only = false);
+    bool sun_cascade_needs_receiver_bounds(u32 cascade_ind);
 	void init_cacades();
 	void render_sun_cascades();
 
@@ -265,32 +273,43 @@ public:
 
 	ICF void apply_object(IRenderable* O)
 	{
+        if (RenderContextId() && RCache.recording_object)
+        {
+            const auto& snapshot = *RCache.recording_object;
+            RCache.object_hemi = snapshot.hemi;
+            RCache.object_sun = snapshot.sun;
+            RCache.object_hotness_own = snapshot.hotness_own;
+            CopyMemory(RCache.object_hemi_cube, snapshot.cube, sizeof(snapshot.cube));
+            RCache.hemi.set_hotness(snapshot.hotness.x, snapshot.hotness.y, snapshot.hotness.z, snapshot.hotness.w);
+            RCache.hemi.set_glowing(snapshot.glowing.x, snapshot.glowing.y, snapshot.glowing.z, snapshot.glowing.w);
+            return;
+        }
 		RCache.bus_object.apply(O);
 		if (0 == O) return;
 		if (0 == O->renderable_ROS()) return;
 		CROS_impl& LT = *((CROS_impl*)O->renderable_ROS());
-		LT.update_smooth(O);
-		o_hemi = 0.75f * LT.get_hemi();
-		//o_hemi						= 0.5f*LT.get_hemi			()	;
-		o_sun = 0.75f * LT.get_sun();
+		if (!RenderContextId()) LT.update_smooth(O);
+		RCache.object_hemi = 0.75f * LT.get_hemi();
+		//RCache.object_hemi						= 0.5f*LT.get_hemi			()	;
+		RCache.object_sun = 0.75f * LT.get_sun();
 		//--DSR-- HeatVision_start
 		float hotness = O->GetHotness();
-		o_hotness_own = ShaderBus::object_hotness(O->renderable.bus_values, hotness);
+		RCache.object_hotness_own = ShaderBus::object_hotness(O->renderable.bus_values, hotness);
 		RCache.hemi.set_hotness(hotness, O->GetTransparency(), 0.f, 0.f);			//--DSR-- HeatVision
 		RCache.hemi.set_glowing(															//--DSR-- SilencerOverheat
 			sil_glow_color.x, 
 			sil_glow_color.y,
 			sil_glow_color.z, O->GetGlowing());
 		//--DSR-- HeatVision_end
-		CopyMemory(o_hemi_cube, LT.get_hemi_cube(), CROS_impl::NUM_FACES*sizeof(float));
+		CopyMemory(RCache.object_hemi_cube, LT.get_hemi_cube(), CROS_impl::NUM_FACES*sizeof(float));
 	}
 	
 	IC void apply_lmaterial()
 	{
 		RCache.bus_object.apply_static();
 		// an object's own obj_hotness skips the hot texture check, only for the draw right after apply_object
-		const bool hotness_own = o_hotness_own;
-		o_hotness_own = false;
+		const bool hotness_own = RCache.object_hotness_own;
+		RCache.object_hotness_own = false;
 		R_constant* C = RCache.get_c(c_sbase); // get sampler
 		if (0 == C) return;
 		VERIFY(RC_dest_sampler == C->destination);
@@ -306,13 +325,13 @@ public:
 		if (!(T && T->m_is_glowing))									//--DSR-- SilencerOverheat
 			RCache.hemi.set_glowing(0.f, 0.f, 0.f, 0.f);
 
-		RCache.hemi.set_material(o_hemi, o_sun, 0, (mtl < 5 ? (mtl + .5f) / 4.f : mtl));
-		RCache.hemi.set_pos_faces(o_hemi_cube[CROS_impl::CUBE_FACE_POS_X],
-		                          o_hemi_cube[CROS_impl::CUBE_FACE_POS_Y],
-		                          o_hemi_cube[CROS_impl::CUBE_FACE_POS_Z]);
-		RCache.hemi.set_neg_faces(o_hemi_cube[CROS_impl::CUBE_FACE_NEG_X],
-		                          o_hemi_cube[CROS_impl::CUBE_FACE_NEG_Y],
-		                          o_hemi_cube[CROS_impl::CUBE_FACE_NEG_Z]);
+		RCache.hemi.set_material(RCache.object_hemi, RCache.object_sun, 0, (mtl < 5 ? (mtl + .5f) / 4.f : mtl));
+		RCache.hemi.set_pos_faces(RCache.object_hemi_cube[CROS_impl::CUBE_FACE_POS_X],
+		                          RCache.object_hemi_cube[CROS_impl::CUBE_FACE_POS_Y],
+		                          RCache.object_hemi_cube[CROS_impl::CUBE_FACE_POS_Z]);
+		RCache.hemi.set_neg_faces(RCache.object_hemi_cube[CROS_impl::CUBE_FACE_NEG_X],
+		                          RCache.object_hemi_cube[CROS_impl::CUBE_FACE_NEG_Y],
+		                          RCache.object_hemi_cube[CROS_impl::CUBE_FACE_NEG_Z]);
 	}
 
 public:
@@ -454,7 +473,7 @@ public:
 	virtual void rmNear();
 	virtual void rmFar();
 	virtual void rmNormal();
-	virtual u32 active_phase() { return phase; }; //Swartz: actor shadow
+    virtual u32 active_phase() { return RCache.RenderPhase(phase); }; //Swartz: actor shadow
 	void RenderToTarget(RRT target) override;
 	// Constructor/destructor/loader
 	CRender();

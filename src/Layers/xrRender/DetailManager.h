@@ -366,6 +366,7 @@ public:
 
     Fbox m_visible_bounds;
     bool GetVisibleBounds(Fbox& bounds);
+    bool TryGetVisibleBounds(Fbox& bounds);
 	void UpdateVisibleM();
 	void UpdateVisibleS();
 public:
@@ -424,6 +425,10 @@ public:
 	void Load();
 	void Unload();
 	void Render();
+#if RENDER == R_R4
+    bool CanRecordShadow() const;
+    bool PrimeShadow(class RenderContext& context);
+#endif
 
 	/// MT stuff
 	u32 m_frame_calc;

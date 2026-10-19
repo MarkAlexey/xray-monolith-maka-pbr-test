@@ -37,7 +37,21 @@ void R_constant_table::_copy(const R_constant_table& Other)
 #if defined(USE_DX10) || defined(USE_DX11)
 	m_CBTable = Other.m_CBTable;
 #endif
+    prepare_lookup();
 }
+void R_constant_table::prepare_lookup()
+{
+    // OGSR/OpenXRay's lexical lookup avoids interning a name on every draw.
+    // Retain Monolith's pointer-sorted table for its shared_str callers.
+    lexical_table.clear();
+    lexical_table.reserve(table.size());
+    for (const auto& constant : table) lexical_table.push_back(constant._get());
+    std::sort(lexical_table.begin(), lexical_table.end(), [](const R_constant* a, const R_constant* b)
+    {
+        return xr_strcmp(a->name.c_str(), b->name.c_str()) < 0;
+    });
+}
+
 
 
 // predicates
@@ -49,6 +63,13 @@ IC bool p_sort_constants(const ref_constant& C1, const ref_constant& C2) noexcep
 R_constant* R_constant_table::get(LPCSTR S)
 {
 	PROF_EVENT("R_constant_table::get LPCSTR");
+    if (!S) return nullptr;
+    if (lexical_table.size() == table.size())
+    {
+        const auto found = std::lower_bound(lexical_table.begin(), lexical_table.end(), S,
+            [](const R_constant* constant, LPCSTR name) { return xr_strcmp(constant->name.c_str(), name) < 0; });
+        return found != lexical_table.end() && !xr_strcmp((*found)->name.c_str(), S) ? *found : nullptr;
+    }
 
     // demonized: make shared_str and use override, str most likely already exists, faster
     shared_str s(S);
@@ -282,6 +303,7 @@ void R_constant_table::merge(R_constant_table* T)
 
 void R_constant_table::clear()
 {
+    lexical_table.clear();
 	//.
 	for (u32 it = 0; it < table.size(); it++)
 		table[it] = 0; //.g_constant_allocator.destroy(table[it]);

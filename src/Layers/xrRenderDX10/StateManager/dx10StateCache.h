@@ -36,6 +36,7 @@ private:
 private:
 	//	This must be cleared on device destroy
 	xr_vector<StateRecord> m_StateArray;
+    xrCriticalSection m_lock;
 };
 
 extern dx10StateCache<ID3DRasterizerState, D3D_RASTERIZER_DESC> RSManager;

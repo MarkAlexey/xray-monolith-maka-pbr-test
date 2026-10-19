@@ -79,7 +79,7 @@ void* _VertexStream::Lock(u32 vl_Count, u32 Stride, u32& vOffset)
 		mDiscardID ++;
 
 #if defined(USE_DX11)
-		HW.pContext->Map(pVB, 0, D3D_MAP_WRITE_DISCARD, 0, &MappedSubRes);
+		RenderDeviceContext()->Map(pVB, 0, D3D_MAP_WRITE_DISCARD, 0, &MappedSubRes);
 		pData = (BYTE*)MappedSubRes.pData;
 		pData += vOffset;
 #elif defined(USE_DX10)
@@ -101,7 +101,7 @@ void* _VertexStream::Lock(u32 vl_Count, u32 Stride, u32& vOffset)
 		vOffset = vl_mPosition;
 
 #if defined(USE_DX11)
-		HW.pContext->Map(pVB, 0, D3D_MAP_WRITE_NO_OVERWRITE, 0, &MappedSubRes);
+		RenderDeviceContext()->Map(pVB, 0, D3D_MAP_WRITE_NO_OVERWRITE, 0, &MappedSubRes);
 		pData = (BYTE*)MappedSubRes.pData;
 		pData += vOffset * Stride;
 #elif defined(USE_DX10)
@@ -133,7 +133,7 @@ void _VertexStream::Unlock(u32 Count, u32 Stride)
 	VERIFY(pVB);
 
 #if defined(USE_DX11)
-	HW.pContext->Unmap(pVB, 0);
+	RenderDeviceContext()->Unmap(pVB, 0);
 #elif defined(USE_DX10)
 	pVB->Unmap();
 #else	//	USE_DX10
@@ -231,7 +231,7 @@ u16* _IndexStream::Lock(u32 Count, u32& vOffset)
 	}
 #if defined(USE_DX11)
 	D3D_MAP MapMode = (dwFlags == LOCKFLAGS_APPEND) ? D3D_MAP_WRITE_NO_OVERWRITE : D3D_MAP_WRITE_DISCARD;
-	HW.pContext->Map(pIB, 0, MapMode, 0, &MappedSubRes);
+	RenderDeviceContext()->Map(pIB, 0, MapMode, 0, &MappedSubRes);
 	pLockedData = (BYTE*)MappedSubRes.pData;
 	pLockedData += mPosition * 2;
 #elif defined(USE_DX10)
@@ -255,7 +255,7 @@ void _IndexStream::Unlock(u32 RealCount)
 	mPosition += RealCount;
 	VERIFY(pIB);
 #if defined(USE_DX11)
-	HW.pContext->Unmap(pIB, 0);
+	RenderDeviceContext()->Unmap(pIB, 0);
 #elif defined(USE_DX10)
 	pIB->Unmap();
 #else	//	USE_DX10

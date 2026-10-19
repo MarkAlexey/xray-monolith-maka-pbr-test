@@ -95,5 +95,8 @@ private:
 };
 
 extern dx10StateManager StateManager;
+#if defined(USE_DX11) && RENDER == R_R4
+#define StateManager ActiveStateManager()
+#endif
 
 #endif	//	dx10StateManager_included

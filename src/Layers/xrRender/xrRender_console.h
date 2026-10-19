@@ -252,6 +252,10 @@ extern ECORE_API float ps_r2_tnmp_gamma; // r2-only
 extern ECORE_API float ps_r2_tnmp_onoff; // r2-only
 
 extern ECORE_API float ps_r4_full_detail_distance_scale; // r4-only
+extern ECORE_API int ps_r4_mt_local_shadows;
+extern ECORE_API int ps_r4_smapvis;
+extern ECORE_API int ps_r4_mt_sun_shadows;
+extern ECORE_API int ps_r4_mt_rain_shadows;
 
 extern ECORE_API float ps_r2_img_exposure; // r2-only
 extern ECORE_API float ps_r2_img_gamma; // r2-only

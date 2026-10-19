@@ -340,6 +340,10 @@ float ps_r2_tnmp_gamma = .25f; // r2-only
 float ps_r2_tnmp_onoff = .0f; // r2-only
 
 float ps_r4_full_detail_distance_scale = 0.5f; // r4-only
+int ps_r4_mt_local_shadows = 1;
+int ps_r4_smapvis = 1;
+int ps_r4_mt_sun_shadows = 1;
+int ps_r4_mt_rain_shadows = 1;
 
 float ps_r2_img_exposure = 1.0f; // r2-only
 float ps_r2_img_gamma = 1.0f; // r2-only
@@ -1506,6 +1510,10 @@ void xrRender_initconsole()
 	CMD4(CCC_Float, "r2_tnmp_onoff", &ps_r2_tnmp_onoff, 0.0f, 1.0f);
 
 	CMD4(CCC_Float, "r4_full_detail_distance_scale", &ps_r4_full_detail_distance_scale, 0.1f, 1.0f);
+    CMD4(CCC_Integer, "r4_mt_local_shadows", &ps_r4_mt_local_shadows, 0, 1);
+    CMD4(CCC_Integer, "r4_smapvis", &ps_r4_smapvis, 0, 1);
+    CMD4(CCC_Integer, "r4_mt_sun_shadows", &ps_r4_mt_sun_shadows, 0, 1);
+    CMD4(CCC_Integer, "r4_mt_rain_shadows", &ps_r4_mt_rain_shadows, 0, 1);
 
 	CMD4(CCC_Float, "r__exposure", &ps_r2_img_exposure, 0.5f, 4.0f);
 	CMD4(CCC_Float, "r__gamma", &ps_r2_img_gamma, 0.5f, 2.2f);

@@ -64,6 +64,17 @@ extern u32 g_r;
 
 void CRender::Render()
 {
+    // qkff99 MT shadows: join the recording workers and drop this frame's lists on every exit
+    struct ShadowFrameScope
+    {
+        CRender* renderer;
+        ~ShadowFrameScope()
+        {
+            if (renderer->local_light_shadows) renderer->local_light_shadows->EndFrame();
+            if (renderer->sun_shadows) renderer->sun_shadows->EndFrame();
+            if (renderer->rain_shadows) renderer->rain_shadows->EndFrame();
+        }
+    } shadow_frame{this};
 	PIX_EVENT_C(CRender_Render, dx10_marker_frame);
 	dx10_annotate_frame();
 
@@ -139,6 +150,12 @@ void CRender::Render()
     GMBase.r_dsgraph_capture_static();
     GMBase.r_dsgraph_capture_dynamic();
 
+    if (bSUN && ps_r4_mt_sun_shadows)
+    {
+        if (!sun_shadows) sun_shadows = std::make_unique<SunShadows>();
+        sun_shadows->Prepare(*this);
+    }
+
     if (RImplementation.o.ssfx_motionvectors)
     {
         Target->u_setrt(Device.dwWidth, Device.dwHeight, 0, 0, Target->rt_ssfx_motion_vectors->pRT, 0);
@@ -170,6 +187,12 @@ void CRender::Render()
 		Target->disable_aniso();
 	}
 
+    if (sun_shadows)
+    {
+        sun_shadows->CapturePending();
+        sun_shadows->RecordStatic();
+    }
+
 	//  Redotix99: for 3D Shader Based Scopes 	
 	if (scope_3D_fake_enabled)
 	{
@@ -190,6 +213,10 @@ void CRender::Render()
 		GMBase.r_dsgraph_capture_lights();
 	}
 
+    if (!local_light_shadows && (ps_r4_mt_local_shadows || ps_r4_smapvis))
+        local_light_shadows = std::make_unique<LocalLightShadows>();
+    if (local_light_shadows) local_light_shadows->BeginFrame(LP_normal);
+
 	//******* Main render :: PART-1 (second)
 	{
 		PIX_EVENT_C(DEFER_PART1_SPLIT, dx10_marker_gbuffer);
@@ -201,6 +228,18 @@ void CRender::Render()
 		if (Details) Details->Render();
 		Target->phase_scene_end();
 	}
+
+    if (sun_shadows)
+    {
+        sun_shadows->CapturePending(true);
+        sun_shadows->RecordStatic();
+    }
+
+    if (ps_r4_mt_rain_shadows && ps_r2_ls_flags.test(R3FLAG_DYN_WET_SURF))
+    {
+        if (!rain_shadows) rain_shadows = std::make_unique<RainShadows>();
+        rain_shadows->Prepare(*this);
+    }
 
 	// Wall marks
 	if (Wallmarks)
@@ -275,6 +314,12 @@ void CRender::Render()
 			}
 		}
 	}
+
+    // A capture that finished during wallmarks/rain/SSS can still overlap the
+    // owner-side local-light preparation. This probe never waits for workers.
+    if (sun_shadows) sun_shadows->RecordStatic();
+    if (local_light_shadows) local_light_shadows->Record();
+    if (sun_shadows) sun_shadows->Record();
 
 	// Directional light - fucking sun
 	if (bSUN) //bSUN && Device.dwFrame & 1 --Delayed sun update. Worth to check it in future

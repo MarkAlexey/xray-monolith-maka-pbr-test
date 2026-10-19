@@ -29,6 +29,7 @@ struct ECORE_API SVS : public xr_resource_named
 	ID3DVertexShader* vs;
 #ifdef USE_DX11
     bool static_draw_safe = false;
+    bool recording_safe = false;
     bool particle_position_safe = false, particle_uses_vp = false;
     bool tree_shadow_batch_safe = false;
     u32 tree_shadow_inputs = 0;
@@ -51,6 +52,7 @@ struct ECORE_API SPS : public xr_resource_named
 	ID3DPixelShader* ps;
 #ifdef USE_DX11
     bool static_draw_safe = false;
+    bool recording_safe = false;
     bool shadow_batch_safe = false;
     bool shadow_depth_cache_safe = false;
     u32 shadow_shader_revision = 0;
@@ -65,6 +67,9 @@ typedef resptr_core<SPS, resptr_base<SPS>> ref_ps;
 //////////////////////////////////////////////////////////////////////////
 struct ECORE_API SGS : public xr_resource_named
 {
+#ifdef USE_DX11
+    bool recording_safe = false;
+#endif
 	ID3DGeometryShader*					gs;
 	R_constant_table					constants;
 	~SGS			();
@@ -76,6 +81,7 @@ typedef	resptr_core<SGS,resptr_base<SGS> > ref_gs;
 
 struct ECORE_API SHS : public xr_resource_named
 {
+    bool recording_safe = false;
 	ID3D11HullShader*					sh;
 	R_constant_table					constants;
 	~SHS			();
@@ -84,6 +90,7 @@ typedef	resptr_core< SHS, resptr_base<SHS> >	ref_hs;
 
 struct ECORE_API SDS : public xr_resource_named
 {
+    bool recording_safe = false;
 	ID3D11DomainShader*					sh;
 	R_constant_table					constants;
 	~SDS			();
@@ -92,6 +99,7 @@ typedef	resptr_core< SDS, resptr_base<SDS> >	ref_ds;
 
 struct ECORE_API SCS : public xr_resource_named
 {
+    bool recording_safe = false;
 	ID3D11ComputeShader*					sh;
 	R_constant_table					constants;
 	~SCS			();

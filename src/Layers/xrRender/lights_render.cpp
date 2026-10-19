@@ -62,6 +62,9 @@ void CRender::render_lights(light_Package& LP)
 	hud_light_apply(saved_pos, LP.v_point);
 	hud_light_apply(saved_pos, LP.v_spot);
 
+#if defined(USE_DX11) && RENDER == R_R4
+    if (!local_light_shadows || !local_light_shadows->RenderShadows(LP))
+#endif
 	{
 #if defined(USE_DX10) || defined(USE_DX11)
 		PIX_EVENT(SHADOWED_LIGHTS);

@@ -20,6 +20,9 @@ public:
 #ifdef USE_DX11
     bool ShadowBatchSafe() const { return m_shadow_batch_safe; }
     bool StaticPacketSafe() const { return m_static_packet_safe; }
+    ID3DRasterizerState* RasterizerState() const { return m_pRasterizerState; }
+    ID3DDepthStencilState* DepthStencilState() const { return m_pDepthStencilState; }
+    ID3DBlendState* BlendState() const { return m_pBlendState; }
 private:
     bool m_static_packet_safe = false;
     bool m_shadow_batch_safe = false;

@@ -345,7 +345,7 @@ R_constant_table* CResourceManager::_CreateConstantTable(R_constant_table& C)
 			return v_constant_tables[it];
 
 	auto NewElem = xr_new<R_constant_table>(C);
-	//NewElem->_copy(C);
+    NewElem->prepare_lookup();
 	NewElem->dwFlags |= xr_resource_flagged::RF_REGISTERED;
 	v_constant_tables.push_back(NewElem);
 	return NewElem;

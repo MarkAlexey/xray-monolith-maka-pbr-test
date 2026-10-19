@@ -30,8 +30,8 @@ public:
 	void set_m_xform_v(Fmatrix& mat);
 	void set_m_xform(Fmatrix& mat);
 	void set_consts(float x, float y, float z, float w);
-	void set_wave(Fvector4& vec);
-	void set_wind(Fvector4& vec);
+	void set_wave(const Fvector4& vec);
+	void set_wind(const Fvector4& vec);
 	void set_c_scale(float x, float y, float z, float w);
 	void set_c_bias(float x, float y, float z, float w);
 	void set_c_sun(float x, float y, float z, float w);

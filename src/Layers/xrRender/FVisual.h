@@ -51,8 +51,8 @@ public:
         xr_vector<ShadowMember> members;
         u32 index_count = 0, original_vertices = 0;
         u32 vertex_revision = 0, pixel_revision = 0;
-        aoe_render::ShadowBatchSelection selection;
-        bool binding_valid = false;
+        aoe_render::ShadowBatchSelection selection[RenderContextCount];
+        bool binding_valid[RenderContextCount] = {};
     };
     std::shared_ptr<ShadowBatch> shadow_batch;
     u32 shadow_batch_member = 0;

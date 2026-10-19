@@ -22,10 +22,12 @@
 #endif
 
 #include "fvf.h"
+#include "RenderContext.h"
 
 const u32 CULL_CCW = D3DCULL_CCW;
 const u32 CULL_CW = D3DCULL_CW;
 const u32 CULL_NONE = D3DCULL_NONE;
+struct SkeletonRenderSnapshot;
 
 ///		detailed statistic
 struct R_statistics_element
@@ -121,6 +123,12 @@ public:
 	R_hemi hemi;
 	R_bus_object bus_object;
 	R_tree tree;
+    u32 recording_phase = 0;
+    bool recording_grass = false;
+#if defined(USE_DX11) && RENDER == R_R4
+    const RenderObjectSnapshot* recording_object = nullptr;
+#endif
+    u32 RenderPhase(u32 phase) const { return RenderContextId() ? recording_phase : phase; }
 #ifdef USE_DX11
 	R_LOD LOD;
 #endif
@@ -223,6 +231,19 @@ private:
 
 	void Invalidate();
 public:
+
+#if defined(USE_DX11) && RENDER == R_R4
+    void InvalidateAfterCommandList() { Invalidate(); }
+    CTexture* shadow_texture_source = nullptr;
+    ID3D11ShaderResourceView* shadow_texture_view = nullptr;
+    bool object_hotness_own = false;
+    float object_hemi = 0.f, object_sun = 0.f, object_hemi_cube[6] = {};
+    const SkeletonRenderSnapshot* skeleton_snapshot = nullptr;
+    ID3D11ShaderResourceView* TextureView(CTexture* source, ID3D11ShaderResourceView* view) const
+    {
+        return source == shadow_texture_source ? shadow_texture_view : view;
+    }
+#endif
 	struct _stats
 	{
 		u32 polys;
@@ -309,6 +330,7 @@ public:
 	// binds the same texture is skipped and reads null.
 	void unbind_CS_textures();
 #endif
+    void BindTexture(CTexture* surface, u32 stage);
 	IC void set_Textures(ref_texture_list& T) { set_Textures(&*T); }
 
 #ifdef _EDITOR
@@ -519,7 +541,8 @@ public:
 	void dbg_DrawLINE				(Fmatrix& T, Fvector& p1, Fvector& p2, u32 C);
 	void dbg_DrawEllipse			(Fmatrix& T, u32 C);
 
-	CBackend() { Invalidate(); };
+    explicit CBackend(bool initialize = true) { if (initialize) Invalidate(); }
+    void ResetBindings() { Invalidate(); }
 
 private:
 	// Debug Draw
@@ -551,6 +574,9 @@ private:
 #pragma warning(pop)
 
 extern ECORE_API CBackend RCache;
+#if defined(USE_DX11) && RENDER == R_R4
+#define RCache ActiveRenderBackend()
+#endif
 
 #ifndef _EDITOR
 #	include "D3DUtils.h"

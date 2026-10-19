@@ -6,14 +6,15 @@
 dx10ConstantBuffer& R_constants::GetCBuffer(R_constant* C, BufferType BType)
 {
 	PROF_EVENT("R_constants::GetCBuffer");
+    auto& backend = RCache;
 	if (BType == BT_PixelBuffer)
 	{
 		//	Decode index
 		int iBufferIndex = (C->destination & RC_dest_pixel_cb_index_mask) >> RC_dest_pixel_cb_index_shift;
 
 		VERIFY(iBufferIndex<CBackend::MaxCBuffers);
-		VERIFY(RCache.m_aPixelConstants[iBufferIndex]);
-		return *RCache.m_aPixelConstants[iBufferIndex];
+		VERIFY(backend.m_aPixelConstants[iBufferIndex]);
+		return *backend.m_aPixelConstants[iBufferIndex];
 	}
 	else if (BType == BT_VertexBuffer)
 	{
@@ -21,8 +22,8 @@ dx10ConstantBuffer& R_constants::GetCBuffer(R_constant* C, BufferType BType)
 		int iBufferIndex = (C->destination & RC_dest_vertex_cb_index_mask) >> RC_dest_vertex_cb_index_shift;
 
 		VERIFY(iBufferIndex<CBackend::MaxCBuffers);
-		VERIFY(RCache.m_aVertexConstants[iBufferIndex]);
-		return *RCache.m_aVertexConstants[iBufferIndex];
+		VERIFY(backend.m_aVertexConstants[iBufferIndex]);
+		return *backend.m_aVertexConstants[iBufferIndex];
 	}
 	else if (BType == BT_GeometryBuffer)
 	{
@@ -30,8 +31,8 @@ dx10ConstantBuffer& R_constants::GetCBuffer(R_constant* C, BufferType BType)
 		int iBufferIndex = (C->destination & RC_dest_geometry_cb_index_mask) >> RC_dest_geometry_cb_index_shift;
 
 		VERIFY(iBufferIndex<CBackend::MaxCBuffers);
-		VERIFY(RCache.m_aGeometryConstants[iBufferIndex]);
-		return *RCache.m_aGeometryConstants[iBufferIndex];
+		VERIFY(backend.m_aGeometryConstants[iBufferIndex]);
+		return *backend.m_aGeometryConstants[iBufferIndex];
 	}
 #ifdef USE_DX11
 	else if (BType == BT_HullBuffer)
@@ -40,8 +41,8 @@ dx10ConstantBuffer& R_constants::GetCBuffer(R_constant* C, BufferType BType)
 		int iBufferIndex = (C->destination & RC_dest_hull_cb_index_mask) >> RC_dest_hull_cb_index_shift;
 
 		VERIFY(iBufferIndex<CBackend::MaxCBuffers);
-		VERIFY(RCache.m_aHullConstants[iBufferIndex]);
-		return *RCache.m_aHullConstants[iBufferIndex];
+		VERIFY(backend.m_aHullConstants[iBufferIndex]);
+		return *backend.m_aHullConstants[iBufferIndex];
 	}
 	else if (BType == BT_DomainBuffer)
 	{
@@ -49,8 +50,8 @@ dx10ConstantBuffer& R_constants::GetCBuffer(R_constant* C, BufferType BType)
 		int iBufferIndex = (C->destination & RC_dest_domain_cb_index_mask) >> RC_dest_domain_cb_index_shift;
 
 		VERIFY(iBufferIndex<CBackend::MaxCBuffers);
-		VERIFY(RCache.m_aDomainConstants[iBufferIndex]);
-		return *RCache.m_aDomainConstants[iBufferIndex];
+		VERIFY(backend.m_aDomainConstants[iBufferIndex]);
+		return *backend.m_aDomainConstants[iBufferIndex];
 	}
 	else if (BType == BT_Compute)
 	{
@@ -58,8 +59,8 @@ dx10ConstantBuffer& R_constants::GetCBuffer(R_constant* C, BufferType BType)
 		int iBufferIndex = (C->destination & RC_dest_compute_cb_index_mask) >> RC_dest_compute_cb_index_shift;
 
 		VERIFY(iBufferIndex<CBackend::MaxCBuffers);
-		VERIFY(RCache.m_aComputeConstants[iBufferIndex]);
-		return *RCache.m_aComputeConstants[iBufferIndex];
+		VERIFY(backend.m_aComputeConstants[iBufferIndex]);
+		return *backend.m_aComputeConstants[iBufferIndex];
 	}
 #endif
 
@@ -72,26 +73,27 @@ dx10ConstantBuffer& R_constants::GetCBuffer(R_constant* C, BufferType BType)
 void R_constants::flush_cache()
 {
 	PROF_EVENT("R_constants::flush_cache");
+    auto& backend = RCache;
 	for (int i = 0; i < CBackend::MaxCBuffers; ++i)
 	{
-		if (RCache.m_aVertexConstants[i])
-			RCache.m_aVertexConstants[i]->Flush();
+		if (backend.m_aVertexConstants[i])
+			backend.m_aVertexConstants[i]->Flush();
 
-		if (RCache.m_aPixelConstants[i])
-			RCache.m_aPixelConstants[i]->Flush();
+		if (backend.m_aPixelConstants[i])
+			backend.m_aPixelConstants[i]->Flush();
 
-		if (RCache.m_aGeometryConstants[i])
-			RCache.m_aGeometryConstants[i]->Flush();
+		if (backend.m_aGeometryConstants[i])
+			backend.m_aGeometryConstants[i]->Flush();
 
 #ifdef USE_DX11
-		if (RCache.m_aHullConstants[i])
-			RCache.m_aHullConstants[i]->Flush();
+		if (backend.m_aHullConstants[i])
+			backend.m_aHullConstants[i]->Flush();
 
-		if (RCache.m_aDomainConstants[i])
-			RCache.m_aDomainConstants[i]->Flush();
+		if (backend.m_aDomainConstants[i])
+			backend.m_aDomainConstants[i]->Flush();
 
-		if (RCache.m_aComputeConstants[i])
-			RCache.m_aComputeConstants[i]->Flush();
+		if (backend.m_aComputeConstants[i])
+			backend.m_aComputeConstants[i]->Flush();
 #endif
 	}
 }

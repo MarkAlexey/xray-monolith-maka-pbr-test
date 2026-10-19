@@ -62,14 +62,20 @@ public:
 
 void ISpatial_DB::q_frustum(xr_vector<ISpatialShared>& R, u32 _o, u32 _mask, const CFrustum& _frustum)
 {
+    q_frustum_snapshot(R, _mask, _frustum);
+}
+
+u64 ISpatial_DB::q_frustum_snapshot(xr_vector<ISpatialShared>& R, u32 _mask, const CFrustum& _frustum)
+{
 	PROF_EVENT("ISpatial_DB::q_frustum");
 	xrSRWLockGuard guard(&db_lock, true);
-	if (!m_root)
-		return;
-
 	R.clear();
-	spatial_frustum_walker W(this,_mask,&_frustum);
-	W.walk(R,m_root,m_center,m_bounds,_frustum.getMask());
+    if (m_root)
+    {
+        spatial_frustum_walker W(this, _mask, &_frustum);
+        W.walk(R, m_root, m_center, m_bounds, _frustum.getMask());
+    }
+    return query_revision.load(std::memory_order_relaxed);
 }
 
 u64 ISpatial_DB::q_frustums(xr_vector<ISpatialShared> (&results)[3], u32 mask, const CFrustum* const (&views)[3])

@@ -402,12 +402,12 @@ void CSkeletonX_ST::Copy(dxRender_Visual* P)
 void CSkeletonX_PM::Render(float LOD)
 {
 	PROF_EVENT("CSkeletonX_PM::Render");
-	int lod_id = inherited1::last_lod;
+	int lod_id = LOD >= 0.f ? 0 : inherited1::last_lod;
 	if (LOD >= 0.f)
 	{
 		clamp(LOD, 0.f, 1.f);
 		lod_id = iFloor((1.f - LOD) * float(nSWI.count - 1) + 0.5f);
-		inherited1::last_lod = lod_id;
+		if (!RenderContextId()) inherited1::last_lod = lod_id;
 	}
 	VERIFY(lod_id>=0 && lod_id<int(nSWI.count));
 	FSlideWindow& SW = nSWI.sw[lod_id];

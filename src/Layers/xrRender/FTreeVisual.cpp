@@ -67,13 +67,14 @@ struct TreeShadowBatch
     Fmatrix world;
     std::array<u8, 40> lighting{};
     u32 vertex_revision = 0, pixel_revision = 0, original_vertices = 0;
-    aoe_render::ShadowBatchSelection selection;
-    bool valid = false;
+    aoe_render::ShadowBatchSelection selection[RenderContextCount];
+    bool valid[RenderContextCount] = {};
 };
 
 namespace
 {
-struct TreeShadowStats { u32 indexed = 0, groups = 0, saved = 0, partial = 0, common_requests = 0, common_updates = 0; } tree_shadow_stats;
+struct TreeShadowStats { u32 indexed = 0, groups = 0, saved = 0, partial = 0, common_requests = 0, common_updates = 0; };
+thread_local TreeShadowStats tree_shadow_stats;
 constexpr u32 tree_shadow_budget = 64u * 1024u * 1024u;
 
 SPass* tree_shadow_pass(const ref_shader& shader)
@@ -120,7 +121,7 @@ void FTreeVisual::BuildShadowGeometry(const xr_vector<dxRender_Visual*>& visuals
     {
         if (visual->Type != MT_TREE_ST) continue;
         auto& tree = *static_cast<FTreeVisual*>(visual);
-        tree.shadow_batch.reset(); tree.shadow_mesh.reset(); tree.shadow_ticket = 0;
+        tree.shadow_batch.reset(); tree.shadow_mesh.reset(); std::fill(std::begin(tree.shadow_ticket), std::end(tree.shadow_ticket), 0);
         auto* pass = tree_shadow_pass(tree.shader);
         if (!pass || !tree.rm_geom || tree.rm_geom->vb_stride != 32 ||
             tree.load_vb >= RImplementation.levelTreeVBData.size() || tree.load_ib >= RImplementation.levelIBData.size() ||
@@ -262,31 +263,31 @@ bool FTreeVisual::ShadowGeometryValid(bool bound) const
 
 void FTreeVisual::SelectShadowBatch(u32 ticket)
 {
-    shadow_ticket = 0;
+    shadow_ticket[RenderContextId()] = 0;
     if (!shadow_batch || shadow_member >= shadow_batch->members.size()) return;
     auto& batch = *shadow_batch;
-    if (batch.selection.begin(Device.dwFrame, ticket))
-        batch.valid = tree_batch_pass(*batch.pass) && batch.vertex_revision == batch.pass->vs->shadow_shader_revision &&
+    if (batch.selection[RenderContextId()].begin(Device.dwFrame, ticket))
+        batch.valid[RenderContextId()] = tree_batch_pass(*batch.pass) && batch.vertex_revision == batch.pass->vs->shadow_shader_revision &&
             batch.pixel_revision == batch.pass->ps->shadow_shader_revision;
     const auto& member = batch.members[shadow_member];
-    if (!batch.valid || member.mesh != shadow_mesh || member.shader != shader || !ShadowGeometryValid(false) ||
+    if (!batch.valid[RenderContextId()] || member.mesh != shadow_mesh || member.shader != shader || !ShadowGeometryValid(false) ||
         tree_shadow_pass(shader) != batch.pass._get() || memcmp(&xform, &batch.world, sizeof(Fmatrix)) ||
         memcmp(&c_scale, batch.lighting.data(), 20) || memcmp(&c_bias, batch.lighting.data() + 20, 20)) return;
-    batch.selection.add(shadow_member, u32(batch.members.size()));
-    shadow_ticket = ticket; shadow_frame = Device.dwFrame;
+    batch.selection[RenderContextId()].add(shadow_member, u32(batch.members.size()));
+    shadow_ticket[RenderContextId()] = ticket; shadow_frame[RenderContextId()] = Device.dwFrame;
 }
 
 bool FTreeVisual::DrawShadowBatch(float lod, u32 ticket)
 {
-    if (RImplementation.phase != CRender::PHASE_SMAP || !shadow_batch ||
-        RImplementation.o.Tshadows || !ticket || shadow_ticket != ticket || shadow_frame != Device.dwFrame) return false;
+    if (RCache.RenderPhase(RImplementation.phase) != CRender::PHASE_SMAP || !shadow_batch ||
+        RImplementation.o.Tshadows || !ticket || shadow_ticket[RenderContextId()] != ticket || shadow_frame[RenderContextId()] != Device.dwFrame) return false;
     auto& batch = *shadow_batch;
-    if (batch.selection.frame != Device.dwFrame || batch.selection.ticket != shadow_ticket || !batch.valid ||
+    if (batch.selection[RenderContextId()].frame != Device.dwFrame || batch.selection[RenderContextId()].ticket != shadow_ticket[RenderContextId()] || !batch.valid[RenderContextId()] ||
         !batch.geometry || !batch.geometry->storage || !ShadowGeometryValid() ||
         !RCache.matches_shadow_batch_pass(*batch.pass) || !StateManager.ShadowBatchStateSafe()) return false;
-    if (!batch.selection.complete(u32(batch.members.size()))) { ++tree_shadow_stats.partial; return false; }
-    if (batch.selection.emitted) return true;
-    batch.selection.emitted = true;
+    if (!batch.selection[RenderContextId()].complete(u32(batch.members.size()))) { ++tree_shadow_stats.partial; return false; }
+    if (batch.selection[RenderContextId()].emitted) return true;
+    batch.selection[RenderContextId()].emitted = true;
     PROF_EVENT("Render.Shadow.TreeGroup");
     FTreeVisual::Render(lod);
     auto& mesh = *batch.geometry;
@@ -299,7 +300,7 @@ bool FTreeVisual::DrawShadowBatch(float lod, u32 ticket)
 
 bool FTreeVisual::DrawShadowGeometry()
 {
-    if (RImplementation.phase != CRender::PHASE_SMAP || RCache.is_TessEnabled() ||
+    if (RCache.RenderPhase(RImplementation.phase) != CRender::PHASE_SMAP || RCache.is_TessEnabled() ||
         !shadow_mesh || !shadow_mesh->storage || !ShadowGeometryValid()) return false;
     PROF_EVENT("Render.Shadow.TreeSharedIndices");
     RCache.set_Geometry(shadow_mesh->geometry);
@@ -337,7 +338,7 @@ void FTreeVisual::Release()
 #if defined(USE_DX11) && RENDER == R_R4
     shadow_batch.reset();
     shadow_mesh.reset();
-    shadow_ticket = 0;
+    shadow_ticket[RenderContextId()] = 0;
 #endif
 #endif
 	dxRender_Visual::Release();
@@ -350,7 +351,7 @@ void FTreeVisual::Load(const char* N, IReader* data, u32 dwFlags)
 #if defined(USE_DX11) && RENDER == R_R4
     shadow_batch.reset();
     shadow_mesh.reset();
-    shadow_ticket = 0;
+    shadow_ticket[RenderContextId()] = 0;
 #endif
 #endif
 	dxRender_Visual::Load(N, data, dwFlags);
@@ -511,28 +512,53 @@ struct FTreeVisual_common
 };
 #endif
 
+#if defined(USE_DX11) && RENDER == R_R4
+namespace { FTreeVisual_setup frame_tree_setup, previous_tree_setup; }
+void FTreeVisual::PrepareFrame()
+{
+    R_ASSERT(!RenderContextId());
+    if (frame_tree_setup.dwFrame != Device.dwFrame)
+    {
+        previous_tree_setup = frame_tree_setup;
+        frame_tree_setup.calculate();
+    }
+}
+#endif
+
 void FTreeVisual::Render(float LOD)
 {
-	PROF_EVENT("FTreeVisual::Render");
-	static FTreeVisual_setup tvs, prev_tvs;
-	if (tvs.dwFrame != Device.dwFrame)
-	{
-		prev_tvs = tvs; // Save previous frame calculations
-		tvs.calculate();
-	}
+    PROF_EVENT("FTreeVisual::Render");
+#if defined(USE_DX11) && RENDER == R_R4
+    if (!RenderContextId()) PrepareFrame();
+    const auto& tvs = frame_tree_setup;
+    const auto& prev_tvs = previous_tree_setup;
+#else
+    static FTreeVisual_setup tvs, prev_tvs;
+    if (tvs.dwFrame != Device.dwFrame)
+    {
+        prev_tvs = tvs;
+        tvs.calculate();
+    }
+#endif
 	// setup constants
 #if RENDER!=R_R1
 	const Fmatrix& view = RCache.get_xform_view();
-    const bool matched = prepared_valid && !memcmp(&prepared_view, &view, sizeof(Fmatrix)) &&
+    const bool matched = !RenderContextId() && prepared_valid && !memcmp(&prepared_view, &view, sizeof(Fmatrix)) &&
         !memcmp(&prepared_world, &xform, sizeof(Fmatrix));
-    if (!matched)
+    Fmatrix combined;
+    if (RenderContextId())
+    {
+        combined.mul_43(view, xform);
+        RCache.tree.set_m_xform_v(combined);
+    }
+    else if (!matched)
     {
         PROF_EVENT("Render.Trees.PrepareViewMatrix");
         Fmatrix combined;
         combined.mul_43(view, xform);
         PublishPreparedView(view, xform, combined);
     }
-    RCache.tree.set_m_xform_v(prepared_combined);
+    if (!RenderContextId()) RCache.tree.set_m_xform_v(prepared_combined);
 #endif
 	float s = ps_r__Tree_SBC;
 	RCache.tree.set_m_xform(xform); // matrix
@@ -558,7 +584,8 @@ void FTreeVisual::Render(float LOD)
 	RCache.tree.set_c_sun(s * c_scale.sun, s * c_bias.sun, 0, 0); // sun
 
 #if RENDER==R_R4 || RENDER==R_R3
-    static FTreeVisual_common shared;
+    static thread_local FTreeVisual_common context_shared[RenderContextCount];
+    auto& shared = context_shared[RenderContextId()];
 #if defined(USE_DX11) && RENDER == R_R4
     ++tree_shadow_stats.common_requests;
 #endif
@@ -643,7 +670,7 @@ void FTreeVisual::Copy(dxRender_Visual* pSrc)
 #if defined(USE_DX11) && RENDER == R_R4
     shadow_batch.reset();
     shadow_mesh.reset();
-    shadow_ticket = 0;
+    shadow_ticket[RenderContextId()] = 0;
 #endif
 #endif
 	dxRender_Visual::Copy(pSrc);
@@ -738,11 +765,11 @@ void FTreeVisual_PM::Load(const char* N, IReader* data, u32 dwFlags)
 void FTreeVisual_PM::Render(float LOD)
 {
 	inherited::Render(LOD);
-	int lod_id = last_lod;
+	int lod_id = LOD >= 0.f ? 0 : last_lod;
 	if (LOD >= 0.f)
 	{
 		lod_id = iFloor((1.f - LOD) * float(pSWI->count - 1) + 0.5f);
-		last_lod = lod_id;
+		if (!RenderContextId()) last_lod = lod_id;
 	}
 	VERIFY(lod_id>=0 && lod_id<int(pSWI->count));
 	FSlideWindow& SW = pSWI->sw[lod_id];

@@ -4,11 +4,11 @@
 #include "dx10BufferUtils.h"
 #include "../xrRender/dxRenderDeviceRender.h"
 
-dx10ConstantBuffer::Stats dx10ConstantBuffer::s_stats{};
+thread_local dx10ConstantBuffer::Stats dx10ConstantBuffer::s_stats{};
 
 dx10ConstantBuffer::~dx10ConstantBuffer()
 {
-	if (Device.m_pRender && DEV)
+	if (!m_private_copy && Device.m_pRender && DEV)
 		DEV->_DeleteConstantBuffer(this);
 	//	Flush();
 	_RELEASE(m_pBuffer);
@@ -89,6 +89,27 @@ bool dx10ConstantBuffer::Similar(dx10ConstantBuffer& _in)
 	return true;
 }
 
+dx10ConstantBuffer::dx10ConstantBuffer(const dx10ConstantBuffer& source, bool private_copy)
+    : m_private_copy(private_copy), m_strBufferName(source.m_strBufferName), m_eBufferType(source.m_eBufferType),
+      m_uiMembersCRC(source.m_uiMembersCRC), m_MembersList(source.m_MembersList),
+      m_MembersNames(source.m_MembersNames), m_MembersOffsets(source.m_MembersOffsets),
+      m_pBuffer(nullptr), m_uiBufferSize(source.m_uiBufferSize), m_bChanged(true)
+{
+    R_CHK(dx10BufferUtils::CreateConstantBuffer(&m_pBuffer, m_uiBufferSize));
+    m_pBufferData = xr_malloc(m_uiBufferSize);
+    ZeroMemory(m_pBufferData, m_uiBufferSize);
+}
+
+void dx10ConstantBuffer::CopyDefaults(const dx10ConstantBuffer& source)
+{
+    R_ASSERT(m_private_copy && m_uiBufferSize == source.m_uiBufferSize);
+    if (memcmp(m_pBufferData, source.m_pBufferData, m_uiBufferSize))
+    {
+        CopyMemory(m_pBufferData, source.m_pBufferData, m_uiBufferSize);
+        m_bChanged = true;
+    }
+}
+
 #ifdef USE_DX11
 bool dx10ConstantBuffer::WriteFloat4Array(R_constant* C, R_constant_load& L, const Fvector4* data, u32 count)
 {
@@ -115,7 +136,7 @@ void dx10ConstantBuffer::Flush()
         void    *pData;
 #ifdef USE_DX11
         D3D11_MAPPED_SUBRESOURCE    pSubRes;
-        CHK_DX(HW.pContext->Map(m_pBuffer, 0, D3D_MAP_WRITE_DISCARD, 0, &pSubRes));
+        CHK_DX(RenderDeviceContext()->Map(m_pBuffer, 0, D3D_MAP_WRITE_DISCARD, 0, &pSubRes));
         pData = pSubRes.pData;
 #else
         CHK_DX(m_pBuffer->Map(D3D_MAP_WRITE_DISCARD, 0, &pData));
@@ -124,7 +145,7 @@ void dx10ConstantBuffer::Flush()
         VERIFY(m_pBufferData);
         CopyMemory(pData, m_pBufferData, m_uiBufferSize);
 #ifdef USE_DX11
-        HW.pContext->Unmap(m_pBuffer, 0);
+        RenderDeviceContext()->Unmap(m_pBuffer, 0);
 #else
         m_pBuffer->Unmap();
 #endif

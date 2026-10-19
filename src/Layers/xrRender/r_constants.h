@@ -182,6 +182,7 @@ class ECORE_API R_constant_setup
 {
 public:
 	virtual void setup(R_constant* C) = 0;
+    virtual bool parallel_safe() const { return false; }
 
 	virtual ~R_constant_setup()
 	{
@@ -190,6 +191,7 @@ public:
 
 class ECORE_API R_constant_table : public xr_resource_flagged
 {
+    xr_vector<R_constant*> lexical_table;
 public:
 	typedef xr_vector<ref_constant> c_table;
 	c_table table;
@@ -214,6 +216,7 @@ public:
 	//R_constant_table& operator=(const R_constant& Other) = delete;
 
 	void _copy(const R_constant_table& Other);
+    void prepare_lookup();
 	void clear();
 	BOOL parse(void* desc, u32 destination);
 	void merge(R_constant_table* C);

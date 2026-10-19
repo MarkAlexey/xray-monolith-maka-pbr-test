@@ -28,7 +28,8 @@ protected:
 #if defined(USE_DX11) && RENDER == R_R4
     std::shared_ptr<TreeShadowMesh> shadow_mesh;
     std::shared_ptr<TreeShadowBatch> shadow_batch;
-    u32 shadow_member = 0, shadow_ticket = 0, shadow_frame = u32(-1);
+    u32 shadow_member = 0;
+    u32 shadow_ticket[RenderContextCount] = {}, shadow_frame[RenderContextCount] = {};
     u32 load_vb = u32(-1), load_ib = u32(-1);
 #endif
 public:
@@ -36,6 +37,7 @@ public:
     static void BuildShadowGeometry(const xr_vector<dxRender_Visual*>& visuals);
     static void ResetShadowStats();
     static void ProfileShadowStats();
+    static void PrepareFrame();
     void SelectShadowBatch(u32 ticket);
     bool DrawShadowBatch(float lod, u32 ticket);
     bool DrawShadowGeometry();

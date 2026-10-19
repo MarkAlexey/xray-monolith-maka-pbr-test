@@ -242,7 +242,7 @@ void Fvisual::Render(float)
 {
 	PROF_EVENT("Fvisual::Render");
 #if (RENDER==R_R2) || (RENDER==R_R3) || (RENDER==R_R4)
-	if (m_fast && RImplementation.phase == CRender::PHASE_SMAP && !RCache.is_TessEnabled())
+	if (m_fast && RCache.RenderPhase(RImplementation.phase) == CRender::PHASE_SMAP && !RCache.is_TessEnabled())
 	{
 		RCache.set_Geometry(m_fast->rm_geom);
 		RCache.Render(D3DPT_TRIANGLELIST, m_fast->vBase, 0, m_fast->vCount, m_fast->iBase, m_fast->dwPrimitives);
@@ -579,16 +579,17 @@ void Fvisual::BuildShadowBatches(const xr_vector<dxRender_Visual*>& visuals)
 
 bool Fvisual::DrawShadowBatch(u32 ticket)
 {
-    if (RImplementation.phase != CRender::PHASE_SMAP || RImplementation.o.Tshadows ||
+    if (RCache.RenderPhase(RImplementation.phase) != CRender::PHASE_SMAP || RImplementation.o.Tshadows ||
         !ticket || !shadow_batch || !ShadowBatchMemberValid()) return false;
     auto& batch = *shadow_batch;
-    if (batch.selection.frame != Device.dwFrame || batch.selection.ticket != ticket ||
-        !batch.binding_valid || !batch.selection.complete(u32(batch.members.size())) ||
+    auto& selection = batch.selection[RenderContextId()];
+    if (selection.frame != Device.dwFrame || selection.ticket != ticket ||
+        !batch.binding_valid[RenderContextId()] || !selection.complete(u32(batch.members.size())) ||
         !RCache.matches_shadow_batch_pass(*batch.pass) || !StateManager.ShadowBatchStateSafe()) return false;
-    if (batch.selection.emitted) return true;
+    if (selection.emitted) return true;
     PROF_EVENT("Render.Shadow.StaticBatch");
     PROF_TAG("Members", u32(batch.members.size()));
-    batch.selection.emitted = true;
+    selection.emitted = true;
     RCache.set_Geometry(batch.geometry);
     RCache.Render(D3DPT_TRIANGLELIST, batch.base_vertex, 0, batch.vertex_count, 0, batch.index_count / 3);
     RCache.stat.r.s_static.add(batch.original_vertices);

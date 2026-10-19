@@ -40,6 +40,7 @@ IDeviceState*
 dx10StateCache<IDeviceState, StateDecs>
 ::GetState(StateDecs& desc)
 {
+    xrCriticalSectionGuard guard(&m_lock);
 	IDeviceState* pResult;
 
 	dx10StateUtils::ValidateState(desc);

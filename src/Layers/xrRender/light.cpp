@@ -59,6 +59,9 @@ light::light()
 
 light::~light()
 {
+#if defined(USE_DX11) && RENDER == R_R4
+    if (RImplementation.local_light_shadows) RImplementation.local_light_shadows->Forget(this);
+#endif
 	m_parent = nullptr;
 #if (RENDER==R_R2) || (RENDER==R_R3) || (RENDER==R_R4)
 	RImplementation.v_all_lights.erase(this);

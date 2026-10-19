@@ -8,6 +8,9 @@
 
 #include "SkeletonCustom.h"
 #include "SkeletonXVertRender.h"
+#if defined(USE_DX11) && RENDER == R_R4
+#include "SkeletonRenderSnapshot.h"
+#endif
 
 // refs
 class CKinematics;
@@ -33,6 +36,17 @@ protected:
 
 	u16 RenderMode;
 	u16 ChildIDX;
+#if defined(USE_DX11) && RENDER == R_R4
+    struct SoftCache
+    {
+        u64 generation = 0;
+        u32 discard = u32(-1), count = 0, offset = 0;
+        const SkeletonRenderSnapshot* pose = nullptr;
+    };
+    SoftCache context_soft_cache[RenderContextCount];
+    std::shared_ptr<SkeletonRenderSnapshot> shadow_snapshot;
+    void RenderSnapshot(const SkeletonRenderSnapshot& pose, ref_geom& geometry, u32 vertices, u32 offset, u32 primitives);
+#endif
 
 	// render-mode specifics
 	union
@@ -98,6 +112,9 @@ protected:
 	virtual BOOL _PickBone(IKinematics::pick_result& r, float range, const Fvector& S, const Fvector& D, Fvisual* V,
 	                       u16 bone_id, u32 iBase, u32 iCount) =0;
 public:
+#if defined(USE_DX11) && RENDER == R_R4
+    std::shared_ptr<const SkeletonRenderSnapshot> SnapshotShadow(const Fmatrix& world);
+#endif
 	BOOL has_visible_bones();
 
 	//--DSR-- SilencerOverheat_start

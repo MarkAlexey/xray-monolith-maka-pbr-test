@@ -132,6 +132,15 @@ void CDSGraphManager::r_dsgraph_render_graph(RenderQueueArray& queues, u32 _prio
 		if (queue.empty())
 			continue;
 
+#if defined(USE_DX11) && RENDER == R_R4
+        // A static queue recorded early (sun middle/far) is drawn again from the same packets:
+        // sort it once per capture.
+        if (!static_geometry || static_sorted_revision[_priority][iPass] != static_queue_revision)
+#endif
+        {
+#if defined(USE_DX11) && RENDER == R_R4
+        PROF_EVENT_DYNAMIC(static_geometry ? "Render.Graph.OwnerSort.Static" : "Render.Graph.OwnerSort.Dynamic");
+#endif
 		// Exact pipelines retain their key ordering; immutable members order by shared IB range.
 #if defined(USE_DX11) && RENDER == R_R4
         const auto compare = [](const RenderPacket& a, const RenderPacket& b)
@@ -147,12 +156,16 @@ void CDSGraphManager::r_dsgraph_render_graph(RenderQueueArray& queues, u32 _prio
             std::sort(queue.begin(), queue.end(), compare);
 		else
             xr_parallel_sort(queue.begin(), queue.end(), compare);
+#if defined(USE_DX11) && RENDER == R_R4
+        if (static_geometry) static_sorted_revision[_priority][iPass] = static_queue_revision;
+#endif
+        }
 
 #if defined(USE_DX11) && RENDER == R_R4
-        if (static_geometry && _priority == 0 && RImplementation.phase == CRender::PHASE_SMAP && !RImplementation.o.Tshadows)
+        if (static_geometry && _priority == 0 && RCache.RenderPhase(RImplementation.phase) == CRender::PHASE_SMAP && !RImplementation.o.Tshadows)
         {
             PROF_EVENT("Render.Shadow.SelectStaticGroups");
-            static u32 serial = 0;
+            static thread_local u32 serial = 0;
             for (size_t first = 0; first < queue.size();)
             {
                 const auto* pass = queue[first].source_pass;
@@ -164,6 +177,7 @@ void CDSGraphManager::r_dsgraph_render_graph(RenderQueueArray& queues, u32 _prio
                     if (!++serial) ++serial;
                     for (size_t i = first; i < end; ++i)
                     {
+                        if (!ShadowPacketEnabled(queue[i])) continue;
                         if (type == MT_TREE_ST)
                         {
                             static_cast<FTreeVisual*>(queue[i].item.pVisual)->SelectShadowBatch(serial);
@@ -173,12 +187,14 @@ void CDSGraphManager::r_dsgraph_render_graph(RenderQueueArray& queues, u32 _prio
                         auto& mesh = *static_cast<Fvisual*>(queue[i].item.pVisual);
                         if (!mesh.shadow_batch || !mesh.ShadowBatchMemberValid()) continue;
                         auto& batch = *mesh.shadow_batch;
-                        if (batch.selection.begin(Device.dwFrame, serial))
-                            batch.binding_valid = batch.pass._get() == pass && batch.vertex_revision == pass->vs->shadow_shader_revision &&
+                        auto& selection = batch.selection[RenderContextId()];
+                        auto& binding_valid = batch.binding_valid[RenderContextId()];
+                        if (selection.begin(Device.dwFrame, serial))
+                            binding_valid = batch.pass._get() == pass && batch.vertex_revision == pass->vs->shadow_shader_revision &&
                                 batch.pixel_revision == pass->ps->shadow_shader_revision;
-                        if (batch.binding_valid)
+                        if (binding_valid)
                         {
-                            batch.selection.add(mesh.shadow_batch_member, u32(batch.members.size()));
+                            selection.add(mesh.shadow_batch_member, u32(batch.members.size()));
                             queue[i].shadow_ticket = serial;
                         }
                     }
@@ -227,10 +243,12 @@ void CDSGraphManager::r_dsgraph_render_graph(RenderQueueArray& queues, u32 _prio
         for (auto& packet : queue)
         {
             #if defined(USE_DX11) && RENDER == R_R4
+            if (_priority == 0 && !ShadowPacketEnabled(packet))
+                continue;
             const float packet_lod = calcLOD(packet.item.ssa, packet.item.pVisual->vis.sphere.R);
             auto* mesh = packet.item.pVisual->Type == MT_NORMAL ? static_cast<Fvisual*>(packet.item.pVisual) : nullptr;
             const auto* pass = packet.source_pass;
-            const bool eligible = static_geometry && RImplementation.phase == CRender::PHASE_NORMAL && _priority == 0 && mesh &&
+            const bool eligible = static_geometry && RCache.RenderPhase(RImplementation.phase) == CRender::PHASE_NORMAL && _priority == 0 && mesh &&
                 mesh->StaticBatchValid() && mesh->static_batch.get() == packet.static_batch &&
                 mesh->static_batch_first_index == packet.static_first_index && pass && Fvisual::StaticPassSafe(*pass) &&
                 pass->vs._get() == packet.pVS && pass->ps->ps == packet.pPS && pass->constants._get() == packet.pCS &&
@@ -305,7 +323,13 @@ void CDSGraphManager::r_dsgraph_render_graph(RenderQueueArray& queues, u32 _prio
 #else
                 RCache.set_xform_world(*item.pMatrix);
 #endif
+#if defined(USE_DX11) && RENDER == R_R4
+                RCache.recording_object = RenderContextId() ? &packet.shadow_object : nullptr;
+#endif
 				RImplementation.apply_object(item.pObject);
+#if defined(USE_DX11) && RENDER == R_R4
+                RCache.recording_object = nullptr;
+#endif
 				RImplementation.apply_lmaterial();
 			}
 
@@ -335,7 +359,13 @@ void CDSGraphManager::r_dsgraph_render_graph(RenderQueueArray& queues, u32 _prio
             if (static_geometry && mesh && !RCache.is_TessEnabled() &&
                 !memcmp(&RCache.xforms.m_w, &Fidentity, sizeof(Fmatrix)) && mesh->DrawShadowBatch(packet.shadow_ticket)) continue;
 #endif
+#if defined(USE_DX11) && RENDER == R_R4
+            RCache.skeleton_snapshot = packet.shadow_pose.get();
+#endif
             item.pVisual->Render(LOD);
+#if defined(USE_DX11) && RENDER == R_R4
+            RCache.skeleton_snapshot = nullptr;
+#endif
 		}
 
 #if defined(USE_DX11) && RENDER == R_R4
@@ -596,6 +626,9 @@ void CDSGraphManager::r_dsgraph_render_distort()
 void CDSGraphManager::r_dsgraph_capture_static()
 {
     PROF_EVENT("Render.Static.UnionFrustumCapture");
+#if defined(USE_DX11) && RENDER == R_R4
+    ++static_queue_revision;
+#endif
 	const bool dbg_enabled = PortalTraverseDbg_Enabled();
 	PortalTraverseDebugStats* dbg = dbg_enabled ? &PortalTraverseDbg_Get() : nullptr;
 	const bool opt_bucket = PortalTraverseDbg_IsOptions(i_options);

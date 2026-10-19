@@ -8,8 +8,8 @@
 #include "xrRender_console.h"
 #include "../xrServerEntities/smart_cast.h"
 
-static PortalTraverseDebugStats g_portal_traverse_dbg_stats;
-static u32 g_portal_traverse_dbg_last_frame = u32(-1);
+static thread_local PortalTraverseDebugStats g_portal_traverse_dbg_stats;
+static thread_local u32 g_portal_traverse_dbg_last_frame = u32(-1);
 
 bool PortalTraverseDbg_Enabled()
 {
@@ -81,7 +81,7 @@ void CDSGraphManager::set_Object(IRenderable* O)
 		VERIFY(smart_cast<CObject*>(O) || smart_cast<CPS_Instance*>(O));
 		if (O->renderable.pROS) { VERIFY(smart_cast<CROS_impl*>(O->renderable.pROS)); }
 	}
-	if (CRender::PHASE_NORMAL == RImplementation.phase)
+	if (CRender::PHASE_NORMAL == RCache.RenderPhase(RImplementation.phase))
 	{
 		if (RImplementation.L_Shadows)
 			RImplementation.L_Shadows->set_object(O, *this);

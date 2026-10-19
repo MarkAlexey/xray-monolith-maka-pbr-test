@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../xrCore/fixedmap.h"
+#include "RenderContext.h"
 
 //#ifndef USE_MEMORY_MONITOR
 //#	define USE_DOUG_LEA_ALLOCATOR_FOR_RENDER
@@ -63,6 +64,7 @@ using render_allocator = xr_allocator;
 
 class dxRender_Visual;
 struct SPass;
+struct SkeletonRenderSnapshot;
 
 // #define	USE_RESOURCE_DEBUGGER
 
@@ -143,6 +145,11 @@ namespace R_dsgraph
         void* static_batch = nullptr;
         u32 static_first_index = 0;
         u32 shadow_ticket = 0;
+        bool local_shadow_eligible = false;
+        bool local_shadow_hidden = false, parallel_shadow = false;
+        u32 local_shadow_index = u32(-1);
+        std::shared_ptr<const SkeletonRenderSnapshot> shadow_pose;
+        RenderObjectSnapshot shadow_object;
 #endif
 		// Sorting key
         RenderPacketSortKey sortKey;

@@ -144,6 +144,18 @@ private:
 	bool m_move_window;
 };
 
+
 extern ECORE_API CHW HW;
+#include "RenderContext.h"
+IC auto RenderDeviceContext()
+{
+#if defined(USE_DX11) && RENDER == R_R4
+    return ActiveDeviceContext();
+#elif defined(USE_DX10) || defined(USE_DX11)
+    return HW.pContext;
+#else
+    return HW.pDevice;
+#endif
+}
 
 #endif // !defined(AFX_HW_H__0E25CF4A_FFEC_11D3_B4E3_4854E82A090D__INCLUDED_)

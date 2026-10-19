@@ -17,6 +17,8 @@ public:
 	void Flush();
     static void ResetStats();
     static void ProfileStats();
+    dx10ConstantBuffer(const dx10ConstantBuffer& source, bool private_copy);
+    void CopyDefaults(const dx10ConstantBuffer& source);
 
 	u32 GetSize() const { return m_uiBufferSize; }
 	const void* GetData() const { return m_pBufferData; }
@@ -35,6 +37,7 @@ public:
 	void set_bytes(R_constant_load& L, const void* data, u32 bytes);
 
 	void* AccessDirect(R_constant_load& L, u32 DataSize);
+    void RequireUpload() { m_bChanged = true; }
 #ifdef USE_DX11
     bool WriteFloat4Array(R_constant* C, R_constant_load& L, const Fvector4* data, u32 count);
 #endif
@@ -43,7 +46,8 @@ private:
 	void Write(u32 offset, const void* value, u32 size);
     void WriteMatrix(R_constant* C, R_constant_load& L, u32 element, const Fmatrix& value);
     struct Stats { u32 typed = 0, skipped = 0, direct = 0, uploads = 0, bytes = 0; };
-    static Stats s_stats;
+    static thread_local Stats s_stats;
+    bool m_private_copy = false;
 
 private:
 	shared_str m_strBufferName;

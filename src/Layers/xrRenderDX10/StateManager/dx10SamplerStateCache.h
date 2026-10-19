@@ -41,6 +41,7 @@ public:
     void EndExternalState();
     void ResetStats();
     void ProfileStats() const;
+    void Synchronize(const dx10SamplerStateCache& source);
 
     //  Private declarations
 private:
@@ -73,6 +74,8 @@ private:
     struct Stats { u32 requests = 0, skipped = 0, calls = 0, slots = 0; } m_stats;
     //  This must be cleared on device destroy
     xr_vector<StateRecord> m_StateArray;
+    u64 m_generation = 0, m_source_generation = u64(-1);
+    mutable xrCriticalSection m_lock;
 
     SHandle m_aPSSamplers[D3D_COMMONSHADER_SAMPLER_SLOT_COUNT];
     SHandle m_aVSSamplers[D3D_COMMONSHADER_SAMPLER_SLOT_COUNT];
@@ -88,5 +91,8 @@ private:
 };
 
 extern dx10SamplerStateCache SSManager;
+#if defined(USE_DX11) && RENDER == R_R4
+#define SSManager ActiveSamplerManager()
+#endif
 
 #endif  //  dx10SamplerStateCache_included

@@ -23,6 +23,113 @@
 shared_str s_bones_array_const;
 shared_str s_bones_array_prev_const;
 
+#if defined(USE_DX11) && RENDER == R_R4
+std::shared_ptr<const SkeletonRenderSnapshot> CSkeletonX::SnapshotShadow(const Fmatrix& world)
+{
+    xrCriticalSectionGuard guard(&Parent->UCalc_Mutex);
+    if (RImplementation.o.ssfx_motionvectors && Device.dwFrame > Parent->CurrentFrame)
+    {
+        Parent->CurrentFrame = Device.dwFrame;
+        Parent->Matrix_Prev = Parent->Matrix_Temp;
+        Parent->Matrix_Temp = world;
+        for (u16 b = 0; b < Parent->LL_BoneCount(); ++b)
+        {
+            auto& bone = Parent->LL_GetBoneInstance(b);
+            bone.mRenderTransform_prev = bone.mRenderTransform_temp;
+            bone.mRenderTransform_temp = bone.mRenderTransform;
+        }
+    }
+    Fmatrix single = Fidentity, previous = Fidentity;
+    if (RImplementation.o.ssfx_motionvectors) previous = Parent->Matrix_Prev;
+    if (RenderMode == RM_SINGLE)
+    {
+        single = Parent->LL_GetTransform_R(u16(RMS_boneid));
+        if (RImplementation.o.ssfx_motionvectors)
+            previous.mul_43(Parent->Matrix_Prev, Parent->LL_GetBoneInstance(u16(RMS_boneid)).mRenderTransform_prev);
+    }
+    const u32 count = RenderMode == RM_SINGLE ? 0 : RenderMode == RM_SKINNING_SOFT ? Parent->LL_BoneCount() : RMS_bonecount;
+    const Fvector4* rows = count ? Parent->RenderPalette(count, false) : nullptr;
+    if (count && !rows) return nullptr;
+    if (shadow_snapshot && shadow_snapshot->frame == Device.dwFrame && shadow_snapshot->mode == RenderMode &&
+        !memcmp(&shadow_snapshot->single, &single, sizeof(single)) &&
+        !memcmp(&shadow_snapshot->previous_world, &previous, sizeof(previous)) &&
+        shadow_snapshot->rows.size() == count * 3 &&
+        (!count || !memcmp(shadow_snapshot->rows.data(), rows, count * 3 * sizeof(Fvector4))))
+        return shadow_snapshot;
+    auto result = std::make_shared<SkeletonRenderSnapshot>();
+    result->frame = Device.dwFrame; result->mode = RenderMode;
+    result->single = single; result->previous_world = previous;
+    if (count) result->rows.assign(rows, rows + count * 3);
+    if (RenderMode == RM_SKINNING_SOFT)
+    {
+        result->soft_transforms.reserve(count);
+        for (u32 i = 0; i < count; ++i) result->soft_transforms.push_back(Parent->LL_GetTransform_R(u16(i)));
+    }
+    shadow_snapshot = result;
+    return result;
+}
+
+void CSkeletonX::RenderSnapshot(const SkeletonRenderSnapshot& pose, ref_geom& geometry,
+    u32 vertices, u32 offset, u32 primitives)
+{
+    PROF_EVENT("Render.Skinning.FrozenShadow");
+    if (RImplementation.o.ssfx_motionvectors)
+    {
+        Fmatrix view, projection;
+        view.mul_43(RCache.xforms.m_v_prev, pose.previous_world);
+        projection.mul(RCache.xforms.m_p_prev, view);
+        RCache.set_c("m_wvp_prev", projection);
+    }
+    RCache.stat.r.s_dynamic.add(vertices);
+    if (pose.mode == RM_SINGLE)
+    {
+        Fmatrix world;
+        world.mul_43(RCache.xforms.m_w, pose.single);
+        RCache.set_xform_world(world);
+        RCache.set_Geometry(geometry);
+        RCache.Render(D3DPT_TRIANGLELIST, 0, 0, vertices, offset, primitives);
+        RCache.stat.r.s_dynamic_inst.add(vertices);
+        return;
+    }
+    if (pose.mode == RM_SKINNING_SOFT)
+    {
+        auto& stream = RCache.Vertex;
+        auto& cache = context_soft_cache[RenderContextId()];
+        if (cache.generation != RenderContextGeneration())
+        {
+            cache = {}; cache.generation = RenderContextGeneration();
+        }
+        if (cache.discard != stream.DiscardID() || cache.count != vertices || cache.pose != &pose)
+        {
+            auto* destination = static_cast<vertRender*>(stream.Lock(vertices, geometry->vb_stride, cache.offset));
+            xr_vector<CBoneInstance> bones(pose.soft_transforms.size());
+            for (size_t i = 0; i < bones.size(); ++i) bones[i].mRenderTransform = pose.soft_transforms[i];
+            if (*Vertices1W) PSGP.skin1W(destination, *Vertices1W, vertices, bones.data());
+            else if (*Vertices2W) PSGP.skin2W(destination, *Vertices2W, vertices, bones.data());
+            else if (*Vertices3W) PSGP.skin3W(destination, *Vertices3W, vertices, bones.data());
+            else if (*Vertices4W) PSGP.skin4W(destination, *Vertices4W, vertices, bones.data());
+            else R_ASSERT2(false, "Unsupported software skinning format");
+            stream.Unlock(vertices, geometry->vb_stride);
+            cache.discard = stream.DiscardID(); cache.count = vertices; cache.pose = &pose;
+        }
+        RCache.set_Geometry(geometry);
+        RCache.set_Vertices(stream.Buffer(), geometry->vb_stride);
+        RCache.Render(D3DPT_TRIANGLELIST, cache.offset, 0, vertices, offset, primitives);
+        RCache.stat.r.s_dynamic_sw.add(vertices);
+        return;
+    }
+    auto* array = RCache.get_c(s_bones_array_const);
+    if (!RCache.set_vertex_array_block(array, pose.rows.data(), u32(pose.rows.size())))
+        for (u32 row = 0; row < pose.rows.size(); ++row) RCache.set_ca(array, row, pose.rows[row]);
+    RCache.set_Geometry(geometry);
+    RCache.Render(D3DPT_TRIANGLELIST, 0, 0, vertices, offset, primitives);
+    if (pose.mode == RM_SKINNING_1B) RCache.stat.r.s_dynamic_1B.add(vertices);
+    else if (pose.mode == RM_SKINNING_2B) RCache.stat.r.s_dynamic_2B.add(vertices);
+    else if (pose.mode == RM_SKINNING_3B) RCache.stat.r.s_dynamic_3B.add(vertices);
+    else if (pose.mode == RM_SKINNING_4B) RCache.stat.r.s_dynamic_4B.add(vertices);
+}
+#endif
+
 //////////////////////////////////////////////////////////////////////
 // Body Part
 //////////////////////////////////////////////////////////////////////
@@ -34,6 +141,9 @@ void CSkeletonX::AfterLoad(CKinematics* parent, u16 child_idx)
 
 void CSkeletonX::_Copy(CSkeletonX* B)
 {
+#if defined(USE_DX11) && RENDER == R_R4
+    shadow_snapshot.reset();
+#endif
 	Parent = NULL;
 	ChildIDX = B->ChildIDX;
 	Vertices1W = B->Vertices1W;
@@ -58,6 +168,13 @@ void CSkeletonX::_Copy(CSkeletonX* B)
 //////////////////////////////////////////////////////////////////////
 void CSkeletonX::_Render(ref_geom& hGeom, u32 vCount, u32 iOffset, u32 pCount)
 {
+#if defined(USE_DX11) && RENDER == R_R4
+    if (RenderContextId() && RCache.skeleton_snapshot)
+    {
+        RenderSnapshot(*RCache.skeleton_snapshot, hGeom, vCount, iOffset, pCount);
+        return;
+    }
+#endif
 	xrCriticalSectionGuard guard(&Parent->UCalc_Mutex);
 	PROF_EVENT("CSkeletonX::_Render");
 	Fmatrix p_WV, p_WVP;
@@ -130,14 +247,14 @@ void CSkeletonX::_Render(ref_geom& hGeom, u32 vCount, u32 iOffset, u32 pCount)
 			PROF_EVENT("RM_SKINNING");
 			// Transfer matrices ( current and previous )
 			R_constant* array = RCache.get_c(s_bones_array_const);
-			R_constant* array_prev = RImplementation.phase == RImplementation.PHASE_NORMAL ? RCache.get_c(s_bones_array_prev_const) : array;
+			R_constant* array_prev = RCache.RenderPhase(RImplementation.phase) == RImplementation.PHASE_NORMAL ? RCache.get_c(s_bones_array_prev_const) : array;
 
 			{
 				PROF_EVENT("SEND_MATRICES");
 				u32 count = RMS_bonecount;
 #if defined(USE_DX11) && RENDER == R_R4
                 const Fvector4* current_rows = Parent->RenderPalette(count, false);
-                const bool previous_needed = RImplementation.phase == RImplementation.PHASE_NORMAL && RImplementation.o.ssfx_motionvectors;
+                const bool previous_needed = RCache.RenderPhase(RImplementation.phase) == RImplementation.PHASE_NORMAL && RImplementation.o.ssfx_motionvectors;
                 const Fvector4* previous_rows = previous_needed ? Parent->RenderPalette(count, true) : nullptr;
                 if (current_rows && (!previous_needed || previous_rows))
                 {
@@ -163,7 +280,7 @@ void CSkeletonX::_Render(ref_geom& hGeom, u32 vCount, u32 iOffset, u32 pCount)
 					RCache.set_ca(&*array, id + 2, M._13, M._23, M._33, M._43);
 
 #ifdef USE_DX11
-					if (RImplementation.phase == RImplementation.PHASE_NORMAL)
+					if (RCache.RenderPhase(RImplementation.phase) == RImplementation.PHASE_NORMAL)
 					{
 						if (RImplementation.o.ssfx_motionvectors)
 						{
@@ -200,14 +317,32 @@ void CSkeletonX::_Render_soft(ref_geom& hGeom, u32 vCount, u32 iOffset, u32 pCou
 	u32 vOffset = cache_vOffset;
 
 	_VertexStream& _VS = RCache.Vertex;
-	if (cache_DiscardID != _VS.DiscardID() || vCount != cache_vCount)
+    u32* discard = &cache_DiscardID;
+    u32* count = &cache_vCount;
+    u32* offset = &cache_vOffset;
+#if defined(USE_DX11) && RENDER == R_R4
+    if (RenderContextId())
+    {
+        auto& cache = context_soft_cache[RenderContextId()];
+        if (cache.generation != RenderContextGeneration())
+        {
+            cache = {};
+            cache.generation = RenderContextGeneration();
+        }
+        discard = &cache.discard;
+        count = &cache.count;
+        offset = &cache.offset;
+        vOffset = *offset;
+    }
+#endif
+	if (*discard != _VS.DiscardID() || vCount != *count)
 	{
 		vertRender* Dest = (vertRender*)_VS.Lock(vCount, hGeom->vb_stride, vOffset);
-		cache_DiscardID = _VS.DiscardID();
-		cache_vCount = vCount;
-		cache_vOffset = vOffset;
+        *discard = _VS.DiscardID();
+        *count = vCount;
+        *offset = vOffset;
 
-		RDEVICE.Statistic->RenderDUMP_SKIN.Begin();
+        if (!RenderContextId()) RDEVICE.Statistic->RenderDUMP_SKIN.Begin();
 		if (*Vertices1W)
 		{
 			PSGP.skin1W(
@@ -247,11 +382,14 @@ void CSkeletonX::_Render_soft(ref_geom& hGeom, u32 vCount, u32 iOffset, u32 pCou
 		else
 			R_ASSERT2(0, "unsupported soft rendering");
 
-		RDEVICE.Statistic->RenderDUMP_SKIN.End();
+        if (!RenderContextId()) RDEVICE.Statistic->RenderDUMP_SKIN.End();
 		_VS.Unlock(vCount, hGeom->vb_stride);
 	}
 
 	RCache.set_Geometry(hGeom);
+#if defined(USE_DX11) && RENDER == R_R4
+    if (RenderContextId()) RCache.set_Vertices(_VS.Buffer(), hGeom->vb_stride);
+#endif
 	RCache.Render(D3DPT_TRIANGLELIST, vOffset, 0, vCount, iOffset, pCount);
 }
 

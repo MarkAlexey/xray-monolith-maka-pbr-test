@@ -7,7 +7,11 @@
 #include "../xrRenderDX10/dx10BufferUtils.h"
 #endif	//	USE_DX11
 
+#undef RCache
 CBackend RCache;
+#if defined(USE_DX11) && RENDER == R_R4
+#define RCache ActiveRenderBackend()
+#endif
 
 // Create Quad-IB
 #if defined(USE_DX10) || defined(USE_DX11)

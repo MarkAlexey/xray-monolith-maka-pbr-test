@@ -27,7 +27,7 @@ static int facetable[6][4] = {
 };
 
 //////////////////////////////////////////////////////////////////////////
-void CRender::render_rain()
+bool CRender::prepare_rain_view()
 {
 	//return;
 	float fRainFactor = 0;
@@ -36,7 +36,7 @@ void CRender::render_rain()
 	else
 		fRainFactor = g_pGamePersistent->Environment().wetness_factor;
 
-	if (fRainFactor < EPS_L) return;
+	if (fRainFactor < EPS_L) return false;
 
 	PIX_EVENT(render_rain);
 
@@ -206,10 +206,23 @@ void CRender::render_rain()
 		FPU::m24r();
 	}
 
+    RainLight.X.D.combine = rainwet_cull_xform;
+    return true;
+}
+
+void CRender::render_rain()
+{
+    const bool prepared = rain_shadows && rain_shadows->Prepared();
+    if (!prepared && !prepare_rain_view()) return;
+    light& RainLight = *Lights.rain_light;
 	// Begin SMAP-render
 	phase = PHASE_SMAP;
-	GMRainWet.traverse(pOutdoorSector, rainwet_cull_frustum, rainwet_cull_COP, rainwet_cull_xform);
-	GMRainWet.r_dsgraph_capture_static();
+    if (!prepared)
+    {
+        GMRainWet.traverse(pOutdoorSector, rainwet_cull_frustum, rainwet_cull_COP, rainwet_cull_xform);
+        GMRainWet.r_dsgraph_capture_static();
+    }
+    const bool recorded = prepared && rain_shadows->Bind();
 
 	// Finalize & Cleanup
 	RainLight.X.D.combine = rainwet_cull_xform;
@@ -221,11 +234,12 @@ void CRender::render_rain()
 		bool bForward_Shadows = GMRainWet.RGraph.mapStaticPasses[1][0].size() || GMRainWet.RGraph.mapDynamicPasses[1][0].size() || GMRainWet.RGraph.mapStaticSorted.Sorted.size() || GMRainWet.RGraph.mapDynamicSorted.Sorted.size();
 		if(bDeffered_Shadows || bForward_Shadows)
 		{
-			Target->phase_smap_direct(&RainLight, SE_SUN_RAIN_SMAP);
+			if (!recorded) Target->phase_smap_direct(&RainLight, SE_SUN_RAIN_SMAP);
 			RCache.set_xform_world(Fidentity);
 			RCache.set_xform_view(Fidentity);
 			RCache.set_xform_project(RainLight.X.D.combine);
 			GMRainWet.r_dsgraph_render_graph(0);
+            GMRainWet.shadow_execution = 0;
 		}
 	}
 

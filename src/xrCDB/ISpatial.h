@@ -275,6 +275,7 @@ public:
 	void							q_sphere		(xr_vector<ISpatialShared>& R, u32 _o, u32 _mask_or, const Fvector& _center, const float _radius);
 	void							q_frustum		(xr_vector<ISpatialShared>& R, u32 _o, u32 _mask_or, const CFrustum& _frustum);
     u64 q_frustums(xr_vector<ISpatialShared> (&results)[3], u32 mask, const CFrustum* const (&views)[3]);
+    u64 q_frustum_snapshot(xr_vector<ISpatialShared>& result, u32 mask, const CFrustum& view);
 };
 
 XRCDB_API extern ISpatial_DB* g_SpatialSpace;

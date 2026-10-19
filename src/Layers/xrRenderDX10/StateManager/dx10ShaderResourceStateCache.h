@@ -61,5 +61,8 @@ private:
 };
 
 extern dx10ShaderResourceStateCache SRVSManager;
+#if defined(USE_DX11) && RENDER == R_R4
+#define SRVSManager ActiveResourceManager()
+#endif
 
 #endif	//	dx10ShaderResourceStateCache_included
