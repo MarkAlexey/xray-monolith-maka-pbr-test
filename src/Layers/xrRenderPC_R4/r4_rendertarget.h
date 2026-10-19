@@ -1,6 +1,8 @@
 #pragma once
 
 #include "../xrRender/ColorMapManager.h"
+#include "../xrRender/FullscreenQuad.h"
+#include "../xrRender/RenderDimensions.h"
 #include "../xrRender/light_db.h"
 class light;
 struct RecordedLight;
@@ -11,8 +13,6 @@ struct RecordedLight;
 //#define DU_CONE_NUMFACES	32
 //	no less than 2
 #define	VOLUMETRIC_SLICES	100
-
-#include "../xrRender/ScreenQuad.h"
 
 class CRenderTarget : public IRender_Target
 {
@@ -378,6 +378,7 @@ private:
 	// Combine
 	ref_geom g_KD;
 	ref_geom g_combine;
+	CFullscreenQuad m_fullscreen_quad; // static full-screen quad (FullscreenQuad.h)
 	ref_geom g_combine_VP; // xy=p,zw=tc
 	ref_geom g_combine_2UV;
 	ref_geom g_combine_cuboid;
@@ -429,6 +430,8 @@ private:
 	bool m_bHasActiveVolumetric_spot;
 public:
 	CRenderTarget();
+	// Draws the full-screen post-process quad (FullscreenQuad.h) with the element already set
+	void draw_fullscreen_quad(u32 color) { m_fullscreen_quad.Draw(color, g_combine, RenderScreenWidth(), RenderScreenHeight()); }
 	~CRenderTarget();
 	void accum_point_geom_create();
 	void accum_point_geom_destroy();
@@ -610,15 +613,4 @@ public:
 	{
 	}
 #endif
-
-public:
-	// Screen quads (../xrRender/ScreenQuad.h): repeated screen quads from static vertex buffers
-	// (DX11), the rest through the dynamic buffer as before
-	CScreenQuads m_screen_quads;
-	IC void quad_fill(float x0, float y0, float x1, float y1, float u0, float v0, float u1, float v1, float z,
-	                  float w, u32 color, u32& Offset)
-	{
-		m_screen_quads.fill(g_combine, x0, y0, x1, y1, u0, v0, u1, v1, z, w, color, Offset);
-	}
-	IC ref_geom& quad_geom() { return m_screen_quads.geom(); }
 };

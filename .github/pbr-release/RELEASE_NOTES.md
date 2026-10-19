@@ -138,7 +138,6 @@ Grass (TheLostInPlace's rework): `r__detail_shadow_cull`, `r__detail_rows`, `r__
 `r__detail_thin` with `r__detail_thin_start` / `_keep` / `_band` (off). The instanced grass path
 needs grass shaders with the `DT_INST` paths: the GAMMA shader installer has them; with your own SSS/ES,
 run the overlay tool or the compat generator (both add them).
-`r__static_screen_quad` (on): repeated screen quads from static vertex buffers.
 
 Multithreaded shadows (qkff99, all on): `r4_mt_sun_shadows`, `r4_mt_local_shadows`, `r4_mt_rain_shadows`,
 `r4_smapvis` (occlusion culling of local-light shadow casters). If shadows break or the game

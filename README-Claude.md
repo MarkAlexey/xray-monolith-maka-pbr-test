@@ -955,12 +955,30 @@ Checked: the GAMMA zips were built locally with the CI script; every grass varia
 DXC errors) and binds `dt_rows` (+ `dt_ex` for SSS, + `dt_verts` / `dt_idx` for merge / occ); ES's
 patched grass compiles and binds the same minus `dt_ex`.
 
-`r__static_screen_quad` (default 1): the idea of IX-Ray `1eea3317` (LVutner) applied to this engine.
-65 screen passes (SSS AO/IL/SSR blur, bloom, rain, DOF, NVG, SMAA, LUT, gasmask, post-process) used to
-rebuild the same 4-vertex quad in the dynamic vertex buffer on every draw; a quad requested again on a
-later frame now comes from a small immutable buffer (at most 48 per render target, DX11 only), with the
-exact same vertices. `0` restores the old path. IX-Ray `c3f4bb38` (wallmark creation) was already in
-upstream Monolith.
+Full-screen quad (IX-Ray `1eea3317`, LVutner): `xrRender/FullscreenQuad.h` keeps the full-screen
+post-process quad in an immutable vertex buffer, and the passes draw it with
+`draw_fullscreen_quad(C)` instead of writing the same four vertices into the dynamic buffer on every
+draw. It replaces the earlier generic quad cache (`r__static_screen_quad`, `ScreenQuad.h`), which was
+more machinery than the gain was worth.
+- The quad is exactly what the passes wrote: (0,h) (0,0) (w,h) (w,0) at full size, z = `EPS_S`,
+  w = 1, UV 0..1, `FVF::F_TL` + `QuadIB`. One buffer per vertex colour (black, white, transparent
+  black) and screen size the passes draw at, at most 8.
+- 42 of the 76 4-vertex passes were converted by a script that only touched sites whose effective
+  values on the DX10/11 branch are exactly that quad: SSS SSR (two of five), SSS, SSS ext, AO
+  (four of five), fog scattering, motion blur, TAA, volumetric blur, water waves, bloom, rain, DOF,
+  LUT, NVG / fake scope / heatvision, gasmask, SMAA, pp bloom. The blur chain (half/quarter/eighth
+  size), the `1/ScaleFactor` SSR/AO/IL passes, the half-UV water blur, the light accumulation and
+  stencil quads (EPS offsets, clip-space corners) keep their own dynamic quads. Unused locals of the
+  converted passes (`Offset`, `d_Z`, `p0/p1`, ...) were removed with them.
+- DX9 (R2) uses half-texel UVs that depend on the size: there `draw_fullscreen_quad` still writes
+  the dynamic buffer every draw, with the same vertices as before.
+- DLSS / FSR 3 branch: the passes size their quad with `RenderScreenWidth()` / `RenderScreenHeight()`
+  (the render resolution inside the upscaled scene, the display size after it), so the R4 target
+  hands that size to the helper; render and display size each get their own buffers. Only sites
+  sized with `RenderScreen*()` were converted there (the same 42).
+- `reset_light_marker` keeps its dynamic quad and binds the recording context's own stream on a
+  qkff99 worker (`RenderContextId()`), as before.
+IX-Ray `c3f4bb38` (wallmark creation) was already in upstream Monolith.
 
 Checked: the 18 new grass shaders compile with DXC on vanilla + this repository and on the GAMMA stack;
 `check_cpp.py` reports only the known clang noise (`xr_vector` / `xr_resource` templates) for the
@@ -1010,7 +1028,7 @@ Adapted while porting:
 | `sheduler_budget_max` | 5 | ceiling of the per-frame scheduler budget in ms (IX-Ray value). 66 = the old Monolith ceiling |
 
 Not taken from qk's branch: R1/R2 3DSS, the Lua GC / frame pacing rework, startup speedups, their
-fullscreen quad (ours is `r__static_screen_quad`), their grass constant changes, view preparation,
+fullscreen quad (ours is `FullscreenQuad.h`), their grass constant changes, view preparation,
 the DLSS-related diagnostics, and `1db923f1` (it reverts demonized's `R*R` SSA formula, which moves
 LOD and discard distances game-wide, and changes far terrain / LQ static materials).
 
