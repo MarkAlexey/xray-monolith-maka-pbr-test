@@ -116,7 +116,6 @@ public:
     xr_unordered_flat_map<const SPass*, ref_pass> packet_pass_owners;
     Fmatrix prepared_view, prepared_projection;
     u32 prepared_frame = u32(-1);
-    bool local_shadow_recorded = false;
     // 0: all, 1: recording contexts, 2: owner fallback. The static subset
     // separates immutable occluders from animated/alpha geometry for smapvis.
     u32 shadow_execution = 0, shadow_static_subset = 0;
@@ -188,7 +187,6 @@ public:
         prepared_worlds.clear();
         packet_pass_owners.clear();
         prepared_frame = u32(-1);
-        local_shadow_recorded = false;
         shadow_execution = shadow_static_subset = 0;
         ++static_queue_revision;
 #endif

@@ -43,7 +43,6 @@ public:
     bool DrawShadowGeometry();
     bool ShadowGeometryValid(bool bound = true) const;
 #endif
-    const Fmatrix& PreparationTransform() const { return xform; }
     void PublishPreparedView(const Fmatrix& view, const Fmatrix& world, const Fmatrix& combined)
     {
         prepared_view = view;

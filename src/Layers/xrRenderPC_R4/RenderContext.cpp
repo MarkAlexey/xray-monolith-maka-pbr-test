@@ -197,7 +197,6 @@ void RenderContext::Begin(u32 phase)
     state->context->ClearState();
     state->backend.ResetBindings();
     state->backend.recording_phase = phase;
-    state->backend.recording_grass = false;
     state->backend.Vertex.Flush();
     state->backend.Index.Flush();
     // Every list must own a DISCARD upload of each dynamic CB it uses. A

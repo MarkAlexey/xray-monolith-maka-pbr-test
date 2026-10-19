@@ -62,7 +62,6 @@ from PIL import Image
 # Settings
 # ------------------------------------------------------------------------------------------
 
-ROUGHNESS_FROM_GLOSS = "linear"   # "linear": 1 - gloss
 ROUGHNESS_GAMMA = 1.0             # roughness = roughness ** gamma (1 = unchanged)
 ROUGHNESS_MIN = 0.02              # the shader clamps to this anyway
 FLIP_GREEN = False                # flip normal Y (DirectX -> OpenGL) while packing

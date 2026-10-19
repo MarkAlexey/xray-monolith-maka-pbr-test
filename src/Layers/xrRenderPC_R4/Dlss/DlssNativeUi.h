@@ -13,11 +13,6 @@ inline bool IsWearableScreenGlass(std::string_view name)
         name == "wd\\vektor\\vektor_screen_glass";
 }
 
-inline bool IsNativeHudUiTexture(std::string_view name)
-{
-    return name == "$user$ui" || IsWearableScreenGlass(name);
-}
-
 // The queues retain the original draw packets (including skinning and object
 // transforms) until the display-resolution pass in the SAME rendered view.
 template<class Queue, class Predicate>
