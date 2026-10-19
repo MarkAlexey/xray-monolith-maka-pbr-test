@@ -199,6 +199,141 @@ def write_merged(layers, dest):
     return history
 
 
+def _norm(data):
+    return data.replace(b"\r\n", b"\n")
+
+
+def _adapt_nv_depth(text):
+    """DLSS patch's night_vision.h change, applied to another NVG header: the NVG depth blur
+    loads s_position (scene-sized with DLSS / FSR3) with the display size (screen_res). Every
+    s_position.Load(...) gets the scene size instead: dlss_params.yz while an upscaler runs,
+    screen_res.xy otherwise. Returns None when nothing matched."""
+    if b"dlss_params" in text or b"depth_size" in text:
+        return text                                  # already adapted
+    out, i, n = bytearray(), 0, 0
+    key = b"s_position.Load("
+    while True:
+        j = text.find(key, i)
+        if j < 0:
+            out += text[i:]
+            break
+        k, depth = j + len(key), 1
+        while k < len(text) and depth:
+            depth += {40: 1, 41: -1}.get(text[k], 0)      # ( and )
+            k += 1
+        call = text[j:k]
+        new = call.replace(b"screen_res.xy", b"(dlss_params.x > 0.5f ? dlss_params.yz : screen_res.xy)")
+        n += new != call
+        out += text[i:j] + new
+        i = k
+    if not n:
+        return None
+    return b'#include "dlss_contract.h" // DLSS / FSR3: scene-sized depth (build_shader_packs.py)\n' + bytes(out)
+
+
+# Known top-layer changes that a line merge cannot carry onto a rewritten stack file. Used when
+# git merge-file conflicts; each adapter re-applies the change's intent to the stack's winner.
+TOP_LAYER_ADAPTERS = {
+    "night_vision.h": _adapt_nv_depth,
+}
+
+
+def resolve_top_layers(lower, tops, dest, dry=False):
+    """Fold the --top-layer folders onto the stack without discarding what the stack changed.
+
+    A top layer (e.g. the DLSS compatibility patch) ships whole files made from ONE version of
+    them, usually the plain mod (SSS, stock Beef's NVGs). When the stack's winning file is that
+    same version, the top file simply replaces it. When the stack's winner is a different
+    rewrite (GAMMA's own NVG override, a newer Atmospherics), replacing it would throw that
+    rewrite away and break the shaders that need it (GAMMA's nightvision_gen_*.ps use the
+    NVGParams of GAMMA's night_vision.h; the patch's stock-Beef night_vision.h has none). Then
+    the top file's own changes are merged onto the stack's winner instead (git merge-file):
+      base   = the version among the stack's layers closest to the top file (what it was made from)
+      ours   = the stack's winner
+      theirs = the top file
+    A conflict stops the build (exit 1) and names the file; no guessed merge is shipped.
+
+    Writes <dest>/gamedata/shaders/r3 (every top-layer file, resolved) and returns
+    (labels, merged): {file: 'replaced'|'merged onto <layer>'} and the list of merged files.
+    Caveats: only text the top layer itself changed is carried over; files present only in a top
+    layer are copied as they are; the 'closest version' is picked by line diff size."""
+    import difflib
+    versions = {}                                      # key -> [(label, bytes)] lowest first
+    for label, path in lower:
+        for files in r3_files(path).values():
+            for key, (rel, reader) in files.items():
+                versions.setdefault(key, []).append((label, reader))
+    # A later top layer's file replaces an earlier one's (e.g. the Atmospherics component over
+    # the base): only the last one is resolved, always against the stack below the top layers
+    latest = {}
+    for tpath in tops:
+        for files in r3_files(tpath).values():
+            for key, (rel, reader) in files.items():
+                latest[key] = (tpath, rel, reader)
+    resolved, labels, merged, conflicts = {}, {}, [], []
+    for key, (tpath, rel, reader) in sorted(latest.items()):
+        if True:
+            if True:
+                top = _norm(reader())
+                cands = versions.get(key, [])
+                if not cands:
+                    resolved[key] = (rel, top); labels[key] = "new"; continue
+                winner_label, winner_reader = cands[-1]
+                winner = _norm(winner_reader())
+                def dist(b):
+                    sm = difflib.SequenceMatcher(None, b.split(b"\n"), top.split(b"\n"), autojunk=False)
+                    return sum(max(i2 - i1, j2 - j1) for op, i1, i2, j1, j2 in sm.get_opcodes() if op != "equal")
+                base_label, base = min(((l, _norm(r())) for l, r in cands), key=lambda lb: dist(lb[1]))
+                if base == winner:
+                    resolved[key] = (rel, top); labels[key] = "replaced"; continue
+                with tempfile.TemporaryDirectory() as td:
+                    names = []
+                    for n, data in (("ours", winner), ("base", base), ("theirs", top)):
+                        fn = os.path.join(td, n); names.append(fn)
+                        with open(fn, "wb") as f:
+                            f.write(data)
+                    r = subprocess.run(["git", "merge-file", "-p", "-L", winner_label, "-L", base_label, "-L",
+                                        os.path.basename(os.path.normpath(tpath))] + names, capture_output=True)
+                if r.returncode != 0:
+                    adapter = TOP_LAYER_ADAPTERS.get(os.path.basename(key))
+                    adapted = adapter(winner) if adapter else None
+                    if adapted is None:
+                        conflicts.append(f"{rel} (stack: {winner_label}, made from: {base_label})")
+                        continue
+                    resolved[key] = (rel, adapted); labels[key] = f"adapted onto {winner_label} (line merge conflicted)"
+                    if key not in merged:
+                        merged.append(key)
+                    continue
+                resolved[key] = (rel, r.stdout); labels[key] = f"merged onto {winner_label} (made from {base_label})"
+                if key not in merged:
+                    merged.append(key)
+    if conflicts:
+        sys.exit("error: a top layer conflicts with the stack's own changes:\n  " + "\n  ".join(conflicts))
+    if not dry:
+        r3 = os.path.join(dest, "gamedata", "shaders", "r3")
+        for key, (rel, data) in resolved.items():
+            out = os.path.join(r3, rel)
+            os.makedirs(os.path.dirname(out), exist_ok=True)
+            with open(out, "wb") as f:
+                f.write(data)
+    return labels, merged
+
+
+def includers(r3_dir, headers):
+    """Shader programs (.ps/.vs/.cs/.gs) in r3_dir that #include one of the given headers"""
+    want = {h.lower() for h in headers}
+    found = []
+    for dp, _, fs in os.walk(r3_dir):
+        for f in fs:
+            if not f.lower().endswith((".ps", ".vs", ".cs", ".gs")):
+                continue
+            with open(os.path.join(dp, f), "rb") as fh:
+                text = fh.read().decode("latin-1").lower()
+            if any(re.search(r'#\s*include\s*"' + re.escape(h) + '"', text) for h in want):
+                found.append(os.path.relpath(os.path.join(dp, f), r3_dir).replace(os.sep, "/"))
+    return sorted(found)
+
+
 def zip_dir(src, zip_path, top):
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
         for dp, _, fs in os.walk(src):
@@ -229,7 +364,8 @@ def main():
     for t in a.top_layer:
         if not os.path.exists(t):
             sys.exit(f"error: --top-layer {t} does not exist")
-    extras += list(a.top_layer)
+    if a.top_layer and mode != "merged":
+        sys.exit("error: --top-layer needs the merged source form (one shaders/r3 per mod)")
     vanilla = os.path.join(a.sources, "vanilla")
     van_r3 = find_r3(vanilla) if os.path.isdir(vanilla) else None
     print(f"Form: {mode}")
@@ -246,15 +382,35 @@ def main():
     overlay = os.path.join(work, OVERLAY_DIR)
     try:
         if mode == "merged":
-            stack = ([("Beef's NVGs", src["beef"])] if src["beef"] else []) + [
+            lower = ([("Beef's NVGs", src["beef"])] if src["beef"] else []) + [
                 ("Enhanced Shaders", src["es"]), ("Screen Space Shaders", src["sss"]),
                 ("Atmospherics", src["atmospherics"])] + [
-                (f"{'top' if e in a.top_layer else 'GAMMA'}/{os.path.basename(os.path.normpath(e))}", e) for e in extras]
+                (f"GAMMA/{os.path.basename(e)}", e) for e in extras]
+            stack, merged_top = lower, []
+            if a.top_layer:
+                # 0. the top layers, folded onto the stack (resolve_top_layers)
+                top_dir = os.path.join(work, "top")
+                labels, merged_top = resolve_top_layers(lower, a.top_layer, top_dir, a.dry_run)
+                print("Top layers (" + ", ".join(a.top_layer) + "):")
+                for k in sorted(labels):
+                    print(f"  r3/{k}: {labels[k]}")
+                stack = lower + [("top layers, resolved", top_dir)]
             # 1. the overlay, patched from the winners of exactly this stack
             cmd = [py, os.path.join(TOOLS, "make_pbr_overlay.py"), "--out", overlay]
             for _, p in stack:
                 cmd += ["--layer", p]
             run(cmd + (["--dry-run"] if a.dry_run else []), False)
+            # Files the top layers had to merge go into the overlay too: it is installed above the
+            # top layer itself (e.g. the DLSS patch), whose unmerged copies would win otherwise
+            if merged_top and not a.dry_run:
+                over_r3 = os.path.join(overlay, "gamedata", "shaders", "r3")
+                for key in merged_top:
+                    src_f = os.path.join(top_dir, "gamedata", "shaders", "r3", key)
+                    dst_f = os.path.join(over_r3, key)
+                    if not os.path.exists(dst_f):
+                        os.makedirs(os.path.dirname(dst_f), exist_ok=True)
+                        shutil.copy(src_f, dst_f)
+                        print(f"  overlay += r3/{key} (top layer merged onto the stack)")
             if a.dry_run:
                 print("[dry-run] nothing written")
                 return 0
@@ -272,6 +428,18 @@ def main():
             zip_dir(overlay, overlay + ".zip", OVERLAY_DIR)
             full_r3 = os.path.join(full, "gamedata", "shaders", "r3")
             checks = [[full_r3]]
+            top_check = None
+            if a.top_layer:
+                # The top layers must not break shaders of the stack below them: compile every
+                # program they ship or whose headers they change, against the stack without them
+                top_r3 = os.path.join(top_dir, "gamedata", "shaders", "r3")
+                low = os.path.join(work, "lower")
+                write_merged(repo_layer + lower, low)
+                shipped = sorted(os.path.relpath(os.path.join(dp, f), top_r3).replace(os.sep, "/")
+                                 for dp, _, fs in os.walk(top_r3) for f in fs)
+                progs = [f for f in shipped if f.lower().endswith((".ps", ".vs", ".cs", ".gs"))]
+                progs += includers(full_r3, [f for f in shipped if f.lower().endswith(".h")])
+                top_check = (sorted(set(progs)), os.path.join(low, "gamedata", "shaders", "r3"))
         else:
             common = ["--es", src["es"], "--sss", src["sss"], "--atmospherics", src["atmospherics"], "--shaders-only"]
             if src["beef"]:
@@ -296,6 +464,12 @@ def main():
                 check += ["--define", d]
             for layers in checks:
                 run(check + ["--layers", van_r3] + layers + ["--baseline-layers", van_r3, base_r3], False)
+            if mode == "merged" and top_check and top_check[0]:
+                tcheck = [py, os.path.join(TOOLS, "check_shaders.py"), "--dxc", a.dxc, "--shaders"] + top_check[0]
+                for d in CHECK_DEFINES:
+                    tcheck += ["--define", d]
+                print("Top layers vs the stack below them:")
+                run(tcheck + ["--layers", van_r3, full_r3, "--baseline-layers", van_r3, top_check[1]], False)
         else:
             print("compile check skipped")
 

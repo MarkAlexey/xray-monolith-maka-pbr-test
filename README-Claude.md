@@ -1139,6 +1139,16 @@ Adapted to this fork:
 - **Grass**: the DLSS patch's `deffer_grass.vs` (uniform jitter, previous wind for motion vectors)
   gets the instanced-grass paths in the GAMMA overlay; the engine already sets `wave_prev` /
   `dir2D_prev` for every grass path.
+- **The DLSS patch on top of GAMMA's own overrides** (`build_shader_packs.py --top-layer`): the
+  patch ships whole files made from plain SSS / Atmospherics / stock Beef's NVGs. Where GAMMA
+  replaced one of them with its own rewrite, the patch's copy is not just dropped on top: its
+  changes are line-merged onto GAMMA's file (`deffer_impl_flat.ps` keeps GAMMA's terrain puddles),
+  or, when a line merge conflicts, re-applied by a known adapter (`night_vision.h`: GAMMA's
+  "nvg dof blur" NVGs keep their `NVGParams`, and the depth blur reads `s_position` at scene size).
+  Those files are added to the overlay too, since the overlay sits above the patch. A second DXC
+  pass compiles every shader the patch ships or whose headers it changes against the stack without
+  it; any new error fails the build. The patch's plain `night_vision.h` over GAMMA's NVG shaders is
+  exactly what broke `nightvision_gen_1.ps` (`unrecognized identifier 'NVGParams'`).
 
 Shaders: the DLSS shaders are **not** in this build's db0 (only the menu script and its strings
 are), so a missing patch is reported instead of half-working. CI attaches brodrigz's GAMMA
