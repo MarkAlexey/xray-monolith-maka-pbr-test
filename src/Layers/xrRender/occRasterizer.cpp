@@ -5,6 +5,7 @@
 #include "stdafx.h"
 #include "occRasterizer.h"
 #include <emmintrin.h>
+#include "xrRender_console.h"
 
 #if DEBUG
 #include "dxRenderDeviceRender.h"
@@ -232,7 +233,8 @@ BOOL occRasterizer::test(float x0f, float y0f, float x1f, float y1f, float zf)
     int y1 = iFloor(y1f * occ_dim_0 + .5f); clamp(y1, y0, occ_dim_0 - 1);
     int span = _max(x1 - x0 + 1, y1 - y0 + 1);
     int first = 0;
-    while (first < 3 && span > 4)
+    // r__hom_coarse 0: finest level only (the test as it was before qkff99's b85c040b)
+    while (ps_r__hom_coarse && first < 3 && span > 4)
     {
         span = (span + 1) / 2;
         ++first;

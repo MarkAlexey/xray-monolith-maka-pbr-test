@@ -335,6 +335,8 @@ void CRender::prepare_sun_cascade(u32 cascade_ind, const Fmatrix& inverse)
 #if RENDER == R_R4
 bool CRender::sun_cascade_needs_receiver_bounds(u32 cascade_ind)
 {
+    // r4_sun_receiver_bounds 0: no receiver pruning at all (every caster in the cascade frustum)
+    if (!ps_r4_sun_receiver_bounds) return false;
     return !(cascade_ind == m_sun_cascades.size() - 1 && o.advancedpp &&
         (ps_sunshafts_mode == R2SS_VOLUMETRIC || ps_sunshafts_mode == R2SS_COMBINE_SUNSHAFTS) &&
         Target->need_to_render_sunshafts());
