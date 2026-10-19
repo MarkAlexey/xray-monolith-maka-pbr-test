@@ -647,15 +647,6 @@ void CDetailManager::Render()
 	m_frame_rendered.store(RDEVICE.dwFrame, std::memory_order_release);
 }
 
-#if RENDER == R_R4
-// qkff99 MT shadows: grass shadows are never recorded on a worker context here. The grass
-// rework (instanced rows, resident GPU buffers, compute copies, indirect draws) updates its
-// buffers on the immediate context, so the sun cascades and local lights draw grass on the
-// owner after their recorded lists, exactly as before (R_sun.cpp, LocalLightShadows.cpp).
-bool CDetailManager::CanRecordShadow() const { return false; }
-bool CDetailManager::PrimeShadow(RenderContext&) { return false; }
-#endif
-
 bool CDetailManager::GetVisibleBounds(Fbox& bounds)
 {
     xrCriticalSectionGuard guard(m_mt_calc_guard);

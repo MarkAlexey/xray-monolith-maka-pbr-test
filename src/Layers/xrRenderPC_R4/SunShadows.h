@@ -16,7 +16,6 @@ public:
     void Record();
     bool Prepared() const;
     bool Bind(u32 cascade);
-    bool GrassRecorded(u32 cascade) const;
     void EndFrame();
     void Clear();
 };

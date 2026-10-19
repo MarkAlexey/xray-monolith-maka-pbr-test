@@ -527,13 +527,10 @@ void CRender::render_sun_cascade(u32 cascade_ind, const xr_vector<ISpatialShared
                 cascade.GMCascade.shadow_execution = 0;
 #endif
 
-                if (psDeviceFlags2.test(rsGrassShadow) && cascade_ind <= ps_ssfx_grass_shadows.x
-#if RENDER == R_R4
-                    && !(sun_shadows && sun_shadows->GrassRecorded(cascade_ind))
-#endif
-                    )
+                if (psDeviceFlags2.test(rsGrassShadow) && cascade_ind <= ps_ssfx_grass_shadows.x)
                 {
-                    // Grass is never recorded on a worker (DetailManager.cpp): drawn here, on the owner
+                    // Grass shadows are drawn here, on the owner, also with MT sun shadows (the grass
+                    // rework updates its buffers on the immediate context)
                     Details->fade_distance = dm_fade * dm_fade * ps_ssfx_grass_shadows.y;
                     if (ps_r__detail_shadow_cull)
                     {

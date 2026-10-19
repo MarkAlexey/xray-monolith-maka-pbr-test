@@ -425,10 +425,6 @@ public:
 	void Load();
 	void Unload();
 	void Render();
-#if RENDER == R_R4
-    bool CanRecordShadow() const;
-    bool PrimeShadow(class RenderContext& context);
-#endif
 
 	/// MT stuff
 	u32 m_frame_calc;

@@ -124,7 +124,6 @@ public:
 	R_bus_object bus_object;
 	R_tree tree;
     u32 recording_phase = 0;
-    bool recording_grass = false;
 #if defined(USE_DX11) && RENDER == R_R4
     const RenderObjectSnapshot* recording_object = nullptr;
 #endif

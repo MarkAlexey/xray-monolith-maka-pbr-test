@@ -705,7 +705,9 @@ static class cl_blend_mode : public NativeConstantSetup //--#SM+#--
         const auto& source = g_pGamePersistent->m_pGShaderConstants->m_blender_mode;
         Fvector4 mode;
 #if RENDER == R_R4
-        if (RenderContextId()) mode.set(source.x, source.y, source.z, RCache.recording_grass ? 1.f : 0.f);
+        // w = 1 only while the owner draws grass; grass is never drawn on a recording context,
+        // so a worker always sees 0 (not the owner's transient value)
+        if (RenderContextId()) mode.set(source.x, source.y, source.z, 0.f);
         else
 #endif
             mode = source;

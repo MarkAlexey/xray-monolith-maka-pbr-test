@@ -4,8 +4,6 @@
 #include "../xrRender/FTreeVisual.h"
 #include "../xrRenderDX10/dx10ConstantBuffer.h"
 #include <wrl/client.h>
-#include <mutex>
-#include <condition_variable>
 
 using Microsoft::WRL::ComPtr;
 
@@ -45,12 +43,7 @@ struct SunShadows::State
     bool initialized = false, supported = false, prepared = false, consumed = false;
     bool capturing[count]{}, recording[count]{};
     bool early_static[count]{}, static_valid[count]{};
-    bool grass_ordered = false;
-    bool valid[count]{}, grass[count]{};
-    std::mutex grass_mutex;
-    std::condition_variable grass_condition;
-    u32 next_grass = 0;
-    bool cancel_grass = false;
+    bool valid[count]{};
 
     bool Initialize()
     {
@@ -79,44 +72,8 @@ struct SunShadows::State
         return true;
     }
 
-    void FinishGrass(u32 index, bool draw)
-    {
-        if (!grass_ordered) return;
-        std::unique_lock<std::mutex> lock(grass_mutex);
-        if (!cancel_grass && next_grass < index)
-        {
-            PROF_EVENT("Render.SunShadows.GrassWait");
-            grass_condition.wait(lock, [this, index]() { return cancel_grass || next_grass >= index; });
-        }
-        if (cancel_grass || next_grass != index) return;
-        // Preserve the original order of the shared alpha/fade updates. Only
-        // this graphics-only part is ordered; model recording stays parallel.
-        try
-        {
-            // Never true here: CDetailManager::CanRecordShadow() is false, grass is drawn by
-            // the owner after Bind() (R_sun.cpp). Kept so qkff99's ordering stays intact.
-            (void)draw;
-        }
-        catch (...)
-        {
-            ++next_grass;
-            grass_condition.notify_all();
-            throw;
-        }
-        ++next_grass;
-        grass_condition.notify_all();
-    }
-
-    void CancelGrass()
-    {
-        std::lock_guard<std::mutex> lock(grass_mutex);
-        cancel_grass = true;
-        grass_condition.notify_all();
-    }
-
     void RestoreOwner()
     {
-        CancelGrass();
         for (auto& worker : workers) worker.Wait();
         for (auto& cascade : renderer->m_sun_cascades)
         {
@@ -131,12 +88,6 @@ struct SunShadows::State
     void Draw(u32 index, RenderContext& context)
     {
         PROF_EVENT("Render.SunShadows.Record");
-        struct GrassCompletion
-        {
-            State& state;
-            u32 index;
-            ~GrassCompletion() { state.FinishGrass(index, false); }
-        } completion{*this, index};
         auto& cascade = renderer->m_sun_cascades[index];
         context.Begin(CRender::PHASE_SMAP);
         const bool split = early_static[index];
@@ -148,7 +99,6 @@ struct SunShadows::State
         if (!split) cascade.GMCascade.r_dsgraph_render_static(0, false);
         cascade.GMCascade.r_dsgraph_render_dynamic(0, false);
         cascade.GMCascade.shadow_execution = 0;
-        FinishGrass(index, true);
         valid[index] = SUCCEEDED(context.Finish(commands[index].GetAddressOf()));
         statistics[index] = context.Backend().stat;
         PROF_TAG("Draws", statistics[index].calls);
@@ -307,18 +257,6 @@ void SunShadows::Record()
         auto fallback = PrepareShadowPackets(graph, context, state->worlds[i], !state->early_static[i]);
         if (state->early_static[i]) fallback.static_packets = state->fallback[i].static_packets;
         state->fallback[i] = fallback;
-        const bool geometry = !graph.RGraph.mapStaticPasses[0][0].empty() || !graph.RGraph.mapDynamicPasses[0][0].empty();
-        // Validate one common grass policy before alpha advancement. Prime a
-        // context only after its own task has joined (far static may be busy).
-        if (!i)
-        {
-            const bool safe = renderer.Details && renderer.Details->dtFS && psDeviceFlags2.test(rsGrassShadow) &&
-                renderer.Details->CanRecordShadow();
-            for (u32 c = 0; c < State::count; ++c) state->grass[c] = safe && c <= ps_ssfx_grass_shadows.x;
-            state->grass_ordered = std::any_of(std::begin(state->grass), std::end(state->grass), [](bool value) { return value; });
-        }
-        state->grass[i] = state->grass[i] && geometry;
-        if (state->grass[i] && !renderer.Details->PrimeShadow(context)) return;
         RCache.InvalidateAfterCommandList();
         state->workers[i].Run([this, i](RenderContext& active) { state->Draw(i, active); });
         state->recording[i] = true;
@@ -361,7 +299,6 @@ bool SunShadows::Bind(u32 index)
     {
         Msg("! Sun shadows: recording failed; restoring owner submission");
         HW.pContext->ClearDepthStencilView(state->maps[index].Depth(), D3D11_CLEAR_DEPTH, 1.f, 0);
-        state->grass[index] = false;
     }
     if (state->csm[index])
     {
@@ -384,11 +321,8 @@ bool SunShadows::Bind(u32 index)
     return true;
 }
 
-bool SunShadows::GrassRecorded(u32 index) const { return state->prepared && state->grass[index]; }
-
 void SunShadows::EndFrame()
 {
-    state->CancelGrass();
     for (auto& worker : state->workers) worker.Wait();
     if (state->renderer)
         for (auto& cascade : state->renderer->m_sun_cascades)
@@ -405,15 +339,12 @@ void SunShadows::EndFrame()
         state->commands[i].Reset();
         state->worlds[i].clear();
         state->candidates[i].clear();
-        state->valid[i] = state->grass[i] = false;
+        state->valid[i] = false;
         state->capturing[i] = state->recording[i] = false;
         state->static_commands[i].Reset();
         state->early_static[i] = state->static_valid[i] = false;
         state->fallback[i] = {};
     }
-    state->grass_ordered = false;
-    state->next_grass = 0;
-    state->cancel_grass = false;
     state->renderer = nullptr;
     state->prepared = state->consumed = false;
 }

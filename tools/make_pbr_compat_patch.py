@@ -73,7 +73,6 @@ Usage
 """
 
 import argparse
-import io
 import os
 import re
 import sys
