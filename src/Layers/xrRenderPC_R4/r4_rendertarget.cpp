@@ -195,7 +195,16 @@ void CRenderTarget::u_stencil_optimize(eStencilOptimizeMode eSOM)
 	float eps = 0;
 	float _dw = 0.5f;
 	float _dh = 0.5f;
-	quad_fill(-_dw, -_dh, _w - _dw, _h - _dh, 0, 0, 0, 0, eps, 1.f, C, Offset);
+	FVF::TL* pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
+	pv->set(-_dw, _h - _dh, eps, 1.f, C, 0, 0);
+	pv++;
+	pv->set(-_dw, -_dh, eps, 1.f, C, 0, 0);
+	pv++;
+	pv->set(_w - _dw, _h - _dh, eps, 1.f, C, 0, 0);
+	pv++;
+	pv->set(_w - _dw, -_dh, eps, 1.f, C, 0, 0);
+	pv++;
+	RCache.Vertex.Unlock(4, g_combine->vb_stride);
 	RCache.set_Element(s_occq->E[1]);
 
 	switch (eSOM)
@@ -210,7 +219,7 @@ void CRenderTarget::u_stencil_optimize(eStencilOptimizeMode eSOM)
 		VERIFY(!"CRenderTarget::u_stencil_optimize. switch no default!");
 	}
 
-	RCache.set_Geometry(quad_geom());
+	RCache.set_Geometry(g_combine);
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 }
 
@@ -1440,26 +1449,22 @@ void CRenderTarget::reset_light_marker(u32& marker, bool bResetStencil)
 		float eps = 0;
 		float _dw = 0.5f;
 		float _dh = 0.5f;
+		FVF::TL* pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
+		pv->set(-_dw, _h - _dh, eps, 1.f, C, 0, 0);
+		pv++;
+		pv->set(-_dw, -_dh, eps, 1.f, C, 0, 0);
+		pv++;
+		pv->set(_w - _dw, _h - _dh, eps, 1.f, C, 0, 0);
+		pv++;
+		pv->set(_w - _dw, -_dh, eps, 1.f, C, 0, 0);
+		pv++;
+		RCache.Vertex.Unlock(4, g_combine->vb_stride);
+		RCache.set_Element(s_occq->E[2]);
+		RCache.set_Geometry(g_combine);
+		// Recording context (qkff99 MT light accumulation): g_combine names the owner's dynamic
+		// stream; the quad above went into this context's own stream, so bind that one
 		if (RenderContextId())
-		{
-			// Recording context (qkff99 MT light accumulation): the screen-quad cache belongs to
-			// the owner thread, so write this context's own dynamic stream instead
-			FVF::TL* pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
-			pv->set(-_dw, _h - _dh, eps, 1.f, C, 0, 0); pv++;
-			pv->set(-_dw, -_dh, eps, 1.f, C, 0, 0); pv++;
-			pv->set(_w - _dw, _h - _dh, eps, 1.f, C, 0, 0); pv++;
-			pv->set(_w - _dw, -_dh, eps, 1.f, C, 0, 0); pv++;
-			RCache.Vertex.Unlock(4, g_combine->vb_stride);
-			RCache.set_Element(s_occq->E[2]);
-			RCache.set_Geometry(g_combine);
 			RCache.set_Vertices(RCache.Vertex.Buffer(), g_combine->vb_stride);
-		}
-		else
-		{
-			quad_fill(-_dw, -_dh, _w - _dw, _h - _dh, 0, 0, 0, 0, eps, 1.f, C, Offset);
-			RCache.set_Element(s_occq->E[2]);
-			RCache.set_Geometry(quad_geom());
-		}
 		RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 	}
 }

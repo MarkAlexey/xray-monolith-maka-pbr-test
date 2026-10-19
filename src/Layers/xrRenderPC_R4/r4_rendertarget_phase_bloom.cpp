@@ -379,13 +379,11 @@ void CRenderTarget::phase_bloom()
 	RCache.set_Z(TRUE);
 }
 
-
 void CRenderTarget::phase_ssfx_bloom()
 {
 	PIX_EVENT_C(phase_ssfx_bloom, dx10_marker_post);
 
 	//Constants
-	u32 Offset = 0;
 	u32 C = color_rgba(0, 0, 0, 0);
 
 	float w = float(Device.dwWidth);
@@ -399,13 +397,9 @@ void CRenderTarget::phase_ssfx_bloom()
 	RCache.set_CullMode(CULL_NONE);
 	RCache.set_Stencil(FALSE);
 
-	// Fill vertex buffer
-	quad_fill(0, 0, w, h, 0.0f, 0.0f, 1.0f, 1.0f, EPS_S, 1.0f, C, Offset);
-
 	// Draw COLOR
 	RCache.set_Element(s_ssfx_bloom->E[0]);
-	RCache.set_Geometry(quad_geom());
-	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
+	draw_fullscreen_quad(C);
 
 	// BLOOM LENS /////////////////////////////////////////////////////
 	if (ps_r2_mask_control.x > 0)
@@ -416,13 +410,9 @@ void CRenderTarget::phase_ssfx_bloom()
 		RCache.set_CullMode(CULL_NONE);
 		RCache.set_Stencil(FALSE);
 
-		// Fill vertex buffer
-		quad_fill(0, 0, w, h, 0.0f, 0.0f, 1.0f, 1.0f, EPS_S, 1.0f, C, Offset);
-
 		// Draw COLOR
 		RCache.set_Element(s_ssfx_bloom_lens->E[0]);
-		RCache.set_Geometry(quad_geom());
-		RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
+		draw_fullscreen_quad(C);
 
 		// Lens 2 Phase blur
 		ref_rt* rt_LensBlur[2] = { &rt_ssfx_bloom_tmp4_2, &rt_ssfx_bloom_lens };
@@ -433,14 +423,10 @@ void CRenderTarget::phase_ssfx_bloom()
 			RCache.set_CullMode(CULL_NONE);
 			RCache.set_Stencil(FALSE);
 
-			// Fill vertex buffer
-			quad_fill(0, 0, w, h, 0.0f, 0.0f, 1.0f, 1.0f, EPS_S, 1.0f, C, Offset);
-
 			// Draw COLOR
 			RCache.set_Element(s_ssfx_bloom_lens->E[1 + lensblur]);
 			RCache.set_c("blur_setup", w / 4, h / 4, 0, 2.0f + (3.0f * lensblur));
-			RCache.set_Geometry(quad_geom());
-			RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
+			draw_fullscreen_quad(C);
 		}
 	}
 
@@ -462,14 +448,10 @@ void CRenderTarget::phase_ssfx_bloom()
 		RCache.set_CullMode(CULL_NONE);
 		RCache.set_Stencil(FALSE);
 
-		// Fill vertex buffer
-		quad_fill(0, 0, w, h, 0.0f, 0.0f, 1.0f, 1.0f, EPS_S, 1.0f, C, Offset);
-
 		// Draw COLOR
 		RCache.set_Element(s_ssfx_bloom_downsample->E[downsample]);
 		RCache.set_c("blur_setup", w / SampleScale, h / SampleScale, 0, ps_ssfx_bloom_2.x);
-		RCache.set_Geometry(quad_geom());
-		RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
+		draw_fullscreen_quad(C);
 	}
 
 	// End with `rt_ssfx_bloom_tmp2`
@@ -488,14 +470,10 @@ void CRenderTarget::phase_ssfx_bloom()
 		RCache.set_CullMode(CULL_NONE);
 		RCache.set_Stencil(FALSE);
 
-		// Fill vertex buffer
-		quad_fill(0, 0, w, h, 0.0f, 0.0f, 1.0f, 1.0f, EPS_S, 1.0f, C, Offset);
-
 		// Draw COLOR
 		RCache.set_Element(s_ssfx_bloom_upsample->E[upsample]);
 		RCache.set_c("blur_setup", w / SampleScale, h / SampleScale, 0, ps_ssfx_bloom_2.x);
-		RCache.set_Geometry(quad_geom());
-		RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
+		draw_fullscreen_quad(C);
 	}
 
 	// The Upsample ends with `Half Res`
@@ -505,15 +483,10 @@ void CRenderTarget::phase_ssfx_bloom()
 	RCache.set_CullMode(CULL_NONE);
 	RCache.set_Stencil(FALSE);
 
-	// Fill vertex buffer
-	quad_fill(0, 0, w, h, 0.0f, 0.0f, 1.0f, 1.0f, EPS_S, 1.0f, C, Offset);
-
 	// Draw COLOR
 	RCache.set_Element(s_ssfx_bloom->E[1]);
 	RCache.set_c("mask_control", ps_r2_mask_control.x, ps_r2_mask_control.y, ps_r2_mask_control.z, ps_r2_mask_control.w);
-	RCache.set_Geometry(quad_geom());
-	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
-
+	draw_fullscreen_quad(C);
 
 	// Restore Viewport
 	set_viewport_size(HW.pContext, Device.dwWidth, Device.dwHeight);

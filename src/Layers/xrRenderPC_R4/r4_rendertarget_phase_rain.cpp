@@ -13,7 +13,6 @@ void CRenderTarget::phase_rain()
 void CRenderTarget::phase_ssfx_rain()
 {
 	//Constants
-	u32 Offset = 0;
 	u32 C = color_rgba(0, 0, 0, 255);
 
 	float w = float(Device.dwWidth);
@@ -25,13 +24,9 @@ void CRenderTarget::phase_ssfx_rain()
 	RCache.set_CullMode(CULL_NONE);
 	RCache.set_Stencil(FALSE);
 
-	// Fill vertex buffer
-	quad_fill(0, 0, w, h, 0.0f, 0.0f, 1.0f, 1.0f, EPS_S, 1.0f, C, Offset);
-
 	// Draw COLOR
 	RCache.set_Element(!RImplementation.o.dx10_msaa ? s_ssfx_rain->E[0] : s_ssfx_rain->E[1]);
-	RCache.set_Geometry(quad_geom());
-	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
+	draw_fullscreen_quad(C);
 
 	set_viewport_size(HW.pContext, w, h);
 }

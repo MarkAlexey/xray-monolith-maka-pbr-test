@@ -1,6 +1,5 @@
 #include "stdafx.h"
 
-
 IC bool SortLights(light* i, light* j)
 {
 	return (i->distance < j->distance&& i->sss_priority < j->sss_priority);
@@ -42,12 +41,17 @@ void CRenderTarget::phase_blur()
 	RCache.set_Stencil(FALSE);
 
 	// Fill vertex buffer
-	quad_fill(0, 0, float(w), float(h), p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
+	FVF::TL* pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
+	pv->set(0, float(h), d_Z, d_W, C, p0.x, p1.y); pv++;
+	pv->set(0, 0, d_Z, d_W, C, p0.x, p0.y); pv++;
+	pv->set(float(w), float(h), d_Z, d_W, C, p1.x, p1.y); pv++;
+	pv->set(float(w), 0, d_Z, d_W, C, p1.x, p0.y); pv++;
+	RCache.Vertex.Unlock(4, g_combine->vb_stride);
 
 	// Draw COLOR
 	RCache.set_Element(s_blur->E[0]);
 	RCache.set_c("blur_params", 1.0, 0.0, w, h);
-	RCache.set_Geometry(quad_geom());
+	RCache.set_Geometry(g_combine);
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 	///////////////////////////////////////////////////////////////////////////////////
 	////Final blur
@@ -61,12 +65,17 @@ void CRenderTarget::phase_blur()
 	RCache.set_Stencil(FALSE);
 
 	// Fill vertex buffer
-	quad_fill(0, 0, float(w), float(h), p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
+	pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
+	pv->set(0, float(h), d_Z, d_W, C, p0.x, p1.y); pv++;
+	pv->set(0, 0, d_Z, d_W, C, p0.x, p0.y); pv++;
+	pv->set(float(w), float(h), d_Z, d_W, C, p1.x, p1.y); pv++;
+	pv->set(float(w), 0, d_Z, d_W, C, p1.x, p0.y); pv++;
+	RCache.Vertex.Unlock(4, g_combine->vb_stride);
 
 	// Draw COLOR
 	RCache.set_Element(s_blur->E[1]);
 	RCache.set_c("blur_params", 0.0, 1.0, w, h);
-	RCache.set_Geometry(quad_geom());
+	RCache.set_Geometry(g_combine);
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 	///////////////////////////////////////////////////////////////////////////////////
 	////Horizontal blur / Half res
@@ -83,12 +92,17 @@ void CRenderTarget::phase_blur()
 	RCache.set_Stencil(FALSE);
 
 	// Fill vertex buffer
-	quad_fill(0, 0, float(w), float(h), p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
+	pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
+	pv->set(0, float(h), d_Z, d_W, C, p0.x, p1.y); pv++;
+	pv->set(0, 0, d_Z, d_W, C, p0.x, p0.y); pv++;
+	pv->set(float(w), float(h), d_Z, d_W, C, p1.x, p1.y); pv++;
+	pv->set(float(w), 0, d_Z, d_W, C, p1.x, p0.y); pv++;
+	RCache.Vertex.Unlock(4, g_combine->vb_stride);
 
 	// Draw COLOR
 	RCache.set_Element(s_blur->E[2]);
 	RCache.set_c("blur_params", 1.0, 0.0, w, h);
-	RCache.set_Geometry(quad_geom());
+	RCache.set_Geometry(g_combine);
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 	///////////////////////////////////////////////////////////////////////////////////
 	////Final blur
@@ -102,12 +116,17 @@ void CRenderTarget::phase_blur()
 	RCache.set_Stencil(FALSE);
 
 	// Fill vertex buffer
-	quad_fill(0, 0, float(w), float(h), p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
+	pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
+	pv->set(0, float(h), d_Z, d_W, C, p0.x, p1.y); pv++;
+	pv->set(0, 0, d_Z, d_W, C, p0.x, p0.y); pv++;
+	pv->set(float(w), float(h), d_Z, d_W, C, p1.x, p1.y); pv++;
+	pv->set(float(w), 0, d_Z, d_W, C, p1.x, p0.y); pv++;
+	RCache.Vertex.Unlock(4, g_combine->vb_stride);
 
 	// Draw COLOR
 	RCache.set_Element(s_blur->E[3]);
 	RCache.set_c("blur_params", 0.0, 1.0, w, h);
-	RCache.set_Geometry(quad_geom());
+	RCache.set_Geometry(g_combine);
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 	///////////////////////////////////////////////////////////////////////////////////
 	////Horizontal blur
@@ -124,12 +143,17 @@ void CRenderTarget::phase_blur()
 	RCache.set_Stencil(FALSE);
 
 	// Fill vertex buffer
-	quad_fill(0, 0, float(w), float(h), p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
+	pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
+	pv->set(0, float(h), d_Z, d_W, C, p0.x, p1.y); pv++;
+	pv->set(0, 0, d_Z, d_W, C, p0.x, p0.y); pv++;
+	pv->set(float(w), float(h), d_Z, d_W, C, p1.x, p1.y); pv++;
+	pv->set(float(w), 0, d_Z, d_W, C, p1.x, p0.y); pv++;
+	RCache.Vertex.Unlock(4, g_combine->vb_stride);
 
 	// Draw COLOR
 	RCache.set_Element(s_blur->E[4]);
 	RCache.set_c("blur_params", 1.0, 0.0, w, h);
-	RCache.set_Geometry(quad_geom());
+	RCache.set_Geometry(g_combine);
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 	///////////////////////////////////////////////////////////////////////////////////
 	////Final blur
@@ -143,12 +167,17 @@ void CRenderTarget::phase_blur()
 	RCache.set_Stencil(FALSE);
 
 	// Fill vertex buffer
-	quad_fill(0, 0, float(w), float(h), p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
+	pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
+	pv->set(0, float(h), d_Z, d_W, C, p0.x, p1.y); pv++;
+	pv->set(0, 0, d_Z, d_W, C, p0.x, p0.y); pv++;
+	pv->set(float(w), float(h), d_Z, d_W, C, p1.x, p1.y); pv++;
+	pv->set(float(w), 0, d_Z, d_W, C, p1.x, p0.y); pv++;
+	RCache.Vertex.Unlock(4, g_combine->vb_stride);
 
 	// Draw COLOR
 	RCache.set_Element(s_blur->E[5]);
 	RCache.set_c("blur_params", 0.0, 1.0, w, h);
-	RCache.set_Geometry(quad_geom());
+	RCache.set_Geometry(g_combine);
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 	///////////////////////////////////////////////////////////////////////////////////
 };
@@ -172,19 +201,14 @@ void CRenderTarget::phase_ssfx_ssr()
 	p0.set(0.0f, 0.0f);
 	p1.set(1.0f, 1.0f);
 
-
 	// GLOSS /////////////////////////////////////////////////////////////////
 	u_setrt(rt_ssfx_temp3, 0, 0, HW.pBaseZB);
 	RCache.set_CullMode(CULL_NONE);
 	RCache.set_Stencil(FALSE);
 
-	// Fill vertex buffer
-	quad_fill(0, 0, w, h, p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
-
 	// Draw COLOR
 	RCache.set_Element(s_ssfx_ssr->E[5]);
-	RCache.set_Geometry(quad_geom());
-	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
+	draw_fullscreen_quad(C);
 	///////////////////////////////////////////////////////////////////////////
 
 	p1.set(1.0f / ScaleFactor, 1.0f / ScaleFactor);
@@ -202,7 +226,12 @@ void CRenderTarget::phase_ssfx_ssr()
 		set_viewport_size(HW.pContext, scale_X, scale_Y);
 
 	//Fill vertex buffer
-	quad_fill(0, 0, w, h, p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
+	FVF::TL* pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
+	pv->set(0, h, d_Z, d_W, C, p0.x, p1.y); pv++;
+	pv->set(0, 0, d_Z, d_W, C, p0.x, p0.y); pv++;
+	pv->set(w, h, d_Z, d_W, C, p1.x, p1.y); pv++;
+	pv->set(w, 0, d_Z, d_W, C, p1.x, p0.y); pv++;
+	RCache.Vertex.Unlock(4, g_combine->vb_stride);
 
 	//Set pass
 	RCache.set_Element(s_ssfx_ssr->E[0]);
@@ -211,7 +240,7 @@ void CRenderTarget::phase_ssfx_ssr()
 	RCache.set_c("cam_pos", ::Random.randF(-1.0, 1.0), ::Random.randF(-1.0, 1.0), 0.0f, 0.0f);
 
 	RCache.set_c("ssr_setup", ps_ssfx_ssr);
-	RCache.set_Geometry(quad_geom());
+	RCache.set_Geometry(g_combine);
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 
 	// COPY SSR RESULT ( ACC ) ////////////////////////////////////////////
@@ -226,15 +255,19 @@ void CRenderTarget::phase_ssfx_ssr()
 		RCache.set_Stencil(FALSE);
 
 		// Fill vertex buffer
-		quad_fill(0, 0, w, h, p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
+		pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
+		pv->set(0, h, d_Z, d_W, C, p0.x, p1.y); pv++;
+		pv->set(0, 0, d_Z, d_W, C, p0.x, p0.y); pv++;
+		pv->set(w, h, d_Z, d_W, C, p1.x, p1.y); pv++;
+		pv->set(w, 0, d_Z, d_W, C, p1.x, p0.y); pv++;
+		RCache.Vertex.Unlock(4, g_combine->vb_stride);
 
 		// Draw COLOR
 		RCache.set_Element(s_ssfx_ssr->E[1]);
 		RCache.set_c("blur_params", 1.0, 0.0, scale_X, scale_Y);
 		RCache.set_c("ssr_setup", ps_ssfx_ssr);
-		RCache.set_Geometry(quad_geom());
+		RCache.set_Geometry(g_combine);
 		RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
-
 
 		// BLUR PHASE 2 //////////////////////////////////////////////////////////
 		u_setrt(rt_ssfx_temp2, 0, 0, HW.pBaseZB);
@@ -242,13 +275,18 @@ void CRenderTarget::phase_ssfx_ssr()
 		RCache.set_Stencil(FALSE);
 
 		// Fill vertex buffer
-		quad_fill(0, 0, w, h, p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
+		pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
+		pv->set(0, h, d_Z, d_W, C, p0.x, p1.y); pv++;
+		pv->set(0, 0, d_Z, d_W, C, p0.x, p0.y); pv++;
+		pv->set(w, h, d_Z, d_W, C, p1.x, p1.y); pv++;
+		pv->set(w, 0, d_Z, d_W, C, p1.x, p0.y); pv++;
+		RCache.Vertex.Unlock(4, g_combine->vb_stride);
 
 		// Draw COLOR
 		RCache.set_Element(s_ssfx_ssr->E[2]);
 		RCache.set_c("blur_params", 0.0, 1.0, w, h);
 		RCache.set_c("ssr_setup", ps_ssfx_ssr);
-		RCache.set_Geometry(quad_geom());
+		RCache.set_Geometry(g_combine);
 		RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 	}
 
@@ -267,14 +305,10 @@ void CRenderTarget::phase_ssfx_ssr()
 	RCache.set_CullMode(CULL_NONE);
 	RCache.set_Stencil(FALSE);
 
-	// Fill vertex buffer
-	quad_fill(0, 0, w, h, p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
-
 	// Draw COLOR
 	RCache.set_Element(s_ssfx_ssr->E[3]);
 	RCache.set_c("ssr_setup", ps_ssfx_ssr);
-	RCache.set_Geometry(quad_geom());
-	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
+	draw_fullscreen_quad(C);
 };
 
 void CRenderTarget::phase_ssfx_volumetric_blur()
@@ -296,16 +330,11 @@ void CRenderTarget::phase_ssfx_volumetric_blur()
 	}
 
 	//Constants
-	u32 Offset = 0;
 	u32 C = color_rgba(0, 0, 0, 255);
 
 	FVF::TL* pv;
 	float w = float(Device.dwWidth);
 	float h = float(Device.dwHeight);
-
-	Fvector2 p0, p1;
-	p0.set(0.0f, 0.0f);
-	p1.set(1.0f, 1.0f);
 
 	// Volumetric always at volsize res, default 1/8
 	set_viewport_size(HW.pContext, w / RImplementation.o.volsize, h / RImplementation.o.volsize);
@@ -321,14 +350,10 @@ void CRenderTarget::phase_ssfx_volumetric_blur()
 		RCache.set_CullMode(CULL_NONE);
 		RCache.set_Stencil(FALSE);
 
-		// Fill vertex buffer
-		quad_fill(0, 0, w, h, 0.0f, 0.0f, 1.0f, 1.0f, EPS_S, 1.0f, C, Offset);
-
 		// Draw COLOR
 		RCache.set_Element(s_ssfx_volumetric_blur->E[b % 2]);
 		RCache.set_c("blur_setup", w / RImplementation.o.volsize, h / RImplementation.o.volsize, pixelsize[b], pixelscale[b]);
-		RCache.set_Geometry(quad_geom());
-		RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
+		draw_fullscreen_quad(C);
 	}
 
 	// Restore Viewport
@@ -339,13 +364,9 @@ void CRenderTarget::phase_ssfx_volumetric_blur()
 	RCache.set_CullMode(CULL_NONE);
 	RCache.set_Stencil(FALSE);
 
-	// Fill vertex buffer
-	quad_fill(0, 0, w, h, 0.0f, 0.0f, 1.0f, 1.0f, EPS_S, 1.0f, C, Offset);
-
 	// Draw COLOR
 	RCache.set_Element(s_ssfx_volumetric_blur->E[5]);
-	RCache.set_Geometry(quad_geom());
-	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
+	draw_fullscreen_quad(C);
 
 	HW.pContext->CopyResource(rt_Generic_2->pTexture->surface_get(), rt_ssfx_accum->pTexture->surface_get());
 };
@@ -375,12 +396,17 @@ void CRenderTarget::phase_ssfx_water_blur()
 		RCache.set_Stencil(FALSE);
 
 		// Fill vertex buffer
-		quad_fill(0, 0, w, h, p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
+		FVF::TL* pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
+		pv->set(0, h, d_Z, d_W, C, p0.x, p1.y); pv++;
+		pv->set(0, 0, d_Z, d_W, C, p0.x, p0.y); pv++;
+		pv->set(w, h, d_Z, d_W, C, p1.x, p1.y); pv++;
+		pv->set(w, 0, d_Z, d_W, C, p1.x, p0.y); pv++;
+		RCache.Vertex.Unlock(4, g_combine->vb_stride);
 
 		// Draw COLOR
 		RCache.set_Element(s_ssfx_water_blur->E[0]);
 		RCache.set_c("blur_setup", 1, 0, 0, 2.0f / ps_ssfx_water.x);
-		RCache.set_Geometry(quad_geom());
+		RCache.set_Geometry(g_combine);
 		RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 
 		// BLUR PHASE 2 //////////////////////////////////////////////////////////
@@ -389,13 +415,18 @@ void CRenderTarget::phase_ssfx_water_blur()
 		RCache.set_Stencil(FALSE);
 
 		// Fill vertex buffer
-		quad_fill(0, 0, w, h, p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
+		pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
+		pv->set(0, h, d_Z, d_W, C, p0.x, p1.y); pv++;
+		pv->set(0, 0, d_Z, d_W, C, p0.x, p0.y); pv++;
+		pv->set(w, h, d_Z, d_W, C, p1.x, p1.y); pv++;
+		pv->set(w, 0, d_Z, d_W, C, p1.x, p0.y); pv++;
+		RCache.Vertex.Unlock(4, g_combine->vb_stride);
 
 		// Draw COLOR
 		RCache.set_Element(s_ssfx_water_blur->E[1]);
 		RCache.set_c("blur_setup", 0, 1, 0, 1.0f);
 
-		RCache.set_Geometry(quad_geom());
+		RCache.set_Geometry(g_combine);
 		RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 	}
 	else
@@ -407,12 +438,17 @@ void CRenderTarget::phase_ssfx_water_blur()
 		RCache.set_Stencil(FALSE);
 
 		// Fill vertex buffer
-		quad_fill(0, 0, w, h, p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
+		FVF::TL* pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
+		pv->set(0, h, d_Z, d_W, C, p0.x, p1.y); pv++;
+		pv->set(0, 0, d_Z, d_W, C, p0.x, p0.y); pv++;
+		pv->set(w, h, d_Z, d_W, C, p1.x, p1.y); pv++;
+		pv->set(w, 0, d_Z, d_W, C, p1.x, p0.y); pv++;
+		RCache.Vertex.Unlock(4, g_combine->vb_stride);
 
 		// Draw COLOR
 		RCache.set_Element(s_ssfx_water_blur->E[2]);
 		RCache.set_c("blur_setup", 0, 0, 0, 2.0f / ps_ssfx_water.x);
-		RCache.set_Geometry(quad_geom());
+		RCache.set_Geometry(g_combine);
 		RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 	}
 
@@ -424,18 +460,10 @@ void CRenderTarget::phase_ssfx_water_blur()
 void CRenderTarget::phase_ssfx_water_waves()
 {
 	//Constants
-	u32 Offset = 0;
 	u32 C = color_rgba(0, 0, 0, 255);
 
-	float d_Z = EPS_S;
-	float d_W = 1.0f;
 	u32 w = Device.dwWidth;
 	u32 h = Device.dwHeight;
-
-
-	Fvector2 p0, p1;
-	p0.set(0.0f, 0.0f);
-	p1.set(1.0f, 1.0f);
 
 	set_viewport_size(HW.pContext, 512, 512);
 
@@ -443,14 +471,10 @@ void CRenderTarget::phase_ssfx_water_waves()
 	RCache.set_CullMode(CULL_NONE);
 	RCache.set_Stencil(FALSE);
 
-	// Fill vertex buffer
-	quad_fill(0, 0, w, h, p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
-
 	// Draw COLOR
 	RCache.set_Element(s_ssfx_water_blur->E[5]);
 	RCache.set_c("wind_setup", g_pGamePersistent->Environment().wind_anim.w, g_pGamePersistent->Environment().CurrentEnv->wind_velocity, 0, 0);
-	RCache.set_Geometry(quad_geom());
-	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
+	draw_fullscreen_quad(C);
 
 	set_viewport_size(HW.pContext, w, h);
 };
@@ -458,25 +482,12 @@ void CRenderTarget::phase_ssfx_water_waves()
 void CRenderTarget::phase_ssfx_sss()
 {
 	//Constants
-	u32 Offset = 0;
 	u32 C = color_rgba(255, 255, 255, 255);
-
-	float d_Z = EPS_S;
-	float d_W = 1.0f;
-	float w = float(Device.dwWidth);
-	float h = float(Device.dwHeight);
-
-	Fvector2 p0, p1;
-	p0.set(0.0f, 0.0f);
-	p1.set(1.0f, 1.0f);
 
 	u_setrt(rt_ssfx, nullptr, nullptr, nullptr);
 
 	RCache.set_CullMode(CULL_NONE);
 	RCache.set_Stencil(FALSE);
-
-	// Fill vertex buffer
-	quad_fill(0, 0, w, h, p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
 
 	// Draw COLOR
 	RCache.set_Element(s_ssfx_sss->E[0]);
@@ -485,9 +496,7 @@ void CRenderTarget::phase_ssfx_sss()
 	RCache.set_c("m_previous", Matrix_previous);
 	RCache.set_c("ssfx_sss", ps_ssfx_sss);
 
-	RCache.set_Geometry(quad_geom());
-	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
-
+	draw_fullscreen_quad(C);
 
 	// BLUR
 	u_setrt(rt_ssfx_temp, nullptr, nullptr, nullptr);
@@ -495,17 +504,12 @@ void CRenderTarget::phase_ssfx_sss()
 	RCache.set_CullMode(CULL_NONE);
 	RCache.set_Stencil(FALSE);
 
-	// Fill vertex buffer
-	quad_fill(0, 0, w, h, p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
-
 	// Draw COLOR
 	RCache.set_Element(s_ssfx_sss->E[1]);
 
 	RCache.set_c("blur_setup", 0, 1, 0, 0);
 
-	RCache.set_Geometry(quad_geom());
-	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
-
+	draw_fullscreen_quad(C);
 
 	// BLUR
 	u_setrt(rt_ssfx_temp2, nullptr, nullptr, nullptr);
@@ -513,17 +517,12 @@ void CRenderTarget::phase_ssfx_sss()
 	RCache.set_CullMode(CULL_NONE);
 	RCache.set_Stencil(FALSE);
 
-	// Fill vertex buffer
-	quad_fill(0, 0, w, h, p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
-
 	// Draw COLOR
 	RCache.set_Element(s_ssfx_sss->E[2]);
 
 	RCache.set_c("blur_setup", 1, 0, 2, 0);
 
-	RCache.set_Geometry(quad_geom());
-	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
-
+	draw_fullscreen_quad(C);
 
 	HW.pContext->CopyResource(rt_ssfx_sss->pTexture->surface_get(), rt_ssfx_temp2->pTexture->surface_get());
 
@@ -547,25 +546,12 @@ void CRenderTarget::phase_ssfx_sss_ext(light_Package& LP)
 	void* LightData;
 
 	//Constants
-	u32 Offset = 0;
 	u32 C = color_rgba(255, 255, 255, 255);
-
-	float d_Z = EPS_S;
-	float d_W = 1.0f;
-	float w = Device.dwWidth;
-	float h = Device.dwHeight;
-
-	Fvector2 p0, p1;
-	p0.set(0.0f, 0.0f);
-	p1.set(1.0f, 1.0f);
 
 	u_setrt(rt_ssfx_sss_tmp, nullptr, nullptr, nullptr);
 
 	RCache.set_CullMode(CULL_NONE);
 	RCache.set_Stencil(FALSE);
-
-	// Fill vertex buffer
-	quad_fill(0, 0, w, h, p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
 
 	// Draw COLOR
 	RCache.set_Element(s_ssfx_sss_ext->E[0]);
@@ -753,8 +739,7 @@ void CRenderTarget::phase_ssfx_sss_ext(light_Package& LP)
 		}
 	}
 
-	RCache.set_Geometry(quad_geom());
-	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
+	draw_fullscreen_quad(C);
 
 	HW.pContext->CopyResource(rt_ssfx_sss_ext->pTexture->surface_get(), rt_ssfx_sss_tmp->pTexture->surface_get());
 
@@ -765,9 +750,6 @@ void CRenderTarget::phase_ssfx_sss_ext(light_Package& LP)
 	RCache.set_CullMode(CULL_NONE);
 	RCache.set_Stencil(FALSE);
 
-	// Fill vertex buffer
-	quad_fill(0, 0, w, h, p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
-
 	// Draw COLOR
 	RCache.set_Element(s_ssfx_sss_ext->E[1]);
 
@@ -776,8 +758,7 @@ void CRenderTarget::phase_ssfx_sss_ext(light_Package& LP)
 	RCache.set_c("id_offset", 1);
 	RCache.get_ConstantDirect(strLights, 4 * sizeof(Fvector4) * 2, 0, 0, &LightData);
 
-	RCache.set_Geometry(quad_geom());
-	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
+	draw_fullscreen_quad(C);
 
 	HW.pContext->CopyResource(rt_ssfx_sss_ext2->pTexture->surface_get(), rt_ssfx_sss_tmp->pTexture->surface_get());
 
@@ -788,28 +769,18 @@ void CRenderTarget::phase_ssfx_sss_ext(light_Package& LP)
 	RCache.set_CullMode(CULL_NONE);
 	RCache.set_Stencil(FALSE);
 
-	// Fill vertex buffer
-	quad_fill(0, 0, w, h, p0.x, p0.y, p1.x, p1.y, d_Z, d_W, C, Offset);
-
 	// Draw COLOR
 	RCache.set_Element(s_ssfx_sss_ext->E[2]);
 
-	RCache.set_Geometry(quad_geom());
-	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
+	draw_fullscreen_quad(C);
 }
-
 
 void CRenderTarget::phase_ssfx_fog_scattering()
 {
-	u32 Offset = 0;
-	Fvector2 p0, p1;
 
 	u32 C = color_rgba(255, 255, 255, 255);
 	float w = float(Device.dwWidth);
 	float h = float(Device.dwHeight);
-
-	p0.set(0.0f, 0.0f);
-	p1.set(1.0f, 1.0f);
 
 	FVF::TL* pv;
 
@@ -825,14 +796,10 @@ void CRenderTarget::phase_ssfx_fog_scattering()
 		RCache.set_CullMode(CULL_NONE);
 		RCache.set_Stencil(FALSE);
 
-		// Fill vertex buffer
-		quad_fill(0, 0, w, h, 0.0f, 0.0f, 1.0f, 1.0f, EPS_S, 1.0f, C, Offset);
-
 		// Draw COLOR
 		RCache.set_Element(s_ssfx_fog_scattering->E[2 + blurp]);
 		RCache.set_c("blur_setup", w / SampleScale, h / SampleScale, 0, 0);
-		RCache.set_Geometry(quad_geom());
-		RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
+		draw_fullscreen_quad(C);
 	}
 
 	set_viewport_size(HW.pContext, w, h);
@@ -844,15 +811,11 @@ void CRenderTarget::phase_ssfx_fog_scattering()
 	RCache.set_CullMode(CULL_NONE);
 	RCache.set_Stencil(FALSE);
 
-	quad_fill(0, 0, w, h, 0.0f, 0.0f, 1.0f, 1.0f, EPS_S, 1.0f, C, Offset);
-
 	// Draw COLOR
 	RCache.set_Element(s_ssfx_fog_scattering->E[0]);
 	RCache.set_c("ssfx_scattering_setup", ps_ssfx_fog_scattering,0,0,0);
 
-	RCache.set_Geometry(quad_geom());
-
-	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
+	draw_fullscreen_quad(C);
 
 	HW.pContext->CopyResource(rt_Generic_0->pTexture->surface_get(), dest_rt->pTexture->surface_get());
 
@@ -860,15 +823,8 @@ void CRenderTarget::phase_ssfx_fog_scattering()
 
 void CRenderTarget::phase_ssfx_motion_blur()
 {
-	u32 Offset = 0;
-	Fvector2 p0, p1;
 
 	u32 C = color_rgba(255, 255, 255, 255);
-	float w = float(Device.dwWidth);
-	float h = float(Device.dwHeight);
-
-	p0.set(0.0f, 0.0f);
-	p1.set(1.0f, 1.0f);
 
 	ref_rt& dest_rt = RImplementation.o.dx10_msaa ? rt_Generic : rt_Color;
 
@@ -877,16 +833,13 @@ void CRenderTarget::phase_ssfx_motion_blur()
 	RCache.set_CullMode(CULL_NONE);
 	RCache.set_Stencil(FALSE);
 
-	quad_fill(0, 0, w, h, 0.0f, 0.0f, 1.0f, 1.0f, EPS_S, 1.0f, C, Offset);
-
 	// Draw COLOR
 	RCache.set_Element(s_ssfx_motion_blur->E[0]);
 
 	RCache.set_c("m_current", Matrix_current);
 	RCache.set_c("m_previous", Matrix_previous);
 
-	RCache.set_Geometry(quad_geom());
-	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
+	draw_fullscreen_quad(C);
 
 	HW.pContext->CopyResource(rt_Generic_0->pTexture->surface_get(), dest_rt->pTexture->surface_get());
 }
