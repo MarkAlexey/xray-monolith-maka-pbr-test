@@ -1,0 +1,184 @@
+-- Additive options extension: do not replace GAMMA/Anomaly's ui_options.script.
+local installed = false
+
+local function current_method()
+    local method = get_console_cmd(0, "r_upscaler")
+    -- Older configs selected DLSS implicitly and used quality=off to disable it.
+    -- Display those as Off without changing the console just by opening the UI.
+    if method == "dlss" and get_console_cmd(0, "r_dlss_quality") == "off" then
+        return "off"
+    end
+    return method
+end
+
+local function find_row(tree, id)
+    for _, row in ipairs(tree.gr or {}) do
+        if row.id == id then return row end
+    end
+end
+
+local function install_dynamic_options()
+    local class = ui_options.UIOptions
+    local reset, cache, update = class.Reset_opt, class.CacheValue, class.Update
+    local accept = class.On_Accept
+    class.Reset_opt = function(self, tree, path, flags)
+        self._upscaler_refresh = nil
+        local selector = path == "video/basic" and find_row(tree, "upscaler")
+        if not selector then return reset(self, tree, path, flags) end
+        -- Ask the options framework for its PENDING value, not the live console.
+        local method = self:GetCurrentValue(path, selector.id, selector)
+        local visible = {}
+        for key, value in pairs(tree) do visible[key] = value end
+        visible.gr = {}
+        for _, row in ipairs(tree.gr) do
+            local needed = row.upscaler_method
+            if not needed or needed == method or (needed == "either" and method ~= "off") then
+                visible.gr[#visible.gr + 1] = row
+            end
+        end
+        -- Filter only the displayed rows. Keep the canonical options tree intact
+        -- so hidden settings retain pending values and Apply/Cancel still work.
+        return reset(self, visible, path, flags)
+    end
+    class.CacheValue = function(self, path, opt, value, row)
+        cache(self, path, opt, value, row)
+        if path == "video/basic" and opt == "upscaler" then
+            if value == "dlss" then
+                local quality = self:GetOption("video/basic/dlss_mode")
+                if self:GetCurrentValue(path, quality.id, quality) == "off" then
+                    -- Selecting DLSS must actually enable it. Stage Quality only
+                    -- for legacy Off; preserve all existing non-Off choices.
+                    cache(self, path, quality.id, "quality", quality)
+                end
+            end
+            -- Never destroy a combo box while its selection callback is running.
+            self._upscaler_refresh = true
+        end
+    end
+    class.Update = function(self, ...)
+        update(self, ...)
+        if self._upscaler_refresh then
+            self._upscaler_refresh = nil
+            if self.last_path == "video/basic" and self.last_curr_tree then
+                self:Reset_opt(self.last_curr_tree, self.last_path)
+            end
+        end
+    end
+    class.On_Accept = function(self, ...)
+        local selector = self:GetOption("video/basic/upscaler")
+        if selector and selector.cmd == "r_upscaler" then
+            local method = self:GetCurrentValue("video/basic", selector.id, selector)
+            local quality = self:GetOption("video/basic/dlss_mode")
+            -- Legacy dlss+quality=off is displayed as Off. If DLSS was selected
+            -- and then Off again, its pending quality can still be non-Off.
+            -- Preserve that quality preference but make Off authoritative.
+            if method == "off" and get_console_cmd(0, "r_upscaler") == "dlss" and
+                get_console_cmd(0, "r_dlss_quality") == "off" and
+                self:GetCurrentValue("video/basic", quality.id, quality) ~= "off" then
+                exec_console_cmd("r_upscaler off")
+                -- The pending quality already requests cfg_save/vid_restart.
+            end
+        end
+        return accept(self, ...)
+    end
+end
+
+local function content_for(command, choices)
+    local tokens = get_console():get_token_list(command)
+    local supported, content = {}, {}
+    if tokens then
+        for _, token in ipairs(tokens) do supported[token] = true end
+    end
+    for _, choice in ipairs(choices) do
+        if supported[choice[1]] then content[#content + 1] = choice end
+    end
+    return content
+end
+
+local function add_options()
+    local methods = content_for("r_upscaler", {
+        {"off", "dlss_off"}, {"dlss", "upscaler_dlss"}, {"fsr3", "upscaler_fsr3"},
+    })
+    local fsr_modes = content_for("r_fsr3_quality", {
+        {"native_aa", "fsr3_native_aa"}, {"quality", "dlss_quality"},
+        {"balanced", "dlss_balanced"}, {"performance", "dlss_performance"},
+        {"ultra_performance", "dlss_ultra_performance"},
+    })
+    -- Commands only exist in the matching DX11 renderer. Hide these controls
+    -- with stock/other-renderer binaries instead of issuing unknown commands.
+    local modes = content_for("r_dlss_quality", {
+        {"off", "dlss_off"}, {"dlaa", "dlss_dlaa"},
+        {"quality", "dlss_quality"}, {"balanced", "dlss_balanced"},
+        {"performance", "dlss_performance"}, {"ultra_performance", "dlss_ultra_performance"},
+    })
+    local presets = content_for("r_dlss_preset", {
+        {"default", "dlss_default"}, {"j", "dlss_j"}, {"k", "dlss_k"},
+        {"l", "dlss_l"}, {"m", "dlss_m"},
+    })
+    if #modes == 0 or #presets == 0 then return end
+    local dual = #methods == 3 and #fsr_modes > 0
+    if dual then
+        -- Off belongs only to the method selector, not the quality selector.
+        for i = #modes, 1, -1 do
+            if modes[i][1] == "off" then table.remove(modes, i) end
+        end
+    end
+
+    for _, top in ipairs(ui_options.options) do
+        if top.id == "video" and top.gr then
+            for _, group in ipairs(top.gr) do
+                if group.id == "basic" and group.gr then
+                    local position = #group.gr + 1
+                    for i, row in ipairs(group.gr) do
+                        if row.id == "dlss_mode" then return end
+                        if row.id == "resolution" then position = i + 1 end
+                    end
+                    -- Standard pending-value/Apply/Cancel handling. vid requests
+                    -- ONE vid_restart after both console values have been applied.
+                    table.insert(group.gr, position, {
+                        id = "dlss_mode", type = "list", val = 0,
+                        cmd = "r_dlss_quality", content = modes, vid = true,
+                        upscaler_method = dual and "dlss" or nil,
+                    })
+                    table.insert(group.gr, position + 1, {
+                        id = "dlss_preset", type = "list", val = 0,
+                        cmd = "r_dlss_preset", content = presets, vid = true,
+                        upscaler_method = dual and "dlss" or nil,
+                    })
+                    table.insert(group.gr, position + 2, {
+                        id = "dlss_sharpness", type = "track", val = 2,
+                        cmd = "r_dlss_sharpness", min = 0, max = 1, step = 0.05,
+                        upscaler_method = dual and "either" or nil,
+                    })
+                    if dual then
+                        table.insert(group.gr, position, {
+                            id = "upscaler", type = "list", val = 0,
+                            cmd = "r_upscaler", content = methods, vid = true,
+                            curr = {current_method},
+                        })
+                        table.insert(group.gr, position + 2, {
+                            id = "fsr3_mode", type = "list", val = 0,
+                            cmd = "r_fsr3_quality", content = fsr_modes, vid = true,
+                            upscaler_method = "fsr3",
+                        })
+                    end
+                    return
+                end
+            end
+        end
+    end
+end
+
+function on_xml_read()
+    if installed then return end
+    installed = true
+    install_dynamic_options()
+    -- Insert before indexing, rather than invoking the indexer a second time:
+    -- GAMMA's indexer also appends radio playlist controls.
+    local original = ui_options.init_opt_coder
+    ui_options.init_opt_coder = function(...)
+        add_options()
+        return original(...)
+    end
+    ui_options.init_opt_base()
+end

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<string_table>
+    <string id="ui_mm_video_basic_upscaler"><text>Temporal upscaler</text></string>
+    <string id="ui_mm_video_basic_upscaler_desc"><text>Select NVIDIA DLSS or AMD FSR 3 upscaling. Off retains the native renderer and its existing anti-aliasing settings. Both require MSAA off and the matching temporal shader override. Only the selected method runs; its quality setting is below. Apply restarts the renderer. No frame generation.</text></string>
+    <string id="ui_mm_video_basic_fsr3_mode"><text>AMD FSR 3 quality</text></string>
+    <string id="ui_mm_video_basic_fsr3_mode_desc"><text>Used only when the temporal upscaler is FSR 3. Native AA uses native resolution; Quality, Balanced, Performance and Ultra Performance use 1.5x, 1.7x, 2x and 3x scaling respectively. Native DX11 FSR 3.1.2 upscaling, including non-AMD GPUs. No NVIDIA runtime required. Replaces SSS TAA and SMAA while active. Apply restarts the renderer.</text></string>
+    <string id="ui_mm_video_basic_dlss_sharpness"><text>Upscaling sharpening (CAS)</text></string>
+    <string id="ui_mm_video_basic_dlss_sharpness_desc"><text>Shared Contrast Adaptive Sharpening after DLSS or FSR reconstruction, before display overlays and UI. 0 disables this filter; 1 is maximum. Applies without a renderer restart. Does not change Atmospherics clarity or night-vision effects. High values can emphasize noise and edges. Has no effect with upscaling off or during spatial fallback.</text></string>
+    <string id="ui_mm_lst_upscaler_dlss"><text>NVIDIA DLSS</text></string>
+    <string id="ui_mm_lst_upscaler_fsr3"><text>AMD FSR 3</text></string>
+    <string id="ui_mm_lst_fsr3_native_aa"><text>Native AA</text></string>
+    <string id="ui_mm_video_basic_dlss_mode"><text>NVIDIA DLSS quality</text></string>
+    <string id="ui_mm_video_basic_dlss_mode_desc"><text>DLAA renders at native resolution; Quality, Balanced, Performance and Ultra Performance upscale a smaller scene. Requires an RTX GPU, the NVIDIA DLSS runtime and the matching shader override. Turn MSAA off before enabling DLSS. DLSS replaces SSS TAA and SMAA while active. Apply restarts the renderer; Cancel leaves the current settings unchanged.</text></string>
+    <string id="ui_mm_video_basic_dlss_preset"><text>NVIDIA DLSS render preset</text></string>
+    <string id="ui_mm_video_basic_dlss_preset_desc"><text>Selects the reconstruction model independently of scaling mode. Default lets NVIDIA select the recommended preset for each mode. J/K/L/M explicitly request that preset; NVIDIA driver overrides can affect the result. Requires the supplied DLSS 310.9.1 runtime. Apply restarts the renderer. Deprecated preset F is not offered.</text></string>
+    <string id="ui_mm_lst_dlss_off"><text>Off</text></string>
+    <string id="ui_mm_lst_dlss_dlaa"><text>DLAA (native)</text></string>
+    <string id="ui_mm_lst_dlss_quality"><text>Quality</text></string>
+    <string id="ui_mm_lst_dlss_balanced"><text>Balanced</text></string>
+    <string id="ui_mm_lst_dlss_performance"><text>Performance</text></string>
+    <string id="ui_mm_lst_dlss_ultra_performance"><text>Ultra Performance</text></string>
+    <string id="ui_mm_lst_dlss_default"><text>Default (NVIDIA recommended)</text></string>
+    <string id="ui_mm_lst_dlss_j"><text>J</text></string>
+    <string id="ui_mm_lst_dlss_k"><text>K</text></string>
+    <string id="ui_mm_lst_dlss_l"><text>L</text></string>
+    <string id="ui_mm_lst_dlss_m"><text>M</text></string>
+</string_table>

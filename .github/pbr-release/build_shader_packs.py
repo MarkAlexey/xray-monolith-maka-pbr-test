@@ -44,8 +44,16 @@ PBR and against the same stack without it as the baseline. Only NEW errors fail 
 (SSS / ES contain a few lines DXC rejects but the game's FXC accepts). DXC is not FXC: a clean
 compile catches syntax, type and missing-identifier errors, not everything FXC might reject.
 
+Top layers (--top-layer DIR, repeatable, lowest first): extra shader folders applied above
+GAMMA's overrides, i.e. above the whole stack. The DLSS / FSR3 branch passes the components
+of the DLSS compatibility patch here (its SSS-level base, then the Atmospherics component that
+matches atmospherics/), so the overlay's files are patched from the DLSS versions (for example
+deffer_grass.vs keeps the DLSS grass jitter and gains the instanced-grass paths) and the full
+pack contains the DLSS shaders. Install the DLSS patch first, then the overlay above it.
+
 Usage
   python build_shader_packs.py --sources shader-sources --out shader_packs [--dxc dxc/bin/dxc]
+                               [--top-layer DLSS/base --top-layer DLSS/atmos_rc7]
   --dry-run resolves the sources and shows what would be built, writing nothing.
 """
 
@@ -204,6 +212,8 @@ def main():
     ap.add_argument("--sources", required=True, help="sources folder (see above)")
     ap.add_argument("--out", default="shader_packs", help="where the two zips go")
     ap.add_argument("--dxc", help="DXC binary: enables the compile check (needs vanilla/ in the sources)")
+    ap.add_argument("--top-layer", action="append", default=[],
+                    help="extra shader folder above GAMMA's overrides (repeatable, lowest first)")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
 
@@ -216,6 +226,10 @@ def main():
                  + "\n  ".join(f"{k}: {v}" for k, v in forms.items()))
     mode = next(iter(forms.values()))
     extras = gamma_layers(a.sources)
+    for t in a.top_layer:
+        if not os.path.exists(t):
+            sys.exit(f"error: --top-layer {t} does not exist")
+    extras += list(a.top_layer)
     vanilla = os.path.join(a.sources, "vanilla")
     van_r3 = find_r3(vanilla) if os.path.isdir(vanilla) else None
     print(f"Form: {mode}")
@@ -235,7 +249,7 @@ def main():
             stack = ([("Beef's NVGs", src["beef"])] if src["beef"] else []) + [
                 ("Enhanced Shaders", src["es"]), ("Screen Space Shaders", src["sss"]),
                 ("Atmospherics", src["atmospherics"])] + [
-                (f"GAMMA/{os.path.basename(e)}", e) for e in extras]
+                (f"{'top' if e in a.top_layer else 'GAMMA'}/{os.path.basename(os.path.normpath(e))}", e) for e in extras]
             # 1. the overlay, patched from the winners of exactly this stack
             cmd = [py, os.path.join(TOOLS, "make_pbr_overlay.py"), "--out", overlay]
             for _, p in stack:

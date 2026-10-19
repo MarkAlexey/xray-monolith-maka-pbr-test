@@ -22,6 +22,15 @@
 #     "pbr-test-lass-<version>" and STALKER-Anomaly-PBR-Test-lass_*.zip, so it never replaces
 #     the main branch's release. Any other branch gets "pbr-test-<branch>-...".
 #
+# DLSS / FSR3 branches (name ends in "-dlss", e.g. pbr-test-s3ds-mt-sss-lass-dlss)
+#   - bin/ also gets NVIDIA's DLSS runtime, nvngx_dlss.dll, downloaded from NVIDIA's own
+#     repository and checked against DLSS_DLL_SHA256 (the build fails if it does not match).
+#     FSR3 is built into the exe and needs no DLL.
+#   - The DLSS / FSR3 shader compatibility patch (brodrigz, .github/pbr-release/dlss/) is
+#     attached to the release unchanged; the in-game DLSS/FSR3 shaders come only from it.
+#   - The GAMMA shader zips are built with that patch's components on top of the stack
+#     (DLSS_PATCH_COMPONENTS), so install order is: DLSS patch, then the PBR overlay above it.
+#
 # Settings: the env block below and the build matrix (add "DX10" etc. if you want the other
 # renderers; they do not run PBR).
 #
@@ -55,7 +64,7 @@ name: PBR-Test build
 
 on:
   push:
-    branches: [ "pbr-test-s3ds-mt-sss", "pbr-test-s3ds-mt-sss-lass" ]
+    branches: [ "pbr-test-s3ds-mt-sss", "pbr-test-s3ds-mt-sss-lass", "pbr-test-s3ds-mt-sss-lass-dlss" ]
     paths:
       - "src/**"
       - "gamedata/**"
@@ -87,6 +96,14 @@ env:
   PACK_GAMEDATA_NAME: 00_modded_exes_gamedata.db0
   PACKAGE_NAME: STALKER-Anomaly-PBR-Test
   RETENTION_DAYS: 3
+  # DLSS branches only (see above). NVIDIA DLSS 310.9.1, the runtime brodrigz's 0.5 build uses.
+  DLSS_DLL_URL: https://raw.githubusercontent.com/NVIDIA/DLSS/v310.9.1/lib/Windows_x86_64/rel/nvngx_dlss.dll
+  DLSS_DLL_SHA256: 3975567b8943c53acce397f2b72380092f84f162d00b0d2c7d08a1025c563983
+  DLSS_PATCH_ZIP: .github/pbr-release/dlss/dlss-binaries-GAMMA-compatibility-patch-0.5.zip
+  # Patch components stacked on top of the GAMMA shader sources, lowest first. "base" is the
+  # SSS 23.5 part; add the Atmospherics component matching the sources repository's
+  # atmospherics/ ("atmos_rc7" for 2.69 RC7.x, nothing for 2.68.93)
+  DLSS_PATCH_COMPONENTS: base atmos_rc7
 
 jobs:
   pack_gamedata:
@@ -205,7 +222,17 @@ jobs:
 
       - name: Build PBR_overlay_GAMMA.zip and PBR_shaders_GAMMA.zip
         if: steps.cfg.outputs.on == 'true'
-        run: python .github/pbr-release/build_shader_packs.py --sources shader-sources --out shader_packs --dxc "$PWD/dxc/bin/dxc"
+        run: |
+          set -euo pipefail
+          top=()
+          if [[ "$GITHUB_REF_NAME" == *-dlss ]]; then
+            mkdir -p dlss_patch && unzip -q "$DLSS_PATCH_ZIP" -d dlss_patch
+            for c in $DLSS_PATCH_COMPONENTS; do
+              [ -d "dlss_patch/components/$c" ] || { echo "::error::DLSS patch has no component $c"; exit 1; }
+              top+=(--top-layer "dlss_patch/components/$c")
+            done
+          fi
+          python .github/pbr-release/build_shader_packs.py --sources shader-sources --out shader_packs --dxc "$PWD/dxc/bin/dxc" "${top[@]}"
 
       - name: Upload
         if: steps.cfg.outputs.on == 'true'
@@ -266,6 +293,13 @@ jobs:
           mkdir -p pkg/bin pkg/db/mods
           cp artifacts/gamedata/*.db0 pkg/db/mods/
           for d in artifacts/bin-*; do cp "$d"/*.exe pkg/bin/; done
+          if [[ "$GITHUB_REF_NAME" == *-dlss ]]; then
+            # NVIDIA's DLSS runtime next to the exes (pinned version and checksum)
+            curl -sSL --fail -o pkg/bin/nvngx_dlss.dll "$DLSS_DLL_URL"
+            echo "$DLSS_DLL_SHA256  pkg/bin/nvngx_dlss.dll" | sha256sum -c -
+            # The DLSS / FSR3 shader compatibility patch, as its author ships it
+            cp "$DLSS_PATCH_ZIP" .
+          fi
           # PDBs (debug symbols, large) go in their own zip: dropped next to the exes they make
           # crash logs readable
           mkdir -p pdb
