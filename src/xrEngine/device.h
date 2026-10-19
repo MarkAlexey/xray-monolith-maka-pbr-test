@@ -141,11 +141,6 @@ public:
 class ENGINE_API CRenderDevice : public CRenderDeviceBase
 {
 public:
-	// Primary (render) thread identity. Set at static init and again in Run(), which runs on
-	// the primary thread. Used by the qkff99 load-time cache builders' debug checks.
-	DWORD m_main_thread_id = GetCurrentThreadId();
-	bool IsMainThread() const { return GetCurrentThreadId() == m_main_thread_id; }
-
 	class ENGINE_API CSecondVPParams //--#SM+#-- +SecondVP+
 	{
 		bool isActive; // Oeaa aeoeaaoee ?aiaa?a ai aoi?ie au?ii?o

@@ -312,7 +312,9 @@ Fvisual::StaticBatch::~StaticBatch()
 void Fvisual::BuildStaticBatches(const xr_vector<dxRender_Visual*>& visuals)
 {
     PROF_EVENT("Render.StaticBatch.Build.Level");
-    VERIFY(Device.IsMainThread());
+    // Level loading owns the visuals before publication, including PPL callers.
+    // These builders create device resources; they do not use the immediate context.
+    R_ASSERT(!RImplementation.b_loaded);
     struct Candidate { Fvisual* visual; int cell[3]; };
     xr_vector<Candidate> candidates;
     for (auto* visual : visuals)
@@ -466,7 +468,7 @@ bool Fvisual::ShadowBatchMemberValid() const
 void Fvisual::BuildShadowBatches(const xr_vector<dxRender_Visual*>& visuals)
 {
     PROF_EVENT("Shadow.Batch.Build.Level");
-    VERIFY(Device.IsMainThread());
+    R_ASSERT(!RImplementation.b_loaded);
     struct Candidate { Fvisual* mesh; SPass* pass; int cell[3]; };
     xr_vector<Candidate> candidates;
     for (auto* visual : visuals)

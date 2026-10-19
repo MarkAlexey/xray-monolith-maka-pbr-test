@@ -634,7 +634,6 @@ void CRenderDevice::Run()
 	g_bLoaded = FALSE;
 	Log("Starting engine...");
 	thread_name("X-RAY Primary thread");
-	m_main_thread_id = GetCurrentThreadId();
 	// Startup timers and calculate timer delta
 	dwTimeGlobal = 0;
 	Timer_MM_Delta = 0;
