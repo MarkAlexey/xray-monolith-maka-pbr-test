@@ -136,24 +136,41 @@ static class cl_LOD : public R_constant_setup
 	}
 } binder_LOD;
 
+// pos_decompression_params(2) for the owner and, frozen per frame, for recording contexts
+// (RenderContext::Synchronize). Same values the binders always set (no upscaler jitter here).
+Fvector4 CalculatePositionDecompression()
+{
+    const float vert_tan = -1.0f * tanf(deg2rad(Device.fFOV / 2.0f));
+    const float horz_tan = -vert_tan / Device.fASPECT;
+    Fvector4 parameters;
+    return parameters.set(horz_tan, vert_tan, (2.0f * horz_tan) / float(Device.dwWidth), (2.0f * vert_tan) / float(Device.dwHeight));
+}
+
+Fvector4 CalculatePositionDimensions()
+{
+    Fvector4 dimensions;
+    return dimensions.set(float(Device.dwWidth), float(Device.dwHeight), 1.0f / float(Device.dwWidth), 1.0f / float(Device.dwHeight));
+}
+
 static class cl_pos_decompress_params : public R_constant_setup
 {
+    bool parallel_safe() const override { return true; }
 	virtual void setup(R_constant* C)
 	{
-		float VertTan = -1.0f * tanf(deg2rad(Device.fFOV / 2.0f));
-		float HorzTan = - VertTan / Device.fASPECT;
-
-		RCache.set_c(C, HorzTan, VertTan, (2.0f * HorzTan) / (float)Device.dwWidth,
-		             (2.0f * VertTan) / (float)Device.dwHeight);
+        Fvector4 value;
+        if (!ContextPositionDecompression(value, false)) value = CalculatePositionDecompression();
+        RCache.set_c(C, value);
 	}
 } binder_pos_decompress_params;
 
 static class cl_pos_decompress_params2 : public R_constant_setup
 {
+    bool parallel_safe() const override { return true; }
 	virtual void setup(R_constant* C)
 	{
-		RCache.set_c(C, (float)Device.dwWidth, (float)Device.dwHeight, 1.0f / (float)Device.dwWidth,
-		             1.0f / (float)Device.dwHeight);
+        Fvector4 value;
+        if (!ContextPositionDecompression(value, true)) value = CalculatePositionDimensions();
+        RCache.set_c(C, value);
 	}
 } binder_pos_decompress_params2;
 

@@ -5,7 +5,12 @@
 
 void CRenderTarget::draw_volume(light* L)
 {
-	switch (L->flags.type)
+    draw_volume(L->flags.type);
+}
+
+void CRenderTarget::draw_volume(u32 type)
+{
+	switch (type)
 	{
 	case IRender_Light::REFLECTED:
 	case IRender_Light::POINT:

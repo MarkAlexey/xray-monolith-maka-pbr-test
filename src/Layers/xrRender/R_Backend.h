@@ -128,7 +128,7 @@ public:
 #if defined(USE_DX11) && RENDER == R_R4
     const RenderObjectSnapshot* recording_object = nullptr;
 #endif
-    u32 RenderPhase(u32 phase) const { return RenderContextId() ? recording_phase : phase; }
+    u32 RenderPhase(const u32& phase) const { return RenderContextId() ? recording_phase : phase; }
 #ifdef USE_DX11
 	R_LOD LOD;
 #endif

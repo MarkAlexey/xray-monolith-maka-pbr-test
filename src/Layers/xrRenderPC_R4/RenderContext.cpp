@@ -50,6 +50,8 @@ struct RenderContext::State
     dx10SamplerStateCache samplers;
     dx10ShaderResourceStateCache resources;
     CBackend backend{false};
+    Fmatrix camera_view, camera_projection, camera_full, camera_inverse;
+    Fvector4 decompression_parameters, decompression_dimensions;
 
     explicit State(u32 index) : id(index) {}
     ~State()
@@ -79,6 +81,16 @@ u32 RenderContextId() { return current ? current->id : 0; }
 u64 RenderContextGeneration() { return current ? current->generation : 0; }
 CBackend& ActiveRenderBackend() { return current ? current->backend : RCache; }
 ID3D11DeviceContext1* ActiveDeviceContext() { return current ? current->context.Get() : HW.pContext; }
+const Fmatrix& RenderCameraView() { return current ? current->camera_view : Device.mView; }
+const Fmatrix& RenderCameraProjection() { return current ? current->camera_projection : Device.mProject; }
+const Fmatrix& RenderCameraFullTransform() { return current ? current->camera_full : Device.mFullTransform; }
+const Fmatrix& RenderCameraInverseView() { return current ? current->camera_inverse : Device.mInvView; }
+bool ContextPositionDecompression(Fvector4& value, bool dimensions)
+{
+    if (!current) return false;
+    value = dimensions ? current->decompression_dimensions : current->decompression_parameters;
+    return true;
+}
 dx10StateManager& ActiveStateManager() { return current ? current->states : StateManager; }
 dx10SamplerStateCache& ActiveSamplerManager() { return current ? current->samplers : SSManager; }
 dx10ShaderResourceStateCache& ActiveResourceManager() { return current ? current->resources : SRVSManager; }
@@ -138,6 +150,12 @@ void RenderContext::Synchronize()
 {
     R_ASSERT(!current);
     ++state->prime_generation;
+    state->camera_view = Device.mView;
+    state->camera_projection = Device.mProject;
+    state->camera_full = Device.mFullTransform;
+    state->camera_inverse = Device.mInvView;
+    state->decompression_parameters = CalculatePositionDecompression();
+    state->decompression_dimensions = CalculatePositionDimensions();
     state->samplers.Synchronize(SSManager);
     state->backend.xforms = RCache.xforms;
     state->backend.xforms.unmap();
@@ -333,17 +351,22 @@ bool ShadowMap::InitializeDepth(ID3D11DepthStencilView* depth)
 ID3D11DepthStencilView* ShadowMap::Depth() const { return state->depth.Get(); }
 ID3D11ShaderResourceView* ShadowMap::View() const { return state->view.Get(); }
 
+bool ParallelRenderPass(const SPass& pass)
+{
+    if (!pass.vs || !pass.ps || !pass.vs->recording_safe || !pass.ps->recording_safe)
+        return false;
+    if ((pass.gs && pass.gs->gs && !pass.gs->recording_safe) ||
+        (pass.hs && pass.hs->sh && !pass.hs->recording_safe) ||
+        (pass.ds && pass.ds->sh && !pass.ds->recording_safe))
+        return false;
+    if (pass.constants) for (const auto& constant : pass.constants->table)
+        if (constant->handler && !constant->handler->parallel_safe()) return false;
+    return true;
+}
+
 bool ParallelShadowPass(const R_dsgraph::RenderPacket& packet)
 {
-    const auto* pass = packet.source_pass;
-    if (!pass || !pass->vs || !pass->ps || !pass->vs->recording_safe || !pass->ps->recording_safe)
-        return false;
-    if ((pass->gs && pass->gs->gs && !pass->gs->recording_safe) ||
-        (pass->hs && pass->hs->sh && !pass->hs->recording_safe) ||
-        (pass->ds && pass->ds->sh && !pass->ds->recording_safe))
-        return false;
-    if (pass->constants) for (const auto& constant : pass->constants->table)
-        if (constant->handler && !constant->handler->parallel_safe()) return false;
+    if (!packet.source_pass || !ParallelRenderPass(*packet.source_pass)) return false;
     switch (packet.item.pVisual->Type)
     {
     case MT_NORMAL: case MT_PROGRESSIVE: case MT_TREE_ST: case MT_TREE_PM:
@@ -367,11 +390,14 @@ void MergeStatistics(const CBackend::_stats& source)
 #undef MERGE_KIND
 }
 
-void PrepareShadowPackets(CDSGraphManager& graph, RenderContext& context, std::vector<Fmatrix>& worlds, bool include_static)
+ShadowFallback PrepareShadowPackets(CDSGraphManager& graph, RenderContext& context, std::vector<Fmatrix>& worlds,
+    bool include_static, std::vector<const SPass*>* passes)
 {
+    ShadowFallback fallback;
     size_t matrices = 0;
     for (auto& queue : graph.RGraph.mapDynamicPasses[0]) matrices += queue.size();
     worlds.reserve(matrices);
+    const Fmatrix* previous_world = nullptr;
     for (auto* queues : {&graph.RGraph.mapStaticPasses, &graph.RGraph.mapDynamicPasses})
     {
         // Keep the immutable packet metadata that produced an early command
@@ -383,7 +409,11 @@ void PrepareShadowPackets(CDSGraphManager& graph, RenderContext& context, std::v
                 packet.parallel_shadow = ParallelShadowPass(packet);
                 if (queues == &graph.RGraph.mapDynamicPasses && packet.item.pMatrix)
                 {
-                    worlds.push_back(*packet.item.pMatrix);
+                    const auto* source = packet.item.pMatrix;
+                    if (!packet.parallel_shadow || source != previous_world || worlds.empty() ||
+                        memcmp(source, &worlds.back(), sizeof(Fmatrix)))
+                        worlds.push_back(*source);
+                    previous_world = packet.parallel_shadow ? source : nullptr;
                     packet.item.pMatrix = &worlds.back();
                 }
                 packet.shadow_pose.reset();
@@ -412,7 +442,25 @@ void PrepareShadowPackets(CDSGraphManager& graph, RenderContext& context, std::v
                     snapshot.hotness.set(hotness, object->GetTransparency(), 0.f, 0.f);
                     snapshot.glowing.set(sil_glow_color.x, sil_glow_color.y, sil_glow_color.z, object->GetGlowing());
                 }
-                if (packet.parallel_shadow) context.Prime(*packet.source_pass);
+                if (packet.parallel_shadow)
+                {
+                    if (!packet.local_shadow_hidden)
+                    {
+                        ++fallback.recording_packets;
+                        // Frozen skinning is materially heavier than a static packet.
+                        fallback.recording_work += packet.shadow_pose ? 3u : 1u;
+                    }
+                    if (!passes) context.Prime(*packet.source_pass);
+                    // A smapvis query may still bind a hidden candidate's pass.
+                    else if (std::find(passes->begin(), passes->end(), packet.source_pass) == passes->end())
+                        passes->push_back(packet.source_pass);
+                }
+                else if (!packet.local_shadow_hidden)
+                {
+                    if (queues == &graph.RGraph.mapStaticPasses) ++fallback.static_packets;
+                    else ++fallback.dynamic_packets;
+                }
             }
     }
+    return fallback;
 }

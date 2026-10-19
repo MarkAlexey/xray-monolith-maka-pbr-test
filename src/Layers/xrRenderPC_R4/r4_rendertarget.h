@@ -3,6 +3,7 @@
 #include "../xrRender/ColorMapManager.h"
 #include "../xrRender/light_db.h"
 class light;
+struct RecordedLight;
 
 //#define DU_SPHERE_NUMVERTEX 92
 //#define DU_SPHERE_NUMFACES	180
@@ -515,6 +516,7 @@ public:
 	void disable_aniso();
 
 	void draw_volume(light* L);
+    void draw_volume(u32 type);
 	void accum_direct(u32 sub_phase);
 	void accum_direct_cascade(u32 sub_phase, Fmatrix& xform, Fmatrix& xform_prev, float fBias);
 	// IX-Ray CSM (r4_sun_csm)
@@ -531,6 +533,12 @@ public:
 	void accum_direct_volumetric(u32 sub_phase, const u32 Offset, const Fmatrix& mShadow);
 	void accum_point(light* L);
 	void accum_spot(light* L);
+    void accum_point(const RecordedLight& L, u32& marker);
+    void accum_spot(const RecordedLight& L, u32& marker);
+    template<bool Recorded, class Light> void accum_point_impl(Light* L, u32& marker);
+    template<bool Recorded, class Light> void accum_spot_impl(Light* L, u32& marker);
+    void bind_recorded_accumulator();
+    bool prepare_light_accumulation(RecordedLight& result, light& source, bool point);
 	void accum_reflected(light* L);
 	//	Igor: for volumetric lights
 	void accum_volumetric(light* L);
@@ -567,6 +575,8 @@ public:
 	//	Don't clear when render for the first time
 	void reset_light_marker(bool bResetStencil = false);
 	void increment_light_marker();
+    void reset_light_marker(u32& marker, bool reset_stencil);
+    void increment_light_marker(u32& marker);
 
 	void DoAsyncScreenshot();
 

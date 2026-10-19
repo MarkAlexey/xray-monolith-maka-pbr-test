@@ -244,7 +244,7 @@ void CBackend::BindTexture(CTexture* surface, u32 stage)
 #if defined(USE_DX11) && RENDER == R_R4
     if (RenderContextId())
     {
-        auto* view = ContextTextureView(surface);
+        auto* view = TextureView(surface, ContextTextureView(surface));
         if (stage < CTexture::rstVertex) SRVSManager.SetPSResource(stage, view);
         else if (stage < CTexture::rstGeometry) SRVSManager.SetVSResource(stage - CTexture::rstVertex, view);
         else if (stage < CTexture::rstHull) SRVSManager.SetGSResource(stage - CTexture::rstGeometry, view);

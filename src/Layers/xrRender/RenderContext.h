@@ -28,6 +28,11 @@ ECORE_API dx10ShaderResourceStateCache& ActiveResourceManager();
 ECORE_API dx10ConstantBuffer* ContextConstantBuffer(dx10ConstantBuffer* source);
 ECORE_API ID3D11InputLayout* ContextInputLayout(SDeclaration* declaration, ID3DBlob* signature);
 ECORE_API ID3D11ShaderResourceView* ContextTextureView(CTexture* source);
+ECORE_API const Fmatrix& RenderCameraView();
+ECORE_API const Fmatrix& RenderCameraProjection();
+ECORE_API const Fmatrix& RenderCameraFullTransform();
+ECORE_API const Fmatrix& RenderCameraInverseView();
+ECORE_API bool ContextPositionDecompression(Fvector4& value, bool dimensions);
 #else
 constexpr u32 RenderContextCount = 1;
 IC u32 RenderContextId() { return 0; }

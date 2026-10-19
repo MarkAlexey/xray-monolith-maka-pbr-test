@@ -1425,7 +1425,12 @@ CRenderTarget::~CRenderTarget()
 
 void CRenderTarget::reset_light_marker(bool bResetStencil)
 {
-	dwLightMarkerID = 5;
+    reset_light_marker(dwLightMarkerID, bResetStencil);
+}
+
+void CRenderTarget::reset_light_marker(u32& marker, bool bResetStencil)
+{
+    marker = 5;
 	if (bResetStencil)
 	{
 		u32 Offset;
@@ -1435,22 +1440,44 @@ void CRenderTarget::reset_light_marker(bool bResetStencil)
 		float eps = 0;
 		float _dw = 0.5f;
 		float _dh = 0.5f;
-		quad_fill(-_dw, -_dh, _w - _dw, _h - _dh, 0, 0, 0, 0, eps, 1.f, C, Offset);
-		RCache.set_Element(s_occq->E[2]);
-		RCache.set_Geometry(quad_geom());
+		if (RenderContextId())
+		{
+			// Recording context (qkff99 MT light accumulation): the screen-quad cache belongs to
+			// the owner thread, so write this context's own dynamic stream instead
+			FVF::TL* pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, Offset);
+			pv->set(-_dw, _h - _dh, eps, 1.f, C, 0, 0); pv++;
+			pv->set(-_dw, -_dh, eps, 1.f, C, 0, 0); pv++;
+			pv->set(_w - _dw, _h - _dh, eps, 1.f, C, 0, 0); pv++;
+			pv->set(_w - _dw, -_dh, eps, 1.f, C, 0, 0); pv++;
+			RCache.Vertex.Unlock(4, g_combine->vb_stride);
+			RCache.set_Element(s_occq->E[2]);
+			RCache.set_Geometry(g_combine);
+			RCache.set_Vertices(RCache.Vertex.Buffer(), g_combine->vb_stride);
+		}
+		else
+		{
+			quad_fill(-_dw, -_dh, _w - _dw, _h - _dh, 0, 0, 0, 0, eps, 1.f, C, Offset);
+			RCache.set_Element(s_occq->E[2]);
+			RCache.set_Geometry(quad_geom());
+		}
 		RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 	}
 }
 
 void CRenderTarget::increment_light_marker()
 {
-	dwLightMarkerID += 2;
+    increment_light_marker(dwLightMarkerID);
+}
+
+void CRenderTarget::increment_light_marker(u32& marker)
+{
+    marker += 2;
 
 	//if (dwLightMarkerID>10)
 	const u32 iMaxMarkerValue = RImplementation.o.dx10_msaa ? 127 : 255;
 
-	if (dwLightMarkerID > iMaxMarkerValue)
-		reset_light_marker(true);
+	if (marker > iMaxMarkerValue)
+        reset_light_marker(marker, true);
 }
 
 bool CRenderTarget::need_to_render_sunshafts()

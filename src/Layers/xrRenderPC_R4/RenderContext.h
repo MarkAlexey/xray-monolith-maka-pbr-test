@@ -6,8 +6,17 @@
 
 class CBackend;
 class CDSGraphManager;
-void PrepareShadowPackets(CDSGraphManager& graph, class RenderContext& context, std::vector<Fmatrix>& worlds,
-    bool include_static = true);
+struct ShadowFallback
+{
+    u32 static_packets = 0, dynamic_packets = 0;
+    u32 recording_packets = 0;
+    u64 recording_work = 0;
+};
+bool ParallelRenderPass(const SPass& pass);
+ShadowFallback PrepareShadowPackets(CDSGraphManager& graph, class RenderContext& context, std::vector<Fmatrix>& worlds,
+    bool include_static = true, std::vector<const SPass*>* passes = nullptr);
+Fvector4 CalculatePositionDecompression();
+Fvector4 CalculatePositionDimensions();
 void MergeStatistics(const CBackend::_stats& statistics);
 class RenderContext
 {

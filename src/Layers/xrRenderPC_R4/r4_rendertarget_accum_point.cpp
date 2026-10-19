@@ -1,16 +1,20 @@
 #include "stdafx.h"
 
-void CRenderTarget::accum_point(light* L)
+template<bool Recorded, class Light>
+void CRenderTarget::accum_point_impl(Light* L, u32& marker)
 {
 	PROF_EVENT("CRenderTarget::accum_point");
-	phase_accumulator();
-	RImplementation.stats.l_visible ++;
+    if constexpr (!Recorded)
+    {
+        phase_accumulator();
+        ++RImplementation.stats.l_visible;
+    }
 
-	ref_shader shader = L->s_point;
-	ref_shader* shader_msaa = L->s_point_msaa;
+	auto* shader = L->s_point._get();
+	const ref_shader* shader_msaa = L->s_point_msaa;
 	if (!shader)
 	{
-		shader = s_accum_point;
+		shader = s_accum_point._get();
 		shader_msaa = s_accum_point_msaa;
 	}
 
@@ -22,14 +26,17 @@ void CRenderTarget::accum_point(light* L)
 	Fvector L_clr;
 	L_clr.set(L->color.r, L->color.g, L->color.b);
 	L_spec = u_diffuse2s(L_clr);
-	Device.mView.transform_tiny(L_pos, L->position);
+	RenderCameraView().transform_tiny(L_pos, L->position);
 
 	// Xforms
 	RCache.set_xform_world(L->m_xform);
-	RCache.set_xform_view(Device.mView);
-	RCache.set_xform_project(Device.mProject);
-	enable_scissor(L);
-	enable_dbt_bounds(L);
+	RCache.set_xform_view(RenderCameraView());
+	RCache.set_xform_project(RenderCameraProjection());
+    if constexpr (!Recorded)
+    {
+        enable_scissor(L);
+        enable_dbt_bounds(L);
+    }
 
 	// *****************************	Mask by stencil		*************************************
 	// *** similar to "Carmack's reverse", but assumes convex, non intersecting objects,
@@ -42,12 +49,12 @@ void CRenderTarget::accum_point(light* L)
 	// backfaces: if (1<=stencil && zfail)	stencil = light_id
 	RCache.set_CullMode(CULL_CW);
 	if (! RImplementation.o.dx10_msaa)
-		RCache.set_Stencil(TRUE, D3DCMP_LESSEQUAL, dwLightMarkerID, 0x01, 0xff, D3DSTENCILOP_KEEP, D3DSTENCILOP_KEEP,
+		RCache.set_Stencil(TRUE, D3DCMP_LESSEQUAL, marker, 0x01, 0xff, D3DSTENCILOP_KEEP, D3DSTENCILOP_KEEP,
 		                   D3DSTENCILOP_REPLACE);
 	else
-		RCache.set_Stencil(TRUE, D3DCMP_LESSEQUAL, dwLightMarkerID, 0x01, 0x7f, D3DSTENCILOP_KEEP, D3DSTENCILOP_KEEP,
+		RCache.set_Stencil(TRUE, D3DCMP_LESSEQUAL, marker, 0x01, 0x7f, D3DSTENCILOP_KEEP, D3DSTENCILOP_KEEP,
 		                   D3DSTENCILOP_REPLACE);
-	draw_volume(L);
+	draw_volume(L->flags.type);
 
 	// frontfaces: if (1<=stencil && zfail)	stencil = 0x1
 	RCache.set_CullMode(CULL_CCW);
@@ -57,10 +64,11 @@ void CRenderTarget::accum_point(light* L)
 	else
 		RCache.set_Stencil(TRUE, D3DCMP_LESSEQUAL, 0x01, 0x7f, 0x7f, D3DSTENCILOP_KEEP, D3DSTENCILOP_KEEP,
 		                   D3DSTENCILOP_REPLACE);
-	draw_volume(L);
+	draw_volume(L->flags.type);
 
 	// nv-stencil recompression
-	if (RImplementation.o.nvstencil) u_stencil_optimize();
+	if constexpr (!Recorded)
+        if (RImplementation.o.nvstencil) u_stencil_optimize();
 
 	// *****************************	Minimize overdraw	*************************************
 	// Select shader (front or back-faces), *** back, if intersect near plane
@@ -116,22 +124,22 @@ void CRenderTarget::accum_point(light* L)
 		// Render if (light_id <= stencil && z-pass)
 		if (! RImplementation.o.dx10_msaa)
 		{
-			RCache.set_Stencil(TRUE, D3DCMP_EQUAL, dwLightMarkerID, 0xff, 0x00);
-			draw_volume(L);
+			RCache.set_Stencil(TRUE, D3DCMP_EQUAL, marker, 0xff, 0x00);
+			draw_volume(L->flags.type);
 		}
 		else // checked Holger
 		{
 			// per pixel
-			RCache.set_Stencil(TRUE, D3DCMP_EQUAL, dwLightMarkerID, 0xff, 0x00);
-			draw_volume(L);
+			RCache.set_Stencil(TRUE, D3DCMP_EQUAL, marker, 0xff, 0x00);
+			draw_volume(L->flags.type);
 
 			// per sample
 			if (RImplementation.o.dx10_msaa_opt)
 			{
 				RCache.set_Element(shader_msaa[0]->E[_id]);
-				RCache.set_Stencil(TRUE, D3DCMP_EQUAL, dwLightMarkerID | 0x80, 0xff, 0x00);
+				RCache.set_Stencil(TRUE, D3DCMP_EQUAL, marker | 0x80, 0xff, 0x00);
 				RCache.set_CullMode(D3DCULL_CW);
-				draw_volume(L);
+				draw_volume(L->flags.type);
 			}
 			else // checked Holger
 			{
@@ -139,13 +147,13 @@ void CRenderTarget::accum_point(light* L)
 				{
 					RCache.set_Element(shader_msaa[i]->E[_id]);
 					StateManager.SetSampleMask(u32(1) << i);
-					RCache.set_Stencil(TRUE, D3DCMP_EQUAL, dwLightMarkerID | 0x80, 0xff, 0x00);
+					RCache.set_Stencil(TRUE, D3DCMP_EQUAL, marker | 0x80, 0xff, 0x00);
 					RCache.set_CullMode(D3DCULL_CW);
-					draw_volume(L);
+					draw_volume(L->flags.type);
 				}
 				StateManager.SetSampleMask(0xffffffff);
 			}
-			RCache.set_Stencil(TRUE, D3DCMP_EQUAL, dwLightMarkerID, 0xff, 0x00);
+			RCache.set_Stencil(TRUE, D3DCMP_EQUAL, marker, 0xff, 0x00);
 		}
 
 		// Fetch4 : disable
@@ -167,22 +175,22 @@ void CRenderTarget::accum_point(light* L)
 		RCache.set_c("m_texgen", m_Texgen);
 		if (! RImplementation.o.dx10_msaa)
 		{
-			RCache.set_Stencil(TRUE, D3DCMP_LESSEQUAL, dwLightMarkerID, 0xff, 0x00);
-			draw_volume(L);
+			RCache.set_Stencil(TRUE, D3DCMP_LESSEQUAL, marker, 0xff, 0x00);
+			draw_volume(L->flags.type);
 		}
 		else // checked Holger
 		{
 			// per pixel
 			RCache.set_CullMode(D3DCULL_CW);
-			RCache.set_Stencil(TRUE, D3DCMP_EQUAL, dwLightMarkerID, 0xff, 0x00);
-			draw_volume(L);
+			RCache.set_Stencil(TRUE, D3DCMP_EQUAL, marker, 0xff, 0x00);
+			draw_volume(L->flags.type);
 			if (RImplementation.o.dx10_msaa_opt)
 			{
 				// per sample
 				RCache.set_Element(s_accum_mask_msaa[0]->E[SE_MASK_ACCUM_VOL]);
 				RCache.set_CullMode(D3DCULL_CW);
-				RCache.set_Stencil(TRUE, D3DCMP_EQUAL, dwLightMarkerID | 0x80, 0xff, 0x00);
-				draw_volume(L);
+				RCache.set_Stencil(TRUE, D3DCMP_EQUAL, marker | 0x80, 0xff, 0x00);
+				draw_volume(L->flags.type);
 			}
 			else // checked Holger	
 			{
@@ -191,12 +199,12 @@ void CRenderTarget::accum_point(light* L)
 					RCache.set_Element(s_accum_mask_msaa[i]->E[SE_MASK_ACCUM_VOL]);
 					RCache.set_CullMode(D3DCULL_CW);
 					StateManager.SetSampleMask(u32(1) << i);
-					RCache.set_Stencil(TRUE, D3DCMP_EQUAL, dwLightMarkerID | 0x80, 0xff, 0x00);
-					draw_volume(L);
+					RCache.set_Stencil(TRUE, D3DCMP_EQUAL, marker | 0x80, 0xff, 0x00);
+					draw_volume(L->flags.type);
 				}
 				StateManager.SetSampleMask(0xffffffff);
 			}
-			RCache.set_Stencil(TRUE, D3DCMP_LESSEQUAL, dwLightMarkerID, 0xff, 0x00);
+			RCache.set_Stencil(TRUE, D3DCMP_LESSEQUAL, marker, 0xff, 0x00);
 		}
 	}
 
@@ -204,7 +212,17 @@ void CRenderTarget::accum_point(light* L)
 	RCache.set_Scissor(0);
 
 	//dwLightMarkerID					+=	2;	// keep lowest bit always setted up
-	increment_light_marker();
+	increment_light_marker(marker);
 
 	u_DBT_disable();
+}
+
+void CRenderTarget::accum_point(light* L)
+{
+    accum_point_impl<false>(L, dwLightMarkerID);
+}
+
+void CRenderTarget::accum_point(const RecordedLight& L, u32& marker)
+{
+    accum_point_impl<true>(&L, marker);
 }

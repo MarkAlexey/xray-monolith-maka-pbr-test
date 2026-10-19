@@ -37,6 +37,7 @@ struct SunShadows::State
     ComPtr<ID3D11CommandList> static_commands[count];
     CBackend::_stats statistics[count]{};
     CBackend::_stats static_statistics[count]{};
+    ShadowFallback fallback[count];
     std::vector<Fmatrix> worlds[count];
     xr_vector<ISpatialShared> candidates[count];
     CRender* renderer = nullptr;
@@ -233,7 +234,7 @@ void SunShadows::RecordStatic(u32 index)
     PROF_EVENT_DYNAMIC(index == State::count - 1 ? "Render.SunShadows.PrimeStaticFar" : "Render.SunShadows.PrimeStaticMiddle");
     auto& graph = state->renderer->m_sun_cascades[index].GMCascade;
     auto& context = state->workers[index].Context();
-    PrepareShadowPackets(graph, context, state->worlds[index]);
+    state->fallback[index] = PrepareShadowPackets(graph, context, state->worlds[index]);
     bool native = false;
     for (const auto& queue : graph.RGraph.mapStaticPasses[0])
         for (const auto& packet : queue) native = native || packet.parallel_shadow;
@@ -303,7 +304,9 @@ void SunShadows::Record()
         renderer.phase = CRender::PHASE_SMAP;
         graph.r_dsgraph_capture_dynamic(nullptr, state->revision ? &state->candidates[i] : nullptr, state->revision);
         auto& context = state->workers[i].Context();
-        PrepareShadowPackets(graph, context, state->worlds[i], !state->early_static[i]);
+        auto fallback = PrepareShadowPackets(graph, context, state->worlds[i], !state->early_static[i]);
+        if (state->early_static[i]) fallback.static_packets = state->fallback[i].static_packets;
+        state->fallback[i] = fallback;
         const bool geometry = !graph.RGraph.mapStaticPasses[0][0].empty() || !graph.RGraph.mapDynamicPasses[0][0].empty();
         // Validate one common grass policy before alpha advancement. Prime a
         // context only after its own task has joined (far static may be busy).
@@ -346,6 +349,13 @@ bool SunShadows::Bind(u32 index)
         }
         HW.pContext->ExecuteCommandList(state->commands[index].Get(), FALSE);
         MergeStatistics(state->statistics[index]);
+        // Priority 0 is already drawn. Keep only actual owner fallback, and
+        // preserve the priority-1/sorted queues for translucent shadows.
+        auto& queues = state->renderer->m_sun_cascades[index].GMCascade.RGraph;
+        if (!state->fallback[index].static_packets) queues.clear_graph<false>(queues.mapStaticPasses, 0);
+        if (!state->fallback[index].dynamic_packets) queues.clear_graph<false>(queues.mapDynamicPasses, 0);
+        PROF_TAG("Sun skipped static scan", state->fallback[index].static_packets == 0 ? 1 : 0);
+        PROF_TAG("Sun skipped dynamic scan", state->fallback[index].dynamic_packets == 0 ? 1 : 0);
     }
     else
     {
@@ -399,6 +409,7 @@ void SunShadows::EndFrame()
         state->capturing[i] = state->recording[i] = false;
         state->static_commands[i].Reset();
         state->early_static[i] = state->static_valid[i] = false;
+        state->fallback[i] = {};
     }
     state->grass_ordered = false;
     state->next_grass = 0;

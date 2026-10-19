@@ -207,18 +207,37 @@ struct LightShadowJob
     CFrustum frustum;
     xr_vector<ISpatialShared> candidates;
     std::vector<Fmatrix> worlds;
+    std::vector<const SPass*> passes;
     u64 revision = u64(-1);
-    bool decorative = false, deferred = false, forward = false;
+    ShadowFallback fallback;
+    RecordedLight illumination;
+    bool decorative = false, deferred = false, forward = false, grass = false, accumulate = false;
 };
 
 struct ShadowAtlasJob
 {
     u32 lane = 0;
     std::vector<LightShadowJob*> lights;
+    bool accumulate = false;
+    u64 work = 1;
+};
+
+struct LightBlock
+{
+    size_t first = 0, end = 0;
+    u32 lane = 0, marker = 5, visible = 0;
+    bool accumulate = false, unshadowed = false, valid = false, ready = false;
     ComPtr<ID3D11CommandList> commands;
     CBackend::_stats statistics{};
-    bool valid = false;
 };
+
+struct UnshadowedLight
+{
+    light* source;
+    RecordedLight illumination;
+    bool point;
+};
+
 
 void SetShadowView(light& source, ID3D11DepthStencilView* depth)
 {
@@ -248,10 +267,10 @@ void RecordLight(LightShadowJob& job, ID3D11DepthStencilView* depth)
     SetShadowView(*job.source, depth);
     // Learn occlusion only against immutable opaque depth. The original graph
     // renderer still selects complete native shadow batches for this subset.
-    graph.shadow_static_subset = 1;
-    graph.r_dsgraph_render_static(0, false);
     if (job.cache && job.cache->selected != no_index)
     {
+        graph.shadow_static_subset = 1;
+        graph.r_dsgraph_render_static(0, false);
         auto& cache = *job.cache;
         const auto& draw = cache.draws[cache.selected];
         const auto& pass = cache.passes[draw.pass];
@@ -274,8 +293,8 @@ void RecordLight(LightShadowJob& job, ID3D11DepthStencilView* depth)
         // alpha-tested or dynamic passes through a stale state-cache entry.
         RCache.ResetBindings();
         SetShadowView(*job.source, depth);
+        graph.shadow_static_subset = 2;
     }
-    graph.shadow_static_subset = 2;
     graph.r_dsgraph_render_static(0, false);
     graph.shadow_static_subset = 0;
     graph.r_dsgraph_render_dynamic(0, false);
@@ -290,8 +309,13 @@ struct LocalLightShadows::State
     std::map<light*, std::unique_ptr<ShadowCache>> caches;
     std::vector<std::unique_ptr<LightShadowJob>> lights;
     std::vector<ShadowAtlasJob> atlases;
+    std::vector<LightBlock> blocks;
+    std::vector<UnshadowedLight> unshadowed;
     RenderTask workers[lanes];
     ShadowMap maps[lanes];
+    std::mutex completion_mutex;
+    std::condition_variable completion;
+    bool finished[lanes]{};
     light_Package* package = nullptr;
     bool initialized = false, supported = false, querying = false, recording = false, ready = false;
     bool visibility = true, parallel = true;
@@ -325,37 +349,134 @@ struct LocalLightShadows::State
         }
     }
 
+    void AssignLanes()
+    {
+        if (atlases.empty()) return;
+        const bool merged = std::any_of(atlases.begin(), atlases.end(),
+            [](const ShadowAtlasJob& atlas) { return atlas.accumulate; });
+        const size_t used = std::min<size_t>(lanes, atlases.size());
+        u64 total = 0, prefix = 0;
+        for (const auto& atlas : atlases) total += atlas.work;
+        size_t group = 0;
+        for (size_t i = 0; i < atlases.size(); ++i)
+        {
+            if (!merged)
+            {
+                // Shadow-only lists need no contiguous ranges. Preserve the
+                // original round-robin balance when accumulation cannot record.
+                atlases[i].lane = u32((atlases.size() - 1 - i) % lanes);
+                continue;
+            }
+            atlases[i].lane = u32(used - 1 - group);
+            prefix += atlases[i].work;
+            const size_t left = atlases.size() - i - 1, groups_left = used - group - 1;
+            if (groups_left && left >= groups_left &&
+                (prefix * used >= total * (group + 1) || left == groups_left)) ++group;
+        }
+    }
+
     void Draw(u32 lane, RenderContext& context)
     {
         PROF_EVENT("Render.LocalShadows.Record");
+        struct Completion
+        {
+            State& state;
+            u32 lane;
+            ~Completion()
+            {
+                std::lock_guard<std::mutex> lock(state.completion_mutex);
+                state.finished[lane] = true;
+                state.completion.notify_all();
+            }
+        } done{*this, lane};
         FTreeVisual::ResetShadowStats();
         dx10ConstantBuffer::ResetStats();
-        u32 calls = 0, hidden = 0, queries = 0;
-        for (auto& atlas : atlases)
+        u32 calls = 0, hidden = 0, queries = 0, volumes = 0;
+        for (auto& block : blocks)
         {
-            if (atlas.lane != lane) continue;
+            if (block.lane != lane) continue;
             context.Begin(CRender::PHASE_SMAP);
-            context.DeviceContext()->ClearDepthStencilView(maps[lane].Depth(), D3D11_CLEAR_DEPTH, 1.f, 0);
-            for (auto* job : atlas.lights)
+            bool reset_marker = true;
+            for (size_t i = block.first; i < block.end; ++i)
             {
-                RecordLight(*job, maps[lane].Depth());
-                if (job->cache)
+                auto& atlas = atlases[i];
+                // Lighting reads this lane's map before the next atlas reuses it.
+                // Reset both API and software bindings after those SRV reads.
+                context.DeviceContext()->ClearState();
+                RCache.ResetBindings();
+                RCache.recording_phase = CRender::PHASE_SMAP;
+                context.DeviceContext()->ClearDepthStencilView(maps[lane].Depth(), D3D11_CLEAR_DEPTH, 1.f, 0);
+                for (auto* job : atlas.lights)
                 {
-                    for (const auto bit : job->cache->visibility.hidden) hidden += bit != 0;
-                    queries += job->cache->selected != no_index;
+                    RecordLight(*job, maps[lane].Depth());
+                    if (job->cache)
+                    {
+                        for (const auto bit : job->cache->visibility.hidden) hidden += bit != 0;
+                        queries += job->cache->selected != no_index;
+                    }
+                }
+                if (block.accumulate)
+                {
+                    PROF_EVENT("Render.LocalLights.Accumulate");
+                    RCache.recording_phase = CRender::PHASE_NORMAL;
+                    RCache.shadow_texture_source = RImplementation.Target->rt_smap_depth->pTexture._get();
+                    RCache.shadow_texture_view = maps[lane].View();
+                    RImplementation.Target->bind_recorded_accumulator();
+                    if (reset_marker) RImplementation.Target->reset_light_marker(block.marker, true);
+                    reset_marker = false;
+                    for (auto* job : atlas.lights)
+                    {
+                        if (!job->accumulate) continue;
+                        RImplementation.Target->accum_spot(job->illumination, block.marker);
+                        ++block.visible;
+                    }
+                    RCache.shadow_texture_source = nullptr;
+                    RCache.shadow_texture_view = nullptr;
                 }
             }
-            const HRESULT result = context.Finish(atlas.commands.GetAddressOf());
-            atlas.valid = SUCCEEDED(result);
-            atlas.statistics = context.Backend().stat;
-            calls += atlas.statistics.calls;
+            if (block.unshadowed)
+            {
+                PROF_EVENT("Render.LocalLights.Unshadowed");
+                RCache.recording_phase = CRender::PHASE_NORMAL;
+                RCache.shadow_texture_source = nullptr;
+                RCache.shadow_texture_view = nullptr;
+                RImplementation.Target->bind_recorded_accumulator();
+                if (reset_marker) RImplementation.Target->reset_light_marker(block.marker, true);
+                for (const auto& item : unshadowed)
+                {
+                    if (item.point) RImplementation.Target->accum_point(item.illumination, block.marker);
+                    else RImplementation.Target->accum_spot(item.illumination, block.marker);
+                    ++block.visible;
+                }
+            }
+            block.valid = SUCCEEDED(context.Finish(block.commands.GetAddressOf()));
+            block.statistics = context.Backend().stat;
+            calls += block.statistics.calls;
+            volumes += block.visible;
+            // No access to this block after publication: owner may consume it
+            // while this lane starts recording the next atlas range.
+            {
+                std::lock_guard<std::mutex> lock(completion_mutex);
+                block.ready = true;
+            }
+            completion.notify_all();
         }
         PROF_TAG("Draws", calls);
+        PROF_TAG("Recorded light volumes", volumes);
         PROF_TAG("Hidden casters", hidden);
         PROF_TAG("Queries", queries);
         FTreeVisual::ProfileShadowStats();
         dx10ConstantBuffer::ProfileStats();
     }
+
+    bool WaitBlock(const LightBlock& block)
+    {
+        PROF_EVENT("Render.LocalShadows.Wait");
+        std::unique_lock<std::mutex> lock(completion_mutex);
+        completion.wait(lock, [this, &block]() { return block.ready || finished[block.lane]; });
+        return block.ready;
+    }
+
 };
 
 LocalLightShadows::LocalLightShadows() : state(std::make_unique<State>()) {}
@@ -473,10 +594,6 @@ void LocalLightShadows::BeginFrame(light_Package& package)
         ++atlas_id;
     }
     RImplementation.phase = saved_phase;
-    // The last atlas uses the original resource, preserving its public texture
-    // identity and final contents for later passes without a full-map GPU copy.
-    for (size_t i = 0; i < state->atlases.size(); ++i)
-        state->atlases[i].lane = u32((state->atlases.size() - 1 - i) % State::lanes);
     for (u32 lane = 0; lane < State::lanes; ++lane)
     {
         state->workers[lane].Context().Synchronize();
@@ -516,11 +633,94 @@ void LocalLightShadows::Record()
             job->deferred = !graph.RGraph.mapStaticPasses[0][0].empty() || !graph.RGraph.mapDynamicPasses[0][0].empty();
             job->forward = !graph.RGraph.mapStaticPasses[1][0].empty() || !graph.RGraph.mapDynamicPasses[1][0].empty() ||
                 !graph.RGraph.mapStaticSorted.Sorted.empty() || !graph.RGraph.mapDynamicSorted.Sorted.empty();
-            PrepareShadowPackets(graph, context, job->worlds);
+            job->fallback = PrepareShadowPackets(graph, context, job->worlds, true, &job->passes);
+            if (RImplementation.Details && RImplementation.Details->dtFS &&
+                ps_ssfx_grass_shadows.x >= 3 && psDeviceFlags2.test(rsGrassShadow) &&
+                item.vis.distance <= ps_ssfx_grass_shadows.z && item.flags.bShadow && !job->decorative)
+            {
+                u32 planes = 0xff;
+                job->grass = RImplementation.ViewBase.testSphere(item.position, item.range * .6f, planes);
+            }
+            const bool illuminate = job->deferred || job->forward ||
+                (item.flags.bVolumetric && ps_r2_ls_flags.test(R2FLAG_VOLUMETRIC_LIGHTS));
+            job->accumulate = illuminate && !job->forward && !job->grass &&
+                !job->fallback.static_packets && !job->fallback.dynamic_packets &&
+                RImplementation.Target->prepare_light_accumulation(job->illumination, item, false);
+            if (job->accumulate && job->deferred) item.X.S.transluent = FALSE;
         }
     }
+    // Only complete atlases can be illuminated before owner fallback. Unknown
+    // cases split the run; they retain one shadow-only list and owner lighting.
+    for (auto& atlas : state->atlases)
+    {
+        atlas.accumulate = std::all_of(atlas.lights.begin(), atlas.lights.end(), [](const LightShadowJob* job)
+        {
+            const bool illuminate = job->deferred || job->forward ||
+                (job->source->flags.bVolumetric && ps_r2_ls_flags.test(R2FLAG_VOLUMETRIC_LIGHTS));
+            return !illuminate || job->accumulate;
+        });
+        for (const auto* job : atlas.lights)
+            atlas.work += job->fallback.recording_work + (atlas.accumulate && job->accumulate ? 3u : 0u);
+    }
+    state->AssignLanes();
+    for (size_t i = 0; i < state->atlases.size(); ++i)
+    {
+        auto& atlas = state->atlases[i];
+        if (state->blocks.empty() || !atlas.accumulate || !state->blocks.back().accumulate ||
+            state->blocks.back().lane != atlas.lane ||
+            state->blocks.back().end - state->blocks.back().first >= 4)
+        {
+            state->blocks.emplace_back();
+            auto& block = state->blocks.back();
+            block.first = i; block.end = i;
+            block.lane = atlas.lane;
+            block.accumulate = atlas.accumulate;
+        }
+        state->blocks.back().end = i + 1;
+    }
+    // Keep the original point-then-spot order. One unsafe light retains the
+    // whole unshadowed tail on owner, without reordering custom shaders.
+    bool safe_unshadowed = true;
+    for (bool point : {true, false})
+        for (auto* item : point ? state->package->v_point : state->package->v_spot)
+        {
+            // qkff99 6631dc22: resolve on owner before freezing visibility for the recording lane
+            item->vis_update();
+            if (!item->vis.visible) continue;
+            state->unshadowed.push_back({item, {}, point});
+            if (!RImplementation.Target->prepare_light_accumulation(state->unshadowed.back().illumination, *item, point))
+                safe_unshadowed = false;
+        }
+    if (!safe_unshadowed) state->unshadowed.clear();
+    if (!state->unshadowed.empty())
+    {
+        if (state->blocks.empty() || !state->blocks.back().accumulate || state->blocks.back().lane != 0)
+        {
+            state->blocks.emplace_back();
+            auto& block = state->blocks.back();
+            block.first = block.end = state->atlases.size();
+            block.lane = 0;
+            block.accumulate = true;
+        }
+        state->blocks.back().unshadowed = true;
+    }
+    // Freeze callbacks/poses in their original order, then prime each distinct
+    // pass on its final recording lane. Lane assignment never redoes callbacks.
+    for (auto& atlas : state->atlases)
+    {
+        auto& context = state->workers[atlas.lane].Context();
+        for (const auto* job : atlas.lights)
+        {
+            for (const auto* pass : job->passes) context.Prime(*pass);
+            if (atlas.accumulate && job->accumulate)
+                for (const auto* pass : job->illumination.passes) context.Prime(*pass);
+        }
+    }
+    for (const auto& item : state->unshadowed)
+        for (const auto* pass : item.illumination.passes) state->workers[0].Context().Prime(*pass);
     RImplementation.phase = saved_phase;
     RCache.InvalidateAfterCommandList(); // Owner texture advancement touched SRV caches.
+    std::fill(std::begin(state->finished), std::end(state->finished), false);
     for (u32 lane = 0; lane < State::lanes; ++lane)
         if (state->parallel) state->workers[lane].Run([this, lane](RenderContext& context) { state->Draw(lane, context); });
         else
@@ -535,15 +735,6 @@ bool LocalLightShadows::RenderShadows(light_Package& package)
 {
     if (state->package != &package) return false;
     if (!state->recording) Record();
-    {
-        PROF_EVENT("Render.LocalShadows.Wait");
-        for (auto& worker : state->workers)
-            if (!worker.Wait())
-            {
-                Msg("! Local shadows: recording task failed; restoring owner submission");
-                state->supported = false;
-            }
-    }
     state->recording = false;
     const auto saved_phase = RImplementation.phase;
     RImplementation.phase = CRender::PHASE_SMAP;
@@ -554,83 +745,129 @@ bool LocalLightShadows::RenderShadows(light_Package& package)
     RImplementation.stats.ls_shadowed_after_vis += u32(package.v_shadowed.size());
     RImplementation.stats.ls_shadowed_peak_after_vis = _max(RImplementation.stats.ls_shadowed_peak_after_vis,
         u32(package.v_shadowed.size()));
-    for (auto& atlas : state->atlases)
+    u32 submitted = 0, skipped_static = 0, skipped_dynamic = 0, fallback_packets = 0, recorded_lights = 0;
+    for (auto& block : state->blocks)
     {
-        const bool recorded = state->supported && atlas.valid && atlas.commands;
+        const bool published = state->WaitBlock(block);
+        if (!published) state->workers[block.lane].Wait();
+        if ((!published || !block.valid) && state->supported)
+        {
+            Msg("! Local shadows: recording failed; restoring remaining owner submission");
+            state->supported = false;
+        }
+        const bool recorded = state->supported && published && block.valid && block.commands;
+        if (recorded)
         {
             PROF_EVENT("Render.LocalShadows.Submit");
-            if (recorded)
+            HW.pContext->ExecuteCommandList(block.commands.Get(), FALSE);
+            MergeStatistics(block.statistics);
+            RCache.InvalidateAfterCommandList();
+            ++submitted;
+            if (block.accumulate)
             {
-                HW.pContext->ExecuteCommandList(atlas.commands.Get(), FALSE);
-                MergeStatistics(atlas.statistics);
+                RImplementation.Target->dwLightMarkerID = block.marker;
+                RImplementation.stats.l_visible += block.visible;
+                recorded_lights += block.visible;
             }
-            else HW.pContext->ClearDepthStencilView(state->maps[atlas.lane].Depth(), D3D11_CLEAR_DEPTH, 1.f, 0);
+        }
+        for (size_t i = block.first; i < block.end; ++i)
+        {
+            auto& atlas = state->atlases[i];
+            if (!recorded) HW.pContext->ClearDepthStencilView(state->maps[atlas.lane].Depth(), D3D11_CLEAR_DEPTH, 1.f, 0);
             RCache.shadow_texture_source = RImplementation.Target->rt_smap_depth->pTexture._get();
             RCache.shadow_texture_view = state->maps[atlas.lane].View();
-            RCache.InvalidateAfterCommandList();
-        }
-        for (auto* job : atlas.lights)
-        {
-            auto& item = *job->source;
-            auto& graph = item.GMLight;
-            if (recorded && job->cache && job->cache->selected != no_index)
-                job->cache->visibility.pending = job->cache->selected;
-            if (job->deferred || job->forward)
+            for (auto* job : atlas.lights)
             {
-                SetShadowView(item, state->maps[atlas.lane].Depth());
-                graph.shadow_execution = recorded ? 2 : 0;
-                graph.r_dsgraph_render_static(0, false);
-                graph.r_dsgraph_render_dynamic(0, true);
-                graph.shadow_execution = 0;
-                if (RImplementation.Details && RImplementation.Details->dtFS &&
-                    ps_ssfx_grass_shadows.x >= 3 && psDeviceFlags2.test(rsGrassShadow) &&
-                    item.vis.distance <= ps_ssfx_grass_shadows.z && item.flags.bShadow && !job->decorative)
+                auto& item = *job->source;
+                auto& graph = item.GMLight;
+                if (recorded && job->cache && job->cache->selected != no_index)
+                    job->cache->visibility.pending = job->cache->selected;
+                if (recorded && block.accumulate)
                 {
-                    u32 planes = 0xff;
-                    if (RImplementation.ViewBase.testSphere(item.position, item.range * .6f, planes))
+                    graph.RGraph.clear_graph<false>(graph.RGraph.mapDynamicPasses, 0);
+                    if (job->accumulate) ++RImplementation.stats.ls_shadowed_rendered;
+                    ++skipped_static; ++skipped_dynamic;
+                    continue;
+                }
+                if (job->deferred || job->forward)
+                {
+                    const bool owner_static = !recorded || job->fallback.static_packets;
+                    const bool owner_dynamic = !recorded || job->fallback.dynamic_packets;
+                    if (owner_static || owner_dynamic || job->grass || job->forward)
+                        SetShadowView(item, state->maps[atlas.lane].Depth());
+                    graph.shadow_execution = recorded ? 2 : 0;
+                    if (owner_static) graph.r_dsgraph_render_static(0, false);
+                    else ++skipped_static;
+                    if (owner_dynamic) graph.r_dsgraph_render_dynamic(0, true);
+                    else
+                    {
+                        graph.RGraph.clear_graph<false>(graph.RGraph.mapDynamicPasses, 0);
+                        ++skipped_dynamic;
+                    }
+                    fallback_packets += job->fallback.static_packets + job->fallback.dynamic_packets;
+                    graph.shadow_execution = 0;
+                    if (job->grass)
                     {
                         // Same as the owner path in lights_render.cpp (grass rework, on the owner)
                         RImplementation.Details->fade_distance = -1; // light position drives the fade
                         RImplementation.Details->light_position.set(item.position);
                         RImplementation.Details->hw_Render(&item);
                     }
-                }
-                item.X.S.transluent = FALSE;
-                if (job->forward)
-                {
-                    item.X.S.transluent = TRUE;
-                    RImplementation.Target->phase_smap_spot_tsh(&item);
-                    graph.r_dsgraph_render_static(1, false); graph.r_dsgraph_render_dynamic(1, true);
-                    graph.r_dsgraph_render_sorted();
+                    item.X.S.transluent = FALSE;
+                    if (job->forward)
+                    {
+                        item.X.S.transluent = TRUE;
+                        RImplementation.Target->phase_smap_spot_tsh(&item);
+                        graph.r_dsgraph_render_static(1, false);
+                        graph.r_dsgraph_render_dynamic(1, true);
+                        graph.r_dsgraph_render_sorted();
+                    }
                 }
             }
-        }
-        // A lane's atlas may only be overwritten by the NEXT command list after
-        // every light sampling its current contents has accumulated.
-        for (auto* job : atlas.lights)
-        {
-            auto& item = *job->source;
-            if (!job->deferred && !job->forward && !(item.flags.bVolumetric && ps_r2_ls_flags.test(R2FLAG_VOLUMETRIC_LIGHTS))) continue;
-            ++RImplementation.stats.ls_shadowed_rendered;
-            RImplementation.Target->accum_spot(&item);
-            RImplementation.render_indirect(&item);
-            if (item.flags.bVolumetric && RImplementation.o.advancedpp && ps_r2_ls_flags.test(R2FLAG_VOLUMETRIC_LIGHTS))
+            if (recorded && block.accumulate) continue;
+            // Original owner path: finish every atlas before its map is reused.
+            for (auto* job : atlas.lights)
             {
-                if (RImplementation.o.ssfx_volumetric)
-                    RImplementation.Target->set_viewport_size(HW.pContext, float(Device.dwWidth) / RImplementation.o.volsize,
-                        float(Device.dwHeight) / RImplementation.o.volsize);
-                if (ps_pfx_volumetric_mode == 1) RImplementation.Target->accum_volumetric_lv(&item);
-                else RImplementation.Target->accum_volumetric(&item);
-                if (RImplementation.o.ssfx_volumetric)
-                    RImplementation.Target->set_viewport_size(HW.pContext, float(Device.dwWidth), float(Device.dwHeight));
+                auto& item = *job->source;
+                if (!job->deferred && !job->forward && !(item.flags.bVolumetric && ps_r2_ls_flags.test(R2FLAG_VOLUMETRIC_LIGHTS))) continue;
+                ++RImplementation.stats.ls_shadowed_rendered;
+                RImplementation.Target->accum_spot(&item);
+                RImplementation.render_indirect(&item);
+                if (item.flags.bVolumetric && RImplementation.o.advancedpp && ps_r2_ls_flags.test(R2FLAG_VOLUMETRIC_LIGHTS))
+                {
+                    if (RImplementation.o.ssfx_volumetric)
+                        RImplementation.Target->set_viewport_size(HW.pContext, float(Device.dwWidth) / RImplementation.o.volsize,
+                            float(Device.dwHeight) / RImplementation.o.volsize);
+                    if (ps_pfx_volumetric_mode == 1) RImplementation.Target->accum_volumetric_lv(&item);
+                    else RImplementation.Target->accum_volumetric(&item);
+                    if (RImplementation.o.ssfx_volumetric)
+                        RImplementation.Target->set_viewport_size(HW.pContext, float(Device.dwWidth), float(Device.dwHeight));
+                }
             }
         }
-        atlas.commands.Reset();
+        if (recorded && block.unshadowed)
+        {
+            for (const auto& item : state->unshadowed)
+            {
+                if (item.point) ++RImplementation.stats.ls_unshadowed_point_rendered;
+                else ++RImplementation.stats.ls_unshadowed_spot_rendered;
+            }
+            package.v_point.clear();
+            package.v_spot.clear();
+        }
+        block.commands.Reset();
     }
+    PROF_TAG("Local shadow atlases", u32(state->atlases.size()));
+    PROF_TAG("Local submitted lists", submitted);
+    PROF_TAG("Local recorded lights", recorded_lights);
+    PROF_TAG("Local skipped static scans", skipped_static);
+    PROF_TAG("Local skipped dynamic scans", skipped_dynamic);
+    PROF_TAG("Local fallback packets", fallback_packets);
     RCache.shadow_texture_source = nullptr; RCache.shadow_texture_view = nullptr;
     RCache.InvalidateAfterCommandList();
     RImplementation.phase = state->atlases.empty() ? saved_phase : CRender::PHASE_SMAP;
     package.v_shadowed.clear();
+    if (recorded_lights) RImplementation.Target->phase_accumulator();
     state->ready = true;
     return true;
 }
@@ -646,13 +883,16 @@ void LocalLightShadows::EndFrame()
         }
     state->querying = state->recording = state->ready = false;
     state->package = nullptr;
+    state->blocks.clear(); state->unshadowed.clear();
     state->atlases.clear(); state->lights.clear();
 }
 
 void LocalLightShadows::Forget(light* source)
 {
     if (std::any_of(state->lights.begin(), state->lights.end(),
-        [source](const std::unique_ptr<LightShadowJob>& job) { return job->source == source; })) EndFrame();
+        [source](const std::unique_ptr<LightShadowJob>& job) { return job->source == source; }) ||
+        std::any_of(state->unshadowed.begin(), state->unshadowed.end(),
+            [source](const UnshadowedLight& job) { return job.source == source; })) EndFrame();
     state->caches.erase(source);
 }
 
