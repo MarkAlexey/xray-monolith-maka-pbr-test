@@ -965,3 +965,65 @@ upstream Monolith.
 Checked: the 18 new grass shaders compile with DXC on vanilla + this repository and on the GAMMA stack;
 `check_cpp.py` reports only the known clang noise (`xr_vector` / `xr_resource` templates) for the
 grass sources and no new errors for the screen quad change. Not run in the game.
+
+### CPU optimisations from qkff99 (`codex/mt-consolidated-fixes`)
+
+Step 1 of porting [qkff99's branch](https://github.com/qkff99/xray-monolith/tree/codex/mt-consolidated-fixes)
+(same upstream base, 871e2491): the CPU-side render optimisations and their follow-up fixes, 30
+commits cherry-picked with the author kept (`-x` lines point at the original hashes). The
+multithreaded shadow recording (sun / local / rain on D3D11 deferred contexts) and DLSS / FSR3 are
+later steps and are not in here. None of these commits change the picture on purpose, and none
+adds a switch except the scheduler ceiling below.
+
+What is in:
+
+| Area | Commits (qk) | What changes |
+|---|---|---|
+| Backend | `78644d3d` `06901db2` `eb837055` | unchanged typed constants are not rewritten; only changed sampler ranges are bound; constant destinations no shader reads are skipped |
+| HOM (occlusion) | `3bd6b024` `6ff4cf53` `a1dd29b6` | coarse-to-fine conservative depth tests, SSE2 depth mip reduction, occluder sort distances computed once |
+| Frustums / sectors | `34dacfd8` `ef64b89f` `cef67662` | union tests stop after full containment; exact duplicate sector frustums rejected; the camera frustum gets an eye plane, so boxes behind the camera are rejected before portal traversal |
+| Spatial DB | `8771d6ac` `d20000a8` | items removed by stored index; the three sun cascades query the spatial tree in one walk (a revision counter falls back to the per-cascade query if anything moved in between) |
+| Statics | `3c136ce4` `2f03c49a` `ffd980a5` | adjacent visible immutable static ranges drawn as one batch, also in shadow maps; partially visible LOD groups cull their children through the active frusta |
+| Trees | `0cf028e7` `cc64b692` `f08e9e92` | world/view matrices and shared constants reused while they match; compatible shadow index buffers shared |
+| Skinning | `959ed410` `92d7fd11` | packed bone rows (current + previous frame) cached, compatible arrays written in bulk |
+| Shadows | `f5a8a210` `8719e633` `b58e9661` | sun cascade casters pruned against the light-space envelope of the visible receivers; skipped for the far cascade when volumetric sunshafts need the full map; empty caster volumes bounded by the cascade sides |
+| Misc | `ba2c5b84` `b04cf435` `3de02c68` `a831399e` | WVP reuse, particle sprites culled before quad expansion, nearest pending grass slots in one pass, offscreen PDA map textures rejected |
+| Fixes | `93f06621` `b6dff5de` `93f81892` | API adaptation; load-time batch builders allowed on the PPL level loader; texture ownership kept across asynchronous loads (no use-after-free when a texture dies while queued) |
+| Scheduler | `80fd4778` (IX-Ray `cf2f5f9c`) | adaptive object-update budget clamped to 1..`sheduler_budget_max` ms, smoother adaptation |
+
+Adapted while porting:
+
+- **Our CSM.** The single spatial walk (`d20000a8`) runs after all three cascades are prepared and
+  before the one-time `clear_smap_csm()`; cascades still render into the array slices.
+- **Receiver pruning** works with the grass rework: a grass slot widens the receiver envelope only
+  when it was actually visible (`DetailManager.cpp`, `slot_visible`).
+- **Grass culling** keeps the sphere test (with the new eye plane) instead of qk's slot box test,
+  so wind-swayed blades at the screen edge cannot pop.
+- **No `Device.mmThreadID` here**: the load-time builders check `!RImplementation.b_loaded`
+  (qk's own follow-up `b6dff5de`); qk's main-thread assert crashed when the level loaded on PPL.
+- `PROF_TAG` (Optick tag, no-op in normal builds) added to `profiler.h`; the rest of qk's Optick
+  rework is not ported.
+- `RenderViewPreparation.cpp` hunks dropped (view preparation is not ported).
+
+| Command | Default | What it does |
+|---|---|---|
+| `sheduler_budget_max` | 5 | ceiling of the per-frame scheduler budget in ms (IX-Ray value). 66 = the old Monolith ceiling |
+
+Not taken from qk's branch: R1/R2 3DSS, the Lua GC / frame pacing rework, startup speedups, their
+fullscreen quad (ours is `r__static_screen_quad`), their grass constant changes, view preparation,
+the DLSS-related diagnostics, and `1db923f1` (it reverts demonized's `R*R` SSA formula, which moves
+LOD and discard distances game-wide, and changes far terrain / LQ static materials).
+
+Caveats:
+
+- qkff99's commits are agent-written; most say build and runtime validation were deferred. The
+  later ones in their branch fix earlier ones, and those fixes are included, but nothing here has
+  been run in the game yet.
+- With `sheduler_budget_max 5`, a very busy scene (many NPCs, A-Life spikes) spreads object updates
+  over more frames: higher FPS, but AI can react a little later. Raise it if NPCs feel sluggish.
+- The receiver pruning and the eye plane only remove work that cannot reach the screen; if a shadow
+  goes missing at the edge of the view, that is where to look first (`f5a8a210`).
+
+Checked: `tools/check_cpp.py --base 80bf4167 --changed` (R3, R4, xrGame, xrEngine units): every new
+error is the known clang noise (`xr_vector` / `vector<bool>` shims, `xr_resource` dependent bases,
+UI class hierarchy); no undeclared names or signature mismatches. Not built with MSVC or run.
