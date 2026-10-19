@@ -1153,7 +1153,7 @@ Adapted to this fork:
 Shaders: the DLSS shaders are **not** in this build's db0 (only the menu script and its strings
 are), so a missing patch is reported instead of half-working. CI attaches brodrigz's GAMMA
 compatibility patch 0.5 unchanged, downloads `nvngx_dlss.dll` 310.9.1 from NVIDIA's repository
-(SHA-256 pinned) into `bin/`, and builds the GAMMA shader zips with the patch's `base` and
+(SHA-256 pinned) into `bin/`, and builds the GAMMA shader packs with the patch's `base` and
 `atmos_rc7` components on top (`build_shader_packs.py --top-layer`, `DLSS_PATCH_COMPONENTS` in the
 workflow; set it to `base` alone for Atmospherics 2.68.93 sources).
 
@@ -1168,3 +1168,30 @@ Checked: `tools/check_cpp.py` over every R4 translation unit including `Dlss/`: 
 clang noise. The GAMMA zips built with the DLSS components compile with DXC with no new errors;
 the overlay's grass shader carries both the DLSS changes and the `DT_INST` paths. Not built with
 MSVC or run.
+
+### One shader installer (FOMOD) instead of loose GAMMA zips
+
+Four GAMMA zips (overlay / full pack, each with and without the DLSS patch merged in) were too easy
+to mix up, so the release now ships one Mod Organizer installer, `PBR_shaders_GAMMA_FOMOD.zip`,
+made by `tools/make_shader_fomod.py` from `build_shader_packs.py`'s zips:
+
+- Page 1, install type: **Overlay** (recommended, highest priority) or **Full pack** (above GAMMA's
+  shader mods).
+- Page 2, DLSS / FSR 3 (only on `-dlss` branches): **With** (packs built with `--top-layer` and the
+  patch's `DLSS_PATCH_COMPONENTS`) or **Without** (plain GAMMA stack). The overlay variant needs
+  brodrigz's patch installed below it; the full pack contains the DLSS shaders itself (the menu
+  script and strings are in the db0), so the patch is optional there.
+- Inside: `fomod/`, `variants/{overlay,full,overlay_dlss,full_dlss}/gamedata/`, and `docs/`
+  (a README plus each variant's README / PACK_REPORT), which always installs into
+  "PBR shaders - Instructions" in the mod folder. brodrigz's patch stays a separate, unchanged
+  download.
+
+CI: the shader job runs `build_shader_packs.py` once into `shader_packs/plain` and, on `-dlss`
+branches, once more with the top layers into `shader_packs/dlss`, then wraps them; only the FOMOD
+is uploaded and released. The tool is in the tools zip too (`--dry-run` lists the variants).
+
+Checked: built locally from the same sources as CI; `fomod/ModuleConfig.xml` validates against
+the ModConfig 5.0 schema (with and without the DLSS page), each pattern's source folder holds the
+variant's files (24 / 277 / 26 / 282), and the DLSS full pack carries the patch's 12 untouched
+shaders plus the 3 merged ones (`deffer_impl_flat.ps`, `deffer_grass.vs`, `night_vision.h`).
+Not yet installed through Mod Organizer itself.

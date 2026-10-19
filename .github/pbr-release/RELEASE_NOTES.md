@@ -29,9 +29,8 @@ plus engine support for Screen Space Shaders. DX11 only.
 | `*_latest.zip` / `*_<version>.zip` | the exes and NVIDIA's DLSS runtime `nvngx_dlss.dll` 310.9.1 (`bin/`), and the PBR gamedata (`db/mods/00_modded_exes_gamedata.db0`) |
 | `dlss-binaries-GAMMA-compatibility-patch-0.5.zip` | brodrigz's DLSS / FSR3 shader compatibility patch (FOMOD for Mod Organizer), unchanged |
 | `*_pdb.zip` | debug symbols; put the `.pdb` files next to the exes for readable crash logs |
-| `*_tools.zip` | Python tools: SSS/ES compatibility patch generator, PBR overlay generator, shader pack builder, PBR texture packer |
-| `PBR_overlay_GAMMA.zip` | GAMMA: only the shaders PBR needs, patched from GAMMA's own stack plus the DLSS patch. Install last, above the DLSS patch |
-| `PBR_shaders_GAMMA.zip` | GAMMA: GAMMA's whole shader stack with PBR merged in, replacing GAMMA's shader mods |
+| `*_tools.zip` | Python tools: SSS/ES compatibility patch generator, PBR overlay generator, shader pack builder, shader FOMOD builder, PBR texture packer |
+| `PBR_shaders_GAMMA_FOMOD.zip` | GAMMA: the PBR shaders as one Mod Organizer installer: overlay (recommended) or full pack, with or without DLSS / FSR 3 |
 
 ## Install
 
@@ -43,15 +42,21 @@ plus engine support for Screen Space Shaders. DX11 only.
 
 ### With GAMMA
 
-Use **one** of the two GAMMA zips (when this release has them), not both:
+Install `PBR_shaders_GAMMA_FOMOD.zip` (when this release has it) in Mod Organizer like any other
+mod. Its installer asks two things:
 
-- **`PBR_overlay_GAMMA.zip` (recommended):** add it as a mod in Mod Organizer and put it at the
-  very bottom of the left pane (highest priority). It only replaces the files PBR needs, made from
-  GAMMA's own versions, so every other GAMMA shader stays as it is. In the conflict tab every file
-  of it must be "winning".
-- **`PBR_shaders_GAMMA.zip`:** GAMMA's complete shader stack (Enhanced Shaders, Screen Space
-  Shaders, Atmospherics, Beef's NVGs and GAMMA's shader overrides) with PBR merged in, as one
-  mod above all of them.
+1. **Install type**
+   - **Overlay (recommended):** only the files PBR needs, made from GAMMA's own versions, so every
+     other GAMMA shader stays as it is. Put the mod at the very bottom of the left pane (highest
+     priority); in the conflict tab every file of it must be "winning".
+   - **Full pack:** GAMMA's complete shader stack (Enhanced Shaders, Screen Space Shaders,
+     Atmospherics, Beef's NVGs and GAMMA's shader overrides) with PBR merged in, as one mod above
+     all of them.
+2. **DLSS / FSR 3:** with the upscaling shaders (merged with brodrigz's patch, see below) or
+   without them.
+
+To change an answer later, reinstall the archive and pick **Replace** (Merge keeps the files of the
+old choice).
 
 ### DLSS / FSR 3
 
@@ -59,15 +64,17 @@ Use **one** of the two GAMMA zips (when this release has them), not both:
 2. Install `dlss-binaries-GAMMA-compatibility-patch-0.5.zip` in Mod Organizer and pick your
    Atmospherics version and add-ons in its installer (see its README). Put it below SSS,
    Atmospherics and the other shader mods in the left pane (higher priority).
-3. Put `PBR_overlay_GAMMA.zip` **above** the DLSS patch (the overlay's `deffer_grass.vs` is the
-   DLSS patch's version with the instanced-grass paths added). `PBR_shaders_GAMMA.zip` already
-   contains the DLSS shaders; with it, the DLSS patch can stay below it or be left out.
+3. Install the PBR shader FOMOD with **With DLSS / FSR 3** on its second page. As an **overlay**, put
+   it **above** the DLSS patch: the files both change (`night_vision.h`, `deffer_impl_flat.ps`, the
+   grass shader) are merged in the overlay, so the patch's copies must lose. Pick the patch's "Better Beef's
+   NVGs" option only if you really have Better Beef's NVGs installed (GAMMA ships its own NVGs). The **full pack** already contains the DLSS shaders;
+   with it, the DLSS patch can stay below it or be left out.
 4. Clear `appdata/shaders_cache/r4`, start the game, set MSAA Off, then pick DLSS or FSR 3 in
    Settings > Video > Basic and Apply. DLSS needs an NVIDIA RTX GPU; FSR 3 runs on any GPU with
    Direct3D feature level 11.1. The console says `[DLSS] ACTIVE` / `[FSR3] ACTIVE` once it works;
    a red on-screen message explains a failure.
 
-Both GAMMA zips are built for GAMMA's shader stack at the time of this release; if GAMMA updates its shaders,
+The shader installer is built for GAMMA's shader stack at the time of this release; if GAMMA updates its shaders,
 generate your own overlay with `make_pbr_overlay.py` from the tools zip. Delete
 `appdata/shaders_cache/r4` afterwards.
 
@@ -128,7 +135,7 @@ From LASS (Zira3l137): `g_jiggle_enabled`, `g_jiggle_stiffness`, `g_jiggle_dampi
 Grass (TheLostInPlace's rework): `r__detail_shadow_cull`, `r__detail_rows`, `r__detail_inst`,
 `r__detail_inst_res`, `r__detail_merge`, `r__detail_occ`, `r__detail_occ_first` (all on),
 `r__detail_thin` with `r__detail_thin_start` / `_keep` / `_band` (off). The instanced grass path
-needs grass shaders with the `DT_INST` paths: the GAMMA zips have them; with your own SSS/ES,
+needs grass shaders with the `DT_INST` paths: the GAMMA shader installer has them; with your own SSS/ES,
 run the overlay tool or the compat generator (both add them).
 `r__static_screen_quad` (on): repeated screen quads from static vertex buffers.
 
