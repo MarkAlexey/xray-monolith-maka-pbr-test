@@ -3,9 +3,11 @@
 void CRenderTarget::phase_occq()
 {
 	if (!RImplementation.o.dx10_msaa)
-		u_setrt(RenderScreenWidth(), RenderScreenHeight(), HW.pBaseRT,NULL,NULL, dlss::SceneDepth());
+		u_setrt(RenderScreenWidth(), RenderScreenHeight(), NULL,NULL,NULL, dlss::SceneDepth());
 	else
 		u_setrt(RenderScreenWidth(), RenderScreenHeight(),NULL,NULL,NULL, rt_MSAADepth->pZRT);
+    // Depth-only queries must not retain a color target at the display resolution.
+    RCache.set_RT(NULL, 3);
 	RCache.set_Shader(s_occq);
 	RCache.set_CullMode(CULL_CCW);
 	RCache.set_Stencil(TRUE, D3DCMP_LESSEQUAL, 0x01, 0xff, 0x00);
