@@ -47,6 +47,7 @@
 #include "../xrRender/blenders\blender_clsid.h"
 #include "../xrRender/xrRender_console.h"
 #include "r4.h"
+#include "Dlss/DlssIntegration.h"
 
 #include "../../xrCore/profiler.h"
 

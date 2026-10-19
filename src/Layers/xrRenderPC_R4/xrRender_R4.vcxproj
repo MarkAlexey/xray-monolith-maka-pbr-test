@@ -834,6 +834,33 @@
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Dlss\DlssIntegration.cpp" />
+    <ClCompile Include="Dlss\Fsr3D3D11.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <PreprocessorDefinitions>NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClInclude Include="Dlss\Fsr3D3D11.h" />
+    <ClCompile Include="Dlss\DlssD3D11.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PreprocessorDefinitions>NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClInclude Include="Dlss\DlssIntegration.h" />
+    <ClInclude Include="Dlss\DlssD3D11.h" />
+    <ClInclude Include="Dlss\UpscalerDiagnostics.h" />
+    <ClInclude Include="Dlss\DlssTemporal.h" />
+    <ClInclude Include="..\xrRender\RenderDimensions.h" />
+  </ItemGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\..\..\sdk\FSR3\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Lib>
+      <AdditionalDependencies>$(xrSdkDir)DLSS\lib\nvsdk_ngx_d.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Lib>
+  </ItemDefinitionGroup>
+  <Import Project="..\..\..\sdk\FSR3\fsr3_dx11.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

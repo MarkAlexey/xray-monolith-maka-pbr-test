@@ -836,12 +836,12 @@ bool LocalLightShadows::RenderShadows(light_Package& package)
                 if (item.flags.bVolumetric && RImplementation.o.advancedpp && ps_r2_ls_flags.test(R2FLAG_VOLUMETRIC_LIGHTS))
                 {
                     if (RImplementation.o.ssfx_volumetric)
-                        RImplementation.Target->set_viewport_size(HW.pContext, float(Device.dwWidth) / RImplementation.o.volsize,
-                            float(Device.dwHeight) / RImplementation.o.volsize);
+                        RImplementation.Target->set_viewport_size(HW.pContext, float(RenderScreenWidth()) / RImplementation.o.volsize,
+                            float(RenderScreenHeight()) / RImplementation.o.volsize);
                     if (ps_pfx_volumetric_mode == 1) RImplementation.Target->accum_volumetric_lv(&item);
                     else RImplementation.Target->accum_volumetric(&item);
                     if (RImplementation.o.ssfx_volumetric)
-                        RImplementation.Target->set_viewport_size(HW.pContext, float(Device.dwWidth), float(Device.dwHeight));
+                        RImplementation.Target->set_viewport_size(HW.pContext, float(RenderScreenWidth()), float(RenderScreenHeight()));
                 }
             }
         }

@@ -385,6 +385,6 @@ void CRender::render_reflections()
 	Target->phase_vslr_panorama();
 
 	// Back to the main view's size (phase_scene_prepare() binds its own targets next)
-	Target->u_setrt(Device.dwWidth, Device.dwHeight, nullptr, nullptr, nullptr, nullptr);
+	Target->u_setrt(RenderScreenWidth(), RenderScreenHeight(), nullptr, nullptr, nullptr, nullptr);
 	rmNormal();
 }

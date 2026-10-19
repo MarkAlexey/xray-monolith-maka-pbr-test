@@ -48,14 +48,26 @@ private:
     typedef ID3DSamplerState IDeviceState;
     typedef D3D_SAMPLER_DESC StateDecs;
 
-    struct StateRecord
-    {
-        u32 m_crc;
-        IDeviceState* m_pState;
-    };
+	struct StateVariant
+	{
+		IDeviceState* m_pState = nullptr;
+		float m_mipLODBias = 0.0f;
+		u32 m_maxAnisotropy = 1;
+	};
+
+	struct StateRecord
+	{
+		u32 m_crc;
+		bool m_usesAnisotropy;
+		// MRU first, active state at index 0. Four entries cover both scene/UI
+		// biases at selected/1x AF, with bounded LRU eviction after user changes.
+		StateVariant m_variants[4];
+	};
+
 
 private:
     void CreateState(StateDecs desc, IDeviceState** ppIState);
+    void SelectVariant(StateRecord& rec);
     SHandle FindState(const StateDecs& desc, u32 StateCRC);
 
     bool PrepareSamplerStates(
@@ -87,7 +99,7 @@ private:
 #endif
 
     u32 m_uiMaxAnisotropy;
-    float m_uiMipLODBias;   
+    float m_uiMipLODBias;
 };
 
 extern dx10SamplerStateCache SSManager;

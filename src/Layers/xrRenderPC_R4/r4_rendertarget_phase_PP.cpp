@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "r4_rendertarget.h"
+#include "../../xrEngine/CustomHUD.h"
 
 void CRenderTarget::u_calc_tc_noise(Fvector2& p0, Fvector2& p1)
 {
@@ -111,15 +112,106 @@ struct TL_2c3uv
 	}
 };
 
+ref_rt& CRenderTarget::PostprocessColor()
+{
+	return dlss::Configured() ? rt_dlss_post_color : (RImplementation.o.dx10_msaa ? rt_Generic : rt_Color);
+}
+
+ref_rt& CRenderTarget::PostprocessSource()
+{
+	return dlss::Configured() ? rt_dlss_post_source : rt_Generic_0;
+}
+
+void CRenderTarget::phase_dlss_postprocess()
+{
+    if (!dlss::Configured())
+    {
+        dlss::EndScene();
+        return;
+    }
+    PROF_EVENT("Render.Upscaler.ResolveAndOverlays");
+	const auto sceneJitter = dlss::RasterJitter();
+	const bool dlssOutput = dlss::Evaluate(rt_Color->pSurface, rt_ssfx_motion_vectors->pSurface);
+	dlss::EndScene();
+	if (!dlss::Configured()) return;
+
+	// Separate display-resolution overlay buffers. Never feed screen-locked
+	// distortion, NV noise or fake scopes back into the scene's DLSS history.
+	u_setrt(rt_dlss_post_source, nullptr, nullptr, nullptr);
+	RImplementation.rmNormal();
+	RCache.set_CullMode(CULL_NONE);
+	RCache.set_Stencil(FALSE);
+	RCache.set_ColorWriteEnable();
+	u32 offset;
+	const float w = float(Device.dwWidth), h = float(Device.dwHeight);
+	FVF::TL* vertices = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, offset);
+	vertices[0].set(0, h, EPS_S, 1, 0xffffffff, 0, 1);
+	vertices[1].set(0, 0, EPS_S, 1, 0xffffffff, 0, 0);
+	vertices[2].set(w, h, EPS_S, 1, 0xffffffff, 1, 1);
+	vertices[3].set(w, 0, EPS_S, 1, 0xffffffff, 1, 0);
+	RCache.Vertex.Unlock(4, g_combine->vb_stride);
+	// Fuse optional CAS into the existing resolve draw: no extra target or copy.
+	// Zero retains the original copy shader; fallback/scope frames are unsharpened.
+	const bool sharpen = dlssOutput && ps_r_dlss_sharpness > 0.0f;
+	RCache.set_Element(s_dlss_copy->E[dlssOutput ? (sharpen ? 2 : 0) : 1]);
+	if (sharpen) RCache.set_c("dlss_sharpening", ps_r_dlss_sharpness, 0.f, 0.f, 0.f);
+	RCache.set_Geometry(g_combine);
+	RCache.Render(D3DPT_TRIANGLELIST, offset, 0, 4, 0, 2);
+
+	// Only defer direct UI draws when wearable surfaces were found in this view.
+	// A normal weapon/device must not trigger an additional native depth pass.
+	const bool renderHudUi = RImplementation.GMBase.RGraph.hasNativeHudAttachments &&
+		g_hud && g_hud->RenderActiveItemUIQuery();
+	if (renderHudUi || !RImplementation.GMBase.RGraph.mapHUDNativeUi.empty())
+	{
+        PROF_EVENT("Render.Upscaler.NativeHUD");
+		if (!reported_native_ui)
+		{
+			Msg("[Upscaler] HUD UI drawn after reconstruction: native=%ux%u, scene=%ux%u, meshes=%u, item_ui=%u",
+				Device.dwWidth, Device.dwHeight, dlss::RenderWidth(), dlss::RenderHeight(),
+				unsigned(RImplementation.GMBase.RGraph.mapHUDNativeUi.size()), unsigned(renderHudUi));
+			reported_native_ui = true;
+		}
+		// Scene depth is render-sized and jittered. Reproject it into the existing
+		// native depth buffer before drawing unjittered HUD screens. Keep their
+		// occlusion by hands/casing; never attach a render-sized DSV to a native RT.
+		u_setrt(rt_dlss_post_source, nullptr, nullptr, HW.pBaseZB);
+		RCache.set_Element(s_dlss_ui_depth->E[0]);
+		RCache.set_c("dlss_ui_depth_params", float(dlss::RenderWidth()) / w,
+			float(dlss::RenderHeight()) / h, sceneJitter.x, sceneJitter.y);
+		RCache.set_ZFunc(D3DCMP_ALWAYS);
+		RCache.set_ColorWriteEnable(0);
+		RCache.Render(D3DPT_TRIANGLELIST, offset, 0, 4, 0, 2);
+		RCache.set_ColorWriteEnable();
+		RCache.set_CullMode(CULL_CCW);
+		RImplementation.GMBase.r_dsgraph_render_native_ui(renderHudUi);
+	}
+
+	if (ps_r2_mask_control.x > 0)
+	{
+		phase_gasmask_dudv();
+		if (ps_r2_drops_control.x > 0) phase_gasmask_drops();
+	}
+	if (ps_r2_nightvision > 0) phase_nightvision();
+	if (ps_r2_heatvision > 0) phase_heatvision();
+	if (scope_fake_enabled) phase_fakescope();
+}
+
 void CRenderTarget::phase_pp()
 {
+	phase_dlss_postprocess();
 	// combination/postprocess
 	u_setrt(Device.dwWidth, Device.dwHeight, HW.pBaseRT,NULL,NULL, HW.pBaseZB);
+	RImplementation.rmNormal();
 	//	Element 0 for for normal post-process
 	//	Element 4 for color map post-process
 	bool bCMap = u_need_CM();
 	//RCache.set_Element	(s_postprocess->E[bCMap ? 4 : 0]);
-	if (!RImplementation.o.dx10_msaa)
+	if (dlss::Configured())
+	{
+		RCache.set_Element(s_dlss_postprocess->E[bCMap ? 4 : 0]);
+	}
+	else if (!RImplementation.o.dx10_msaa)
 	{
 		//		RCache.set_Shader	(s_postprocess	);
 		RCache.set_Element(s_postprocess->E[bCMap ? 4 : 0]);

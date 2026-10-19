@@ -7,13 +7,13 @@ void CRenderTarget::bind_recorded_accumulator()
     const auto& target = RImplementation.o.fp16_blend ? rt_Accumulator : rt_Accumulator_temp;
     RCache.set_RT(target->pRT, 0);
     for (u32 i = 1; i < 4; ++i) RCache.set_RT(nullptr, i);
-    RCache.set_ZB(RImplementation.o.dx10_msaa ? rt_MSAADepth->pZRT : HW.pBaseZB);
+    RCache.set_ZB(RImplementation.o.dx10_msaa ? rt_MSAADepth->pZRT : dlss::SceneDepth());
     const D3D11_VIEWPORT viewport{0.f, 0.f, float(target->dwWidth), float(target->dwHeight), 0.f, 1.f};
     RenderDeviceContext()->RSSetViewports(1, &viewport);
     // Detach the shadow DSV before SRVSManager applies the atlas read binding.
     auto* color = target->pRT;
     RenderDeviceContext()->OMSetRenderTargets(1, &color,
-        RImplementation.o.dx10_msaa ? rt_MSAADepth->pZRT : HW.pBaseZB);
+        RImplementation.o.dx10_msaa ? rt_MSAADepth->pZRT : dlss::SceneDepth());
     // No shared target dimensions, clear marks or light-marker state are changed.
 }
 
@@ -76,8 +76,8 @@ void CRenderTarget::phase_accumulator()
 		// normal operation - setup
 		if (!RImplementation.o.dx10_msaa)
 		{
-			if (RImplementation.o.fp16_blend) u_setrt(rt_Accumulator, NULL,NULL, HW.pBaseZB);
-			else u_setrt(rt_Accumulator_temp, NULL,NULL, HW.pBaseZB);
+			if (RImplementation.o.fp16_blend) u_setrt(rt_Accumulator, NULL,NULL, dlss::SceneDepth());
+			else u_setrt(rt_Accumulator_temp, NULL,NULL, dlss::SceneDepth());
 		}
 		else
 		{
@@ -92,7 +92,7 @@ void CRenderTarget::phase_accumulator()
 
 		// clear
 		if (!RImplementation.o.dx10_msaa)
-			u_setrt(rt_Accumulator, NULL,NULL, HW.pBaseZB);
+			u_setrt(rt_Accumulator, NULL,NULL, dlss::SceneDepth());
 		else
 			u_setrt(rt_Accumulator, NULL,NULL, rt_MSAADepth->pZRT);
 		//dwLightMarkerID						= 5;					// start from 5, increment in 2 units
@@ -166,7 +166,7 @@ void CRenderTarget::phase_vol_accumulator()
 		{
 			m_bHasActiveVolumetric = true;
 			if (!RImplementation.o.dx10_msaa)
-				u_setrt(rt_Generic_2, NULL, NULL, HW.pBaseZB);
+				u_setrt(rt_Generic_2, NULL, NULL, dlss::SceneDepth());
 			else
 				u_setrt(rt_Generic_2, NULL, NULL, RImplementation.Target->rt_MSAADepth->pZRT);
 			//u32		clr4clearVol				= color_rgba(0,0,0,0);	// 0x00
@@ -177,7 +177,7 @@ void CRenderTarget::phase_vol_accumulator()
 		else
 		{
 			if (!RImplementation.o.dx10_msaa)
-				u_setrt(rt_Generic_2, NULL, NULL, HW.pBaseZB);
+				u_setrt(rt_Generic_2, NULL, NULL, dlss::SceneDepth());
 			else
 				u_setrt(rt_Generic_2, NULL, NULL, RImplementation.Target->rt_MSAADepth->pZRT);
 		}

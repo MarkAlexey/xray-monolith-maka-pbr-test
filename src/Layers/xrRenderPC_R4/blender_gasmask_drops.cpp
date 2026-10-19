@@ -13,7 +13,7 @@ void CBlender_gasmask_drops::Compile(CBlender_Compile& C)
 	IBlender::Compile(C);
 
 	C.r_Pass("stub_screen_space", "gasmask_drops", FALSE, FALSE, FALSE);
-	C.r_dx10Texture("s_image", r2_RT_generic0);
+	C.r_dx10Texture("s_image", dlss::Configured() ? "$user$dlss_post_source" : r2_RT_generic0);
 	C.r_dx10Texture("s_noise", "shaders\\gasmasks\\mask_noise"); //Precomputed noise
 
 	C.r_dx10Sampler("smp_base");

@@ -2,6 +2,9 @@
 #include "GameFont.h"
 #pragma hdrstop
 
+#include "RendererError.h"
+#include <atomic>
+
 #include "../xrcdb/ISpatial.h"
 #include "IGame_Persistent.h"
 #include "render.h"
@@ -11,6 +14,47 @@
 
 int g_ErrorLineCount = 15;
 Flags32 g_stats_flags = {0};
+
+namespace
+{
+xrCriticalSection rendererErrorGuard;
+std::atomic_bool hasRendererError{false};
+string512 rendererErrorLines[3] = {};
+
+void DrawRendererError(CGameFont* font)
+{
+    if (!font || !hasRendererError.load()) return;
+    string512 lines[3];
+    {
+        xrCriticalSectionGuard guard(&rendererErrorGuard);
+        if (!hasRendererError.load()) return;
+        memcpy(lines, rendererErrorLines, sizeof(lines));
+    }
+    const float oldHeight = font->GetHeight();
+    font->SetAligment(CGameFont::alLeft);
+    font->SetColor(color_rgba(255, 48, 48, 255));
+    for (unsigned i = 0; i < 3; ++i)
+    {
+        if (!lines[i][0]) continue;
+        font->SetHeightI(0.018f);
+        const float width = font->SizeOf_(lines[i]);
+        const float available = Device.dwWidth * 0.95f;
+        if (width > available) font->SetHeight(font->GetHeight() * available / width);
+        font->OutI(-0.95f, -0.90f + i * 0.045f, "%s", lines[i]);
+    }
+    font->OnRender();
+    font->SetHeight(oldHeight);
+}
+}
+
+void SetRendererError(const char* summary, const char* detail, const char* recovery)
+{
+    xrCriticalSectionGuard guard(&rendererErrorGuard);
+    const char* lines[] = {summary, detail, recovery};
+    for (unsigned i = 0; i < 3; ++i)
+        strncpy_s(rendererErrorLines[i], sizeof(rendererErrorLines[i]), lines[i] ? lines[i] : "", _TRUNCATE);
+    hasRendererError.store(summary && *summary);
+}
 
 // stats
 DECLARE_RP(Stats);
@@ -522,6 +566,9 @@ void CStats::OnDeviceDestroy()
 
 void CStats::OnRender()
 {
+    // Feature failures must be visible in release builds, including in menus,
+    // independently of debug statistics and the debug-only red-text switch.
+    DrawRendererError(pFont);
 #ifdef DEBUG
     if (g_stats_flags.is(st_sound))
     {

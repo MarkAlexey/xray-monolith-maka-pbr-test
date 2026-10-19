@@ -7,8 +7,8 @@ void CRenderTarget::draw_rain(light& RainSetup)
 	// Common calc for quad-rendering
 	u32 Offset;
 	u32 C = color_rgba(255, 255, 255, 255);
-	float _w = float(Device.dwWidth);
-	float _h = float(Device.dwHeight);
+	float _w = float(RenderScreenWidth());
+	float _h = float(RenderScreenHeight());
 	Fvector2 p0, p1;
 	p0.set(.5f / _w, .5f / _h);
 	p1.set((_w + .5f) / _w, (_h + .5f) / _h);
@@ -170,7 +170,7 @@ void CRenderTarget::draw_rain(light& RainSetup)
 
 		// Make jitter texture
 		Fvector2 j0, j1;
-		float scale_X = float(Device.dwWidth) / float(TEX_jitter);
+		float scale_X = float(RenderScreenWidth()) / float(TEX_jitter);
 		//float	scale_Y				= float(Device.dwHeight)/ float(TEX_jitter);
 		float offset = (.5f / float(TEX_jitter));
 		j0.set(offset, offset);
@@ -244,7 +244,7 @@ void CRenderTarget::draw_rain(light& RainSetup)
 		//	Use for intermediate results
 		//	Patch normal
 		if (!RImplementation.o.dx10_msaa)
-			u_setrt(rt_Accumulator,NULL,NULL, HW.pBaseZB);
+			u_setrt(rt_Accumulator,NULL,NULL, dlss::SceneDepth());
 		else
 			u_setrt(rt_Accumulator,NULL,NULL, rt_MSAADepth->pZRT);
 
@@ -311,7 +311,7 @@ void CRenderTarget::draw_rain(light& RainSetup)
 			//	Do this in blender!
 			//StateManager.SetColorWriteEnable( D3Dxx_COLOR_WRITE_ENABLE_RED | D3Dxx_COLOR_WRITE_ENABLE_GREEN | D3Dxx_COLOR_WRITE_ENABLE_BLUE );
 			if( ! RImplementation.o.dx10_msaa )
-				u_setrt	(rt_Position,NULL,NULL,HW.pBaseZB); 
+				u_setrt	(rt_Position,NULL,NULL,dlss::SceneDepth());
 			else
 				u_setrt	(rt_Position,NULL,NULL,rt_MSAADepth->pZRT); 
 
@@ -359,7 +359,7 @@ void CRenderTarget::draw_rain(light& RainSetup)
 		//	It is restored automatically by a set_Element call
 		//StateManager.SetColorWriteEnable( D3Dxx_COLOR_WRITE_ENABLE_ALL );
 		if (! RImplementation.o.dx10_msaa)
-			u_setrt(rt_Color,NULL,NULL, HW.pBaseZB);
+			u_setrt(rt_Color,NULL,NULL, dlss::SceneDepth());
 		else
 			u_setrt(rt_Color,NULL,NULL, rt_MSAADepth->pZRT);
 

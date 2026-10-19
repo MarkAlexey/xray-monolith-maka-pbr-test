@@ -547,7 +547,8 @@ void CHW::CreateDevice(HWND hwnd, bool move_window)
 	//u32 GPU		= selectGPU();
 #ifdef USE_DX11
     D3D_FEATURE_LEVEL pFeatureLevels[] = {
-        // D3D_FEATURE_LEVEL_11_1,
+        // FSR3's compute shaders need the additional UAV slots available at 11.1.
+        D3D_FEATURE_LEVEL_11_1,
         D3D_FEATURE_LEVEL_11_0,
         // D3D_FEATURE_LEVEL_10_1,
         // D3D_FEATURE_LEVEL_10_0,
@@ -561,19 +562,25 @@ void CHW::CreateDevice(HWND hwnd, bool move_window)
     }
 
     // create device
-    ID3D11Device* device;
-    ID3D11DeviceContext* context;
-    R_CHK(D3D11CreateDevice(
+    ID3D11Device* device = nullptr;
+    ID3D11DeviceContext* context = nullptr;
+    R = D3D11CreateDevice(
         nullptr,
         D3D_DRIVER_TYPE_HARDWARE,
         nullptr,
         create_device_flags,
         pFeatureLevels,
-        1,
+        ARRAYSIZE(pFeatureLevels),
         D3D11_SDK_VERSION,
         &device,
         &FeatureLevel,
-        &context));
+        &context);
+    // Older runtimes reject a list containing 11.1 instead of selecting 11.0.
+    if (R == E_INVALIDARG)
+        R = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, create_device_flags,
+            pFeatureLevels + 1, 1, D3D11_SDK_VERSION, &device, &FeatureLevel, &context);
+    R_CHK(R);
+    Msg("[DX11] Device feature level: %s", FeatureLevel >= D3D_FEATURE_LEVEL_11_1 ? "11.1" : "11.0");
 
     R_CHK(device->QueryInterface(&pDevice));
     R_CHK(context->QueryInterface(&pContext));
@@ -694,6 +701,9 @@ void CHW::CreateDevice(HWND hwnd, bool move_window)
 
 void CHW::DestroyDevice()
 {
+#ifdef USE_DX11
+    dlss::ShutdownDevice();
+#endif
     //	Destroy state managers
     StateManager.Reset();
     RSManager.ClearStateArray();

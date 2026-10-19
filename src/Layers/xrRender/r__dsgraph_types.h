@@ -266,6 +266,9 @@ namespace R_dsgraph
 		mapSorted<float, true, false, false, false> mapCamAttachedSorted;
 		mapDSGraphItems<float, false> mapWater;
 #ifdef USE_DX11
+        // PDA and wearable screen glass are drawn after reconstruction.
+        mapDSGraphItems<float, true> mapHUDNativeUi;
+        bool hasNativeHudAttachments = false;
 		mapDSGraphItems<float, true> mapScopeHUDSorted;
 		mapDSGraphItems<float, false> mapScopeHUD;
 #endif
@@ -329,6 +332,9 @@ namespace R_dsgraph
 		template<bool free = true>
 		IC void clear_hud()
 		{
+#ifdef USE_DX11
+			hasNativeHudAttachments = false;
+#endif
 			if constexpr (free)
 			{
 				mapHUD.clear_and_free();
@@ -343,6 +349,7 @@ namespace R_dsgraph
 				mapCamAttachedSorted.Distort.clear_and_free();
 
 #ifdef USE_DX11
+                mapHUDNativeUi.clear_and_free();
 				mapScopeHUD.clear_and_free();
 				mapScopeHUDSorted.clear_and_free();
 #endif
@@ -361,6 +368,7 @@ namespace R_dsgraph
 				mapCamAttachedSorted.Distort.clear();
 
 #ifdef USE_DX11
+                mapHUDNativeUi.clear();
 				mapScopeHUD.clear();
 				mapScopeHUDSorted.clear();
 #endif

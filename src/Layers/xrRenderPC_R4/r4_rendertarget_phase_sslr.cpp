@@ -43,8 +43,8 @@ void CRenderTarget::phase_sslr()
 	PIX_EVENT(phase_sslr);
 	PROF_EVENT("phase_sslr");
 
-	const u32 w = Device.dwWidth;
-	const u32 h = Device.dwHeight;
+	const u32 w = RenderScreenWidth(); // scene resolution (DLSS / FSR3), the size of rt_sslr*
+	const u32 h = RenderScreenHeight();
 	const UINT groupsX = (w + 7u) / 8u;
 	const UINT groupsY = (h + 7u) / 8u;
 

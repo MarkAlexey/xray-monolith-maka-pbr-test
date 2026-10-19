@@ -26,8 +26,8 @@ void CRenderTarget::accum_reflected(light* L)
 	// 2D texgen (texture adjustment matrix)
 	Fmatrix m_Texgen;
 	{
-		float _w = float(Device.dwWidth);
-		float _h = float(Device.dwHeight);
+		float _w = float(RenderScreenWidth());
+		float _h = float(RenderScreenHeight());
 		float o_w = (.5f / _w);
 		float o_h = (.5f / _h);
 		Fmatrix m_TexelAdjust =
@@ -100,7 +100,7 @@ void CRenderTarget::accum_reflected(light* L)
 	if (!RImplementation.o.fp16_blend)
 	{
 		if (! RImplementation.o.dx10_msaa)
-			u_setrt(rt_Accumulator,NULL,NULL, HW.pBaseZB);
+			u_setrt(rt_Accumulator,NULL,NULL, dlss::SceneDepth());
 		else
 			u_setrt(rt_Accumulator,NULL,NULL, rt_MSAADepth->pZRT);
 		RCache.set_Element(s_accum_mask->E[SE_MASK_ACCUM_VOL]);

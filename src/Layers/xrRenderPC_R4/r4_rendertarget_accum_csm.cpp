@@ -157,8 +157,8 @@ void CRenderTarget::accum_direct_csm()
 	L_dir.normalize();
 
 	u32 Offset;
-	const float _w = float(Device.dwWidth);
-	const float _h = float(Device.dwHeight);
+	const float _w = float(RenderScreenWidth()); // scene resolution (DLSS / FSR3)
+	const float _h = float(RenderScreenHeight());
 	RCache.set_CullMode(CULL_NONE);
 
 	// 1. Light marker: the same masker pass the legacy near cascade draws (marks pixels that

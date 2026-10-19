@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "RenderDimensions.h"
 
 
 void CRenderTarget::phase_smaa()
@@ -10,8 +11,8 @@ void CRenderTarget::phase_smaa()
 
 	float d_Z = EPS_S;
 	float d_W = 1.0f;
-	float w = float(Device.dwWidth);
-	float h = float(Device.dwHeight);
+	float w = float(RenderScreenWidth());
+	float h = float(RenderScreenHeight());
 
 	Fvector2 p0, p1;
 #if defined(USE_DX10) || defined(USE_DX11)	
@@ -93,8 +94,8 @@ void CRenderTarget::phase_ssfx_taa()
 	Fvector2 p0, p1;
 
 	u32 C = color_rgba(255, 255, 255, 255);
-	float w = float(Device.dwWidth);
-	float h = float(Device.dwHeight);
+	float w = float(RenderScreenWidth());
+	float h = float(RenderScreenHeight());
 	float d_Z = EPS_S;
 	float d_W = 1.f;
 

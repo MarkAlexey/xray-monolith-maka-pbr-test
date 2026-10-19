@@ -3,6 +3,11 @@
 #pragma once
 
 // Common
+extern ECORE_API u32 ps_r_dlss_quality;
+extern ECORE_API u32 ps_r_upscaler;
+extern ECORE_API u32 ps_r_fsr3_quality;
+extern ECORE_API u32 ps_r_dlss_preset;
+extern ECORE_API float ps_r_dlss_sharpness;
 extern ECORE_API float ps_ssfx_fog_scattering;
 extern ECORE_API Fvector4 ps_ssfx_motionblur;
 extern ECORE_API Fvector4 ps_ssfx_taa;

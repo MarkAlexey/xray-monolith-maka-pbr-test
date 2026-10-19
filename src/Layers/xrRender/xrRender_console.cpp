@@ -7,6 +7,25 @@
 #include "../../build_config_defines.h"
 
 u32 ps_Preset = 2;
+u32 ps_r_dlss_quality = 0;
+// Default to DLSS selection for compatibility with existing DLSS-only configs.
+// Its quality defaults to Off, so a fresh installation still renders natively.
+u32 ps_r_upscaler = 1;
+u32 ps_r_fsr3_quality = 1;
+xr_token upscaler_token[] = {{"off", 0}, {"dlss", 1}, {"fsr3", 2}, {nullptr, 0}};
+xr_token fsr3_quality_token[] = {
+    {"native_aa", 0}, {"quality", 1}, {"balanced", 2},
+    {"performance", 3}, {"ultra_performance", 4}, {nullptr, 0}
+};
+u32 ps_r_dlss_preset = 0;
+float ps_r_dlss_sharpness = 0.0f;
+xr_token dlss_preset_token[] = {
+    {"default", 0}, {"j", 10}, {"k", 11}, {"l", 12}, {"m", 13}, {nullptr, 0}
+};
+xr_token dlss_quality_token[] = {
+    {"off", 0}, {"dlaa", 1}, {"quality", 2}, {"balanced", 3},
+    {"performance", 4}, {"ultra_performance", 5}, {nullptr, 0}
+};
 xr_token qpreset_token [ ] = {
 	{"Minimum", 0},
 	{"Low", 1},
@@ -1541,6 +1560,13 @@ void xrRender_initconsole()
 	CMD3(CCC_Mask, "r2_mblur_enabled", &ps_r2_anomaly_flags, R2_AN_FLAG_MBLUR);
 	CMD3(CCC_Mask, "r__lens_flares", &ps_r2_anomaly_flags, R2_AN_FLAG_FLARES);
 	CMD3(CCC_Token, "r2_smaa", &ps_smaa_quality, smaa_quality_token);
+#if defined(USE_DX11)
+	CMD3(CCC_Token, "r_dlss_quality", &ps_r_dlss_quality, dlss_quality_token);
+	CMD3(CCC_Token, "r_upscaler", &ps_r_upscaler, upscaler_token);
+	CMD3(CCC_Token, "r_fsr3_quality", &ps_r_fsr3_quality, fsr3_quality_token);
+	CMD3(CCC_Token, "r_dlss_preset", &ps_r_dlss_preset, dlss_preset_token);
+	CMD4(CCC_Float, "r_dlss_sharpness", &ps_r_dlss_sharpness, 0.0f, 1.0f);
+#endif
 	CMD3(CCC_Mask,		"r2_gi",				&ps_r2_ls_flags,			R2FLAG_GI);
 	CMD4(CCC_Float,		"r2_gi_clip",			&ps_r2_GI_clip,				EPS,	0.1f	);
 	CMD4(CCC_Integer,	"r2_gi_depth",			&ps_r2_GI_depth,			1,		5		);

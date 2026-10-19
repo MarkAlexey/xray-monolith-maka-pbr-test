@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "RenderDimensions.h"
 
 void CRenderTarget::phase_dof()
 {
@@ -8,8 +9,8 @@ void CRenderTarget::phase_dof()
 
 	float d_Z = EPS_S;
 	float d_W = 1.0f;
-	float w = float(Device.dwWidth);
-	float h = float(Device.dwHeight);
+	float w = float(RenderScreenWidth());
+	float h = float(RenderScreenHeight());
 
 	Fvector2 p0, p1;
 #if defined(USE_DX10) || defined(USE_DX11)	
@@ -22,7 +23,7 @@ void CRenderTarget::phase_dof()
 
 	//DoF vectors
 	Fvector2 vDofKernel;
-	vDofKernel.set(0.5f / Device.dwWidth, 0.5f / Device.dwHeight);
+	vDofKernel.set(0.5f / RenderScreenWidth(), 0.5f / RenderScreenHeight());
 	vDofKernel.mul(ps_r2_dof_kernel_size);
 	Fvector3 dof;
 	g_pGamePersistent->GetCurrentDof(dof);

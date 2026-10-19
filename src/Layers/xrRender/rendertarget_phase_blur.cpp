@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "RenderDimensions.h"
 
 
 IC bool SortLights(light* i, light* j)
@@ -15,8 +16,8 @@ void CRenderTarget::phase_blur()
 	u32 C = color_rgba(0, 0, 0, 255);
 
 	//Full resolution
-	float w = float(Device.dwWidth);
-	float h = float(Device.dwHeight);
+	float w = float(RenderScreenWidth());
+	float h = float(RenderScreenHeight());
 
 	Fvector2 p0, p1;
 #if defined(USE_DX10) || defined(USE_DX11)
@@ -30,8 +31,8 @@ void CRenderTarget::phase_blur()
 	///////////////////////////////////////////////////////////////////////////////////
 	////Horizontal blur
 	///////////////////////////////////////////////////////////////////////////////////
-	w = float(Device.dwWidth) * 0.5f;
-	h = float(Device.dwHeight) * 0.5f;
+	w = float(RenderScreenWidth()) * 0.5f;
+	h = float(RenderScreenHeight()) * 0.5f;
 
 #if defined(USE_DX10) || defined(USE_DX11)
 	u_setrt(rt_blur_h_2, 0, 0, 0);
@@ -71,8 +72,8 @@ void CRenderTarget::phase_blur()
 	///////////////////////////////////////////////////////////////////////////////////
 	////Horizontal blur / Half res
 	///////////////////////////////////////////////////////////////////////////////////
-	w = float(Device.dwWidth) * 0.25f;
-	h = float(Device.dwHeight) * 0.25f;
+	w = float(RenderScreenWidth()) * 0.25f;
+	h = float(RenderScreenHeight()) * 0.25f;
 
 #if defined(USE_DX10) || defined(USE_DX11)
 	u_setrt(rt_blur_h_4, 0, 0, 0);
@@ -112,8 +113,8 @@ void CRenderTarget::phase_blur()
 	///////////////////////////////////////////////////////////////////////////////////
 	////Horizontal blur
 	///////////////////////////////////////////////////////////////////////////////////
-	w = float(Device.dwWidth) * 0.125f;
-	h = float(Device.dwHeight) * 0.125f;
+	w = float(RenderScreenWidth()) * 0.125f;
+	h = float(RenderScreenHeight()) * 0.125f;
 
 #if defined(USE_DX10) || defined(USE_DX11)
 	u_setrt(rt_blur_h_8, 0, 0, 0);
@@ -163,8 +164,8 @@ void CRenderTarget::phase_ssfx_ssr()
 
 	float d_Z = EPS_S;
 	float d_W = 1.0f;
-	float w = float(Device.dwWidth);
-	float h = float(Device.dwHeight);
+	float w = float(RenderScreenWidth());
+	float h = float(RenderScreenHeight());
 
 	float ScaleFactor = std::min(std::max(ps_ssfx_ssr.x, 1.0f), 2.0f);
 
@@ -300,8 +301,8 @@ void CRenderTarget::phase_ssfx_volumetric_blur()
 	u32 C = color_rgba(0, 0, 0, 255);
 
 	FVF::TL* pv;
-	float w = float(Device.dwWidth);
-	float h = float(Device.dwHeight);
+	float w = float(RenderScreenWidth());
+	float h = float(RenderScreenHeight());
 
 	Fvector2 p0, p1;
 	p0.set(0.0f, 0.0f);
@@ -358,8 +359,8 @@ void CRenderTarget::phase_ssfx_water_blur()
 
 	float d_Z = EPS_S;
 	float d_W = 1.0f;
-	float w = float(Device.dwWidth);
-	float h = float(Device.dwHeight);
+	float w = float(RenderScreenWidth());
+	float h = float(RenderScreenHeight());
 
 	Fvector2 p0, p1;
 	p0.set(0.0f, 0.0f);
@@ -429,8 +430,8 @@ void CRenderTarget::phase_ssfx_water_waves()
 
 	float d_Z = EPS_S;
 	float d_W = 1.0f;
-	u32 w = Device.dwWidth;
-	u32 h = Device.dwHeight;
+	u32 w = RenderScreenWidth();
+	u32 h = RenderScreenHeight();
 
 
 	Fvector2 p0, p1;
@@ -463,8 +464,8 @@ void CRenderTarget::phase_ssfx_sss()
 
 	float d_Z = EPS_S;
 	float d_W = 1.0f;
-	float w = float(Device.dwWidth);
-	float h = float(Device.dwHeight);
+	float w = float(RenderScreenWidth());
+	float h = float(RenderScreenHeight());
 
 	Fvector2 p0, p1;
 	p0.set(0.0f, 0.0f);
@@ -552,8 +553,8 @@ void CRenderTarget::phase_ssfx_sss_ext(light_Package& LP)
 
 	float d_Z = EPS_S;
 	float d_W = 1.0f;
-	float w = Device.dwWidth;
-	float h = Device.dwHeight;
+	float w = RenderScreenWidth();
+	float h = RenderScreenHeight();
 
 	Fvector2 p0, p1;
 	p0.set(0.0f, 0.0f);
@@ -805,8 +806,8 @@ void CRenderTarget::phase_ssfx_fog_scattering()
 	Fvector2 p0, p1;
 
 	u32 C = color_rgba(255, 255, 255, 255);
-	float w = float(Device.dwWidth);
-	float h = float(Device.dwHeight);
+	float w = float(RenderScreenWidth());
+	float h = float(RenderScreenHeight());
 
 	p0.set(0.0f, 0.0f);
 	p1.set(1.0f, 1.0f);
@@ -864,8 +865,8 @@ void CRenderTarget::phase_ssfx_motion_blur()
 	Fvector2 p0, p1;
 
 	u32 C = color_rgba(255, 255, 255, 255);
-	float w = float(Device.dwWidth);
-	float h = float(Device.dwHeight);
+	float w = float(RenderScreenWidth());
+	float h = float(RenderScreenHeight());
 
 	p0.set(0.0f, 0.0f);
 	p1.set(1.0f, 1.0f);

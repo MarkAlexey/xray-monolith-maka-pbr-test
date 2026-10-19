@@ -7,9 +7,9 @@ void CRenderTarget::phase_scene_prepare()
 
 		//	TODO: DX10: Check if we need to set RT here.
 		if (!RImplementation.o.dx10_msaa)
-			u_setrt(Device.dwWidth, Device.dwHeight, rt_Position->pRT,NULL,NULL, HW.pBaseZB);
+			u_setrt(RenderScreenWidth(), RenderScreenHeight(), rt_Position->pRT,NULL,NULL, dlss::SceneDepth());
 		else
-			u_setrt(Device.dwWidth, Device.dwHeight, rt_Position->pRT,NULL,NULL, rt_MSAADepth->pZRT);
+			u_setrt(RenderScreenWidth(), RenderScreenHeight(), rt_Position->pRT,NULL,NULL, rt_MSAADepth->pZRT);
 
 		FLOAT ColorRGBA[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 		HW.pContext->ClearRenderTargetView(rt_Position->pRT, ColorRGBA);
@@ -20,11 +20,11 @@ void CRenderTarget::phase_scene_prepare()
 		//--DSR-- HeatVision_end
 
 		if (!RImplementation.o.dx10_msaa)
-			HW.pContext->ClearDepthStencilView(HW.pBaseZB, D3D_CLEAR_DEPTH | D3D_CLEAR_STENCIL, 1.0f, 0);
+			HW.pContext->ClearDepthStencilView(dlss::SceneDepth(), D3D_CLEAR_DEPTH | D3D_CLEAR_STENCIL, 1.0f, 0);
 		else
 		{
 			HW.pContext->ClearDepthStencilView(rt_MSAADepth->pZRT, D3D_CLEAR_DEPTH | D3D_CLEAR_STENCIL, 1.0f, 0);
-			HW.pContext->ClearDepthStencilView(HW.pBaseZB, D3D_CLEAR_DEPTH | D3D_CLEAR_STENCIL, 1.0f, 0);
+			HW.pContext->ClearDepthStencilView(dlss::SceneDepth(), D3D_CLEAR_DEPTH | D3D_CLEAR_STENCIL, 1.0f, 0);
 		}
 
 	//	Igor: for volumetric lights
@@ -38,7 +38,7 @@ void CRenderTarget::phase_scene_begin()
 {
 	SSManager.SetMaxAnisotropy(ps_r__tf_Anisotropic);	
 	
-	ID3DDepthStencilView* pZB = HW.pBaseZB;
+	ID3DDepthStencilView* pZB = dlss::SceneDepth();
 
 	if (RImplementation.o.dx10_msaa)
 		pZB = rt_MSAADepth->pZRT;
@@ -82,7 +82,7 @@ void CRenderTarget::phase_scene_end()
 
 	// transfer from "rt_Accumulator" into "rt_Color"
 	if (!RImplementation.o.dx10_msaa)
-		u_setrt(rt_Color, 0, 0, HW.pBaseZB);
+		u_setrt(rt_Color, 0, 0, dlss::SceneDepth());
 	else
 		u_setrt(rt_Color, 0, 0, rt_MSAADepth->pZRT);
 	RCache.set_CullMode(CULL_NONE);
@@ -94,8 +94,8 @@ void CRenderTarget::phase_scene_end()
 	// common calc for quad-rendering
 	u32 Offset;
 	u32 C = color_rgba(255, 255, 255, 255);
-	float _w = float(Device.dwWidth);
-	float _h = float(Device.dwHeight);
+	float _w = float(RenderScreenWidth());
+	float _h = float(RenderScreenHeight());
 	Fvector2 p0, p1;
 	p0.set(.5f / _w, .5f / _h);
 	p1.set((_w + .5f) / _w, (_h + .5f) / _h);
