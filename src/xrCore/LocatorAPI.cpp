@@ -200,6 +200,32 @@ XRCORE_API void _dump_open_files(int mode)
 		Log("----total count=", g_open_files.size());
 }
 
+// How many m_files_lock holds the current thread has (counted with -dbg only)
+static thread_local int files_lock_depth = 0;
+
+bool CLocatorAPI::files_lock_guard::enter(bool shared)
+{
+	if (!Core.isDebug())
+		return false;
+	// Checked before acquiring: re-taking an SRWLOCK the thread holds deadlocks
+	// (exclusive) or can deadlock behind a waiting writer (shared)
+	R_ASSERT3(files_lock_depth == 0, "m_files_lock re-entered on the same thread",
+	          shared ? "shared" : "exclusive");
+	++files_lock_depth;
+	return true;
+}
+
+CLocatorAPI::files_lock_guard::files_lock_guard(xrSRWLock& lock, bool shared)
+	: counted(enter(shared)), guard(lock, shared)
+{
+}
+
+CLocatorAPI::files_lock_guard::~files_lock_guard()
+{
+	if (counted)
+		--files_lock_depth;
+}
+
 CLocatorAPI::CLocatorAPI()
 #ifdef PROFILE_CRITICAL_SECTIONS
     :m_auth_lock(MUTEX_PROFILE_ID(CLocatorAPI::m_auth_lock))
@@ -274,7 +300,7 @@ void CLocatorAPI::Register(LPCSTR name, u32 vfs, u32 crc, u32 ptr, u32 size_real
 	// Msg("registering file %s - %d", name, size_real);
 	// if file already exist - update info
 	{
-		xrSRWLockGuard guard(m_files_lock);
+		files_lock_guard guard(m_files_lock);
 
 		files_it I = m_files.find(desc);
 		if (I != m_files.end())
@@ -316,7 +342,7 @@ void CLocatorAPI::Register(LPCSTR name, u32 vfs, u32 crc, u32 ptr, u32 size_real
 			desc.modif = u32(-1);
 			std::pair<files_it, bool> I;
 			{
-				xrSRWLockGuard guard(m_files_lock);
+				files_lock_guard guard(m_files_lock);
 				I = m_files.insert(desc);
 			}
 
@@ -554,7 +580,7 @@ void CLocatorAPI::ProcessArchive(LPCSTR _path)
 
 void CLocatorAPI::unload_archive(CLocatorAPI::archive& A)
 {
-	xrSRWLockGuard guard(m_files_lock);
+	files_lock_guard guard(m_files_lock);
 
 	files_it I = m_files.begin();
 	while (I != m_files.end())
@@ -995,7 +1021,7 @@ void CLocatorAPI::_destroy()
 	xrLogger::CloseLog();
 
 	{
-		xrSRWLockGuard guard(m_files_lock);
+		files_lock_guard guard(m_files_lock);
 		for (files_it I = m_files.begin(); I != m_files.end(); I++)
 		{
 			char* str = LPSTR(I->name);
@@ -1069,7 +1095,7 @@ xr_vector<char*>* CLocatorAPI::file_list_open(const char* _path, u32 flags)
 
 	file desc;
 	desc.name = N;
-	xrSRWLockGuard guard(m_files_lock, true);
+	files_lock_guard guard(m_files_lock, true);
 	files_it I = m_files.find(desc);
 	if (I == m_files.end()) return 0;
 
@@ -1131,7 +1157,7 @@ int CLocatorAPI::file_list(FS_FileSet& dest, LPCSTR path, u32 flags, LPCSTR mask
 
 	file desc;
 	desc.name = N;
-	xrSRWLockGuard guard(m_files_lock, true);
+	files_lock_guard guard(m_files_lock, true);
 	files_it I = m_files.find(desc);
 	if (I == m_files.end()) return 0;
 
@@ -1453,7 +1479,7 @@ bool CLocatorAPI::check_for_file(LPCSTR path, LPCSTR _fname, string_path& fname,
 	file desc_f;
 	desc_f.name = fname;
 
-	xrSRWLockGuard guard(m_files_lock, true);
+	files_lock_guard guard(m_files_lock, true);
 	files_it I = m_files.find(desc_f);
 	if (I == m_files.end())
 		return (false);
@@ -1574,7 +1600,7 @@ CLocatorAPI::files_it CLocatorAPI::file_find_it(LPCSTR fname)
 	// проверить нужно ли пересканировать пути
 	check_pathes();
 
-	xrSRWLockGuard guard(m_files_lock, true);
+	files_lock_guard guard(m_files_lock, true);
 	return file_find_it_nolock(fname);
 }
 
@@ -1600,7 +1626,7 @@ BOOL CLocatorAPI::dir_delete(LPCSTR path, LPCSTR nm, BOOL remove_files)
 	files_set folders;
 	files_it I;
 	check_pathes();
-	xrSRWLockGuard guard(m_files_lock);
+	files_lock_guard guard(m_files_lock);
 	// remove files
 	I = file_find_it_nolock(fpath);
 	if (I != m_files.end())
@@ -1648,7 +1674,7 @@ void CLocatorAPI::file_delete(LPCSTR path, LPCSTR nm)
 	else xr_strcpy(fname, sizeof(fname), nm);
 
 	check_pathes();
-	xrSRWLockGuard guard(m_files_lock);
+	files_lock_guard guard(m_files_lock);
 	const files_it I = file_find_it_nolock(fname);
 	if (I != m_files.end())
 	{
@@ -1683,7 +1709,7 @@ void CLocatorAPI::file_rename(LPCSTR src, LPCSTR dest, bool bOwerwrite)
 	check_pathes();
 	bool renamed = false;
 	{
-		xrSRWLockGuard guard(m_files_lock);
+		files_lock_guard guard(m_files_lock);
 		files_it S = file_find_it_nolock(src);
 		if (S != m_files.end())
 		{
@@ -1720,7 +1746,7 @@ void CLocatorAPI::file_rename(LPCSTR src, LPCSTR dest, bool bOwerwrite)
 int CLocatorAPI::file_length(LPCSTR src)
 {
 	check_pathes();
-	xrSRWLockGuard guard(m_files_lock, true);
+	files_lock_guard guard(m_files_lock, true);
 	files_it I = file_find_it_nolock(src);
 	return (I != m_files.end()) ? I->size_real : -1;
 }
@@ -1765,7 +1791,7 @@ u32 CLocatorAPI::get_file_age(LPCSTR nm)
 	// проверить нужно ли пересканировать пути
 	check_pathes();
 
-	xrSRWLockGuard guard(m_files_lock, true);
+	files_lock_guard guard(m_files_lock, true);
 	files_it I = file_find_it_nolock(nm);
 	return (I != m_files.end()) ? I->modif : u32(-1);
 }
@@ -1787,7 +1813,7 @@ void CLocatorAPI::set_file_age(LPCSTR nm, u32 age)
 	else
 	{
 		// update record
-		xrSRWLockGuard guard(m_files_lock);
+		files_lock_guard guard(m_files_lock);
 		files_it I = file_find_it_nolock(nm);
 		if (I != m_files.end())
 		{
@@ -1803,7 +1829,7 @@ void CLocatorAPI::rescan_path(LPCSTR full_path, BOOL bRecurse)
 	desc.name = full_path;
 	{
 		// Released before Recurse(), which re-enters via Register()
-		xrSRWLockGuard guard(m_files_lock);
+		files_lock_guard guard(m_files_lock);
 		files_it I = m_files.lower_bound(desc);
 		if (I == m_files.end()) return;
 

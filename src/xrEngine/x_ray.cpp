@@ -228,6 +228,16 @@ PROTECT_API void InitSettings()
 		tmp_functor
 	);
 
+	// -dbg: the multiplayer auth hash over this gamedata, so FS changes can be
+	// checked against it (same value before and after = same files hashed)
+	if (Core.isDebug())
+	{
+		CTimer auth_timer;
+		auth_timer.Start();
+		FS.auth_generate(tmp_ignore_pathes, tmp_check_pathes);
+		Msg("* FS auth hash: %016llx (%u ms)", FS.auth_get(), auth_timer.GetElapsed_ms());
+	}
+
 	FS.update_path(fname, "$game_config$", "game.ltx");
 	pGameIni = xr_new<CInifile>(fname, TRUE);
 	CHECK_OR_EXIT(0 != pGameIni->section_count(),

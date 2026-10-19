@@ -51,7 +51,7 @@ void CLocatorAPI::auth_runtime(void* params)
 	// released: FS.r_open() takes m_files_lock itself and SRWLOCK isn't reentrant.
 	xr_vector<xr_string> to_hash;
 	{
-		xrSRWLockGuard guard(m_files_lock, true);
+		files_lock_guard guard(m_files_lock, true);
 		for (files_it it = m_files.begin(); it != m_files.end(); ++it)
 		{
 			const file& f = *it;

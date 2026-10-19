@@ -72,6 +72,18 @@ private:
 
 	files_set m_files;
 	mutable xrSRWLock m_files_lock;
+	// Scoped hold of m_files_lock. With -dbg it asserts if the calling thread
+	// already holds the lock, shared or exclusive: SRWLOCK is not reentrant.
+	class files_lock_guard
+	{
+	public:
+		files_lock_guard(xrSRWLock& lock, bool shared = false);
+		~files_lock_guard();
+	private:
+		static bool enter(bool shared);
+		bool counted;
+		xrSRWLockGuard guard;
+	};
 	BOOL bNoRecurse;
 
 	// Monolith: folders already listed while _initialize() runs (LocatorAPI.cpp, scan_dedupe);
