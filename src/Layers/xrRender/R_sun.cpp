@@ -478,11 +478,29 @@ void CRender::render_sun_cascade(u32 cascade_ind, const xr_vector<ISpatialShared
         // Render shadow-map
         //. !!! We should clip based on shrinked frustum (again)
         {
-            bool bDeffered_Shadows = cascade.GMCascade.RGraph.mapStaticPasses[0][0].size() || cascade.GMCascade.RGraph.mapDynamicPasses[0][0].size();
-            bool bForward_Shadows = cascade.GMCascade.RGraph.mapStaticPasses[1][0].size() || cascade.GMCascade.RGraph.mapDynamicPasses[1][0].size() || cascade.GMCascade.RGraph.mapStaticSorted.Sorted.size() || cascade.GMCascade.RGraph.mapDynamicSorted.Sorted.size();
+            bool bDeffered_Shadows = false, bForward_Shadows = false;
 #if RENDER == R_R4
+            // MT sun shadows: decide only after Bind(). Its Record() joins the capture task of
+            // this cascade (cascade 0's static capture can still be running on its worker
+            // here) and adds the dynamic casters; reading the queues before that raced the
+            // worker and could skip the owner part (fallback casters, grass, translucent)
+            const bool recorded_lists = sun_shadows && sun_shadows->Prepared();
+            const auto& queues = cascade.GMCascade.RGraph;
+            if (recorded_lists)
+            {
+                // Bind() drops priority 0 once its recorded lists are submitted, so look first,
+                // after joining the capture (Record() inside Bind() is what joins it)
+                sun_shadows->Record();
+                bDeffered_Shadows = queues.mapStaticPasses[0][0].size() || queues.mapDynamicPasses[0][0].size();
+                bForward_Shadows = queues.mapStaticPasses[1][0].size() || queues.mapDynamicPasses[1][0].size() || queues.mapStaticSorted.Sorted.size() || queues.mapDynamicSorted.Sorted.size();
+            }
             const bool context_shadow = sun_shadows && sun_shadows->Bind(cascade_ind);
+            if (!recorded_lists)
 #endif
+            {
+                bDeffered_Shadows = cascade.GMCascade.RGraph.mapStaticPasses[0][0].size() || cascade.GMCascade.RGraph.mapDynamicPasses[0][0].size();
+                bForward_Shadows = cascade.GMCascade.RGraph.mapStaticPasses[1][0].size() || cascade.GMCascade.RGraph.mapDynamicPasses[1][0].size() || cascade.GMCascade.RGraph.mapStaticSorted.Sorted.size() || cascade.GMCascade.RGraph.mapDynamicSorted.Sorted.size();
+            }
             if (bDeffered_Shadows || bForward_Shadows)
             {
 #if RENDER == R_R4
