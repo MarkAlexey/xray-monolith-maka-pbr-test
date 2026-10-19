@@ -312,7 +312,7 @@ Fvisual::StaticBatch::~StaticBatch()
 void Fvisual::BuildStaticBatches(const xr_vector<dxRender_Visual*>& visuals)
 {
     PROF_EVENT("Render.StaticBatch.Build.Level");
-    R_ASSERT(GetCurrentThreadId() == Device.mmThreadID);
+    VERIFY(Device.IsMainThread());
     struct Candidate { Fvisual* visual; int cell[3]; };
     xr_vector<Candidate> candidates;
     for (auto* visual : visuals)
@@ -466,7 +466,7 @@ bool Fvisual::ShadowBatchMemberValid() const
 void Fvisual::BuildShadowBatches(const xr_vector<dxRender_Visual*>& visuals)
 {
     PROF_EVENT("Shadow.Batch.Build.Level");
-    R_ASSERT(GetCurrentThreadId() == Device.mmThreadID);
+    VERIFY(Device.IsMainThread());
     struct Candidate { Fvisual* mesh; SPass* pass; int cell[3]; };
     xr_vector<Candidate> candidates;
     for (auto* visual : visuals)

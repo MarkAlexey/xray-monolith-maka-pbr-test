@@ -108,7 +108,7 @@ bool stage_tree_indices(const std::shared_ptr<TreeShadowMesh>& mesh, const std::
 void FTreeVisual::BuildShadowGeometry(const xr_vector<dxRender_Visual*>& visuals)
 {
     PROF_EVENT("Trees.Shadow.Build.Level");
-    R_ASSERT(GetCurrentThreadId() == Device.mmThreadID);
+    VERIFY(Device.IsMainThread());
     struct Entry { std::shared_ptr<TreeShadowMesh> mesh; std::vector<u16> indices; };
     std::map<std::array<u32, 7>, Entry> cache;
     std::vector<u16> packed;

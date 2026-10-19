@@ -340,8 +340,11 @@ void CDSGraphManager::r_dsgraph_render_graph(RenderQueueArray& queues, u32 _prio
 
 #if defined(USE_DX11) && RENDER == R_R4
         flush_static();
-        { PROF_EVENT("Render.Static.BatchStats");
-          PROF_TAG("Draws", combined_draws); PROF_TAG("Members", combined_members); }
+        {
+            PROF_EVENT("Render.Static.BatchStats");
+            PROF_TAG("Draws", combined_draws);
+            PROF_TAG("Members", combined_members);
+        }
 #endif
 		if (_clear)
 			queue.clear();
