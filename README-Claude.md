@@ -1091,3 +1091,20 @@ Checked: `tools/check_cpp.py` over every R4 translation unit (228 files, so the 
 `StateManager` macro change is covered everywhere) and the shared files for R3: only the known
 clang noise (`xr_vector` / `vector<bool>` shims, MSVC-only dependent template names). Not built
 with MSVC or run.
+
+### One shader installer (FOMOD) instead of loose GAMMA zips
+
+The release now ships one Mod Organizer installer, `PBR_shaders_GAMMA_FOMOD.zip`, instead of
+`PBR_overlay_GAMMA.zip` and `PBR_shaders_GAMMA.zip`. `tools/make_shader_fomod.py` wraps
+`build_shader_packs.py`'s two zips; its only page picks **Overlay** (recommended, highest
+priority) or **Full pack** (above GAMMA's shader mods). Inside: `fomod/`,
+`variants/{overlay,full}/gamedata/`, and `docs/` (a README plus the variants' README /
+PACK_REPORT), which always installs into "PBR shaders - Instructions" in the mod folder. On the
+`-dlss` branch the same tool adds a second page, with or without the DLSS / FSR 3 shaders.
+
+CI builds the packs into `shader_packs/plain`, wraps them and releases only the FOMOD. The tool is
+in the tools zip too (`--dry-run` lists the variants).
+
+Checked: built locally from the same sources as CI; `fomod/ModuleConfig.xml` validates against the
+ModConfig 5.0 schema and each pattern's source folder holds its variant's files (24 / 277). Not yet
+installed through Mod Organizer itself.

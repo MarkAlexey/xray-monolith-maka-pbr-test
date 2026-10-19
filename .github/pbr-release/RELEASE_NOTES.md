@@ -23,9 +23,8 @@ plus engine support for Screen Space Shaders. DX11 only.
 |---|---|
 | `*_latest.zip` / `*_<version>.zip` | the exes (`bin/`) and the PBR gamedata (`db/mods/00_modded_exes_gamedata.db0`) |
 | `*_pdb.zip` | debug symbols; put the `.pdb` files next to the exes for readable crash logs |
-| `*_tools.zip` | Python tools: SSS/ES compatibility patch generator, PBR overlay generator, shader pack builder, PBR texture packer |
-| `PBR_overlay_GAMMA.zip` | GAMMA: only the shaders PBR needs, patched from GAMMA's own stack. Install last, on top of GAMMA |
-| `PBR_shaders_GAMMA.zip` | GAMMA: GAMMA's whole shader stack with PBR merged in, replacing GAMMA's shader mods |
+| `*_tools.zip` | Python tools: SSS/ES compatibility patch generator, PBR overlay generator, shader pack builder, shader FOMOD builder, PBR texture packer |
+| `PBR_shaders_GAMMA_FOMOD.zip` | GAMMA: the PBR shaders as one Mod Organizer installer: overlay (recommended) or full pack |
 
 ## Install
 
@@ -37,17 +36,20 @@ plus engine support for Screen Space Shaders. DX11 only.
 
 ### With GAMMA
 
-Use **one** of the two GAMMA zips (when this release has them), not both:
+Install `PBR_shaders_GAMMA_FOMOD.zip` (when this release has it) in Mod Organizer like any other
+mod. Its installer asks for the install type:
 
-- **`PBR_overlay_GAMMA.zip` (recommended):** add it as a mod in Mod Organizer and put it at the
-  very bottom of the left pane (highest priority). It only replaces the files PBR needs, made from
-  GAMMA's own versions, so every other GAMMA shader stays as it is. In the conflict tab every file
-  of it must be "winning".
-- **`PBR_shaders_GAMMA.zip`:** GAMMA's complete shader stack (Enhanced Shaders, Screen Space
-  Shaders, Atmospherics, Beef's NVGs and GAMMA's shader overrides) with PBR merged in, as one
-  mod above all of them.
+- **Overlay (recommended):** only the files PBR needs, made from GAMMA's own versions, so every
+  other GAMMA shader stays as it is. Put the mod at the very bottom of the left pane (highest
+  priority); in the conflict tab every file of it must be "winning".
+- **Full pack:** GAMMA's complete shader stack (Enhanced Shaders, Screen Space Shaders,
+  Atmospherics, Beef's NVGs and GAMMA's shader overrides) with PBR merged in, as one mod above all
+  of them.
 
-Both are built for GAMMA's shader stack at the time of this release; if GAMMA updates its shaders,
+To change it later, reinstall the archive and pick **Replace** (Merge keeps the files of the old
+choice).
+
+The shader installer is built for GAMMA's shader stack at the time of this release; if GAMMA updates its shaders,
 generate your own overlay with `make_pbr_overlay.py` from the tools zip. Delete
 `appdata/shaders_cache/r4` afterwards.
 
@@ -108,7 +110,7 @@ From LASS (Zira3l137): `g_jiggle_enabled`, `g_jiggle_stiffness`, `g_jiggle_dampi
 Grass (TheLostInPlace's rework): `r__detail_shadow_cull`, `r__detail_rows`, `r__detail_inst`,
 `r__detail_inst_res`, `r__detail_merge`, `r__detail_occ`, `r__detail_occ_first` (all on),
 `r__detail_thin` with `r__detail_thin_start` / `_keep` / `_band` (off). The instanced grass path
-needs grass shaders with the `DT_INST` paths: the GAMMA zips have them; with your own SSS/ES,
+needs grass shaders with the `DT_INST` paths: the GAMMA shader installer has them; with your own SSS/ES,
 run the overlay tool or the compat generator (both add them).
 `r__static_screen_quad` (on): repeated screen quads from static vertex buffers.
 

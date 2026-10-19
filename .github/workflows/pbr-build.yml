@@ -8,8 +8,9 @@
 #     2. builds the exes listed in the build matrix with MSBuild (DX11 and DX11-AVX by default,
 #        the only renderer PBR runs on);
 #     3. zips the user-facing tools (compat patch generator, shader pack builder, texture packer);
-#     3b. builds the ready-made GAMMA shader zips, PBR_overlay_GAMMA.zip and PBR_shaders_GAMMA.zip
-#        (job "shader_packs", see "Shader packs" below), when the sources repository is set up;
+#     3b. builds the GAMMA shader installer PBR_shaders_GAMMA_FOMOD.zip (overlay or full pack,
+#        tools/make_shader_fomod.py over build_shader_packs.py's zips; job "shader_packs", see
+#        "Shader packs" below), when the sources repository is set up;
 #     4. publishes a GitHub Release anyone can download without a GitHub account:
 #        - push / manual "latest": the rolling pre-release "pbr-test-latest" is replaced with
 #          the new build (one release, always the newest commit);
@@ -36,9 +37,9 @@
 #     Users with SSS/ES generate the compatibility patch from their own copies with the tools zip.
 #
 # Shader packs (GAMMA)
-#   The two GAMMA zips are built from Screen Space Shaders, Enhanced Shaders, Atmospherics,
-#   Beef's NVGs and GAMMA's shader overrides, shipped in the release with their authors'
-#   permission. The source archives live in a PRIVATE repository, so they are not public here:
+#   The GAMMA shader packs (overlay and full pack, inside one FOMOD) are built from Screen Space
+#   Shaders, Enhanced Shaders, Atmospherics, Beef's NVGs and GAMMA's shader overrides, shipped in
+#   the release with their authors' permission. The source archives live in a PRIVATE repository, so they are not public here:
 #     - create a private repository with the layout described in
 #       .github/pbr-release/build_shader_packs.py (es/, sss/, atmospherics/, beef/, gamma/ with
 #       gamma/order.txt, optional vanilla/ for the DXC compile check);
@@ -46,8 +47,8 @@
 #         Variables: PBR_SOURCES_REPO = owner/name of that repository
 #         Secrets:   PBR_SOURCES_TOKEN = a fine-grained token with read-only "Contents" access
 #                    to that repository only
-#   Without them the job is skipped with a notice and the release has no shader zips. If the
-#   build or the compile check fails, the release still goes out, without the shader zips.
+#   Without them the job is skipped with a notice and the release has no shader installer. If
+#   the build or the compile check fails, the release still goes out, without it.
 #   The packs follow this branch's tools and shaders; changing only the sources repository
 #   does not trigger a build: run the workflow manually afterwards.
 
@@ -181,7 +182,7 @@ jobs:
             # does not use an environment, so environment secrets/variables are invisible to it.
             [ -z "$SOURCES_REPO" ] && echo "::warning::PBR_SOURCES_REPO is empty: add it as a repository Variable (Variables tab), value owner/name of the private shader repository"
             [ -z "$SOURCES_TOKEN" ] && echo "::warning::PBR_SOURCES_TOKEN is empty: add it as a repository Secret (Secrets tab)"
-            echo "::notice::no GAMMA shader zips in this release"
+            echo "::notice::no GAMMA shader installer in this release"
             echo "on=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -209,16 +210,22 @@ jobs:
           echo "LD_LIBRARY_PATH=$PWD/dxc/lib" >> "$GITHUB_ENV"
           pip install --quiet py7zr
 
-      - name: Build PBR_overlay_GAMMA.zip and PBR_shaders_GAMMA.zip
+      - name: Build the shader packs and PBR_shaders_GAMMA_FOMOD.zip
         if: steps.cfg.outputs.on == 'true'
-        run: python .github/pbr-release/build_shader_packs.py --sources shader-sources --out shader_packs --dxc "$PWD/dxc/bin/dxc"
+        run: |
+          set -euo pipefail
+          # Overlay + full pack for GAMMA's stack, then one Mod Organizer installer around them
+          python .github/pbr-release/build_shader_packs.py --sources shader-sources --out shader_packs/plain --dxc "$PWD/dxc/bin/dxc"
+          python tools/make_shader_fomod.py --overlay shader_packs/plain/PBR_overlay_GAMMA.zip \
+              --full shader_packs/plain/PBR_shaders_GAMMA.zip \
+              --version "$(date -u +'%Y.%-m.%-d')-${GITHUB_SHA::8}" --out shader_packs/PBR_shaders_GAMMA_FOMOD.zip
 
       - name: Upload
         if: steps.cfg.outputs.on == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: shader-packs
-          path: shader_packs/*.zip
+          path: shader_packs/PBR_shaders_GAMMA_FOMOD.zip
           if-no-files-found: error
           retention-days: ${{ env.RETENTION_DAYS }}
 
@@ -281,15 +288,15 @@ jobs:
           (cd pdb && zip -qr "../${{ steps.v.outputs.name }}_pdb.zip" . ) || true
 
           mkdir -p tools_pkg/tools
-          cp tools/make_pbr_compat_patch.py tools/make_pbr_overlay.py tools/build_shader_pack.py tools/pack_pbr_textures.py tools_pkg/tools/
+          cp tools/make_pbr_compat_patch.py tools/make_pbr_overlay.py tools/build_shader_pack.py tools/pack_pbr_textures.py tools/make_shader_fomod.py tools_pkg/tools/
           cp notes.md tools_pkg/README-PBR.md
           (cd tools_pkg && zip -qr "../${{ steps.v.outputs.name }}_tools.zip" .)
 
-          # GAMMA shader zips (job shader_packs), when it ran and succeeded
+          # GAMMA shader installer (job shader_packs), when it ran and succeeded
           if ls artifacts/shader-packs/*.zip >/dev/null 2>&1; then
             cp artifacts/shader-packs/*.zip .
           else
-            echo "::notice::no GAMMA shader zips in this release (shader_packs skipped or failed)"
+            echo "::notice::no GAMMA shader installer in this release (shader_packs skipped or failed)"
           fi
           ls -la *.zip
 
