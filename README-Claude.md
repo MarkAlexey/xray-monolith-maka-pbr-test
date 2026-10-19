@@ -1027,3 +1027,67 @@ Caveats:
 Checked: `tools/check_cpp.py --base 80bf4167 --changed` (R3, R4, xrGame, xrEngine units): every new
 error is the known clang noise (`xr_vector` / `vector<bool>` shims, `xr_resource` dependent bases,
 UI class hierarchy); no undeclared names or signature mismatches. Not built with MSVC or run.
+
+### Multithreaded shadow recording (qkff99, step 2)
+
+qkff99's `79a9a1a6` and `2ae9c457` (plus the `vis_update` line of `6631dc22`), adapted. Shadow maps
+are recorded on D3D11 deferred contexts by worker threads, each with its own backend (`RCache` is
+now the active context's backend), constant buffers, state and sampler caches, and the owner
+thread replays the command lists in the original order:
+
+- **Sun**: three workers, one per cascade. The static part of each cascade is captured on its worker
+  while the owner draws the G-buffer; the middle and far cascades record their static casters early.
+  Dynamic casters are captured on the owner (Lua/renderable callbacks keep their order), skeletal
+  poses are frozen into snapshots, then each cascade records.
+- **Local lights**: four workers. Spatial queries overlap scene work, each shadow atlas records on a
+  lane, and lights whose lighting shaders are safe also record their accumulation (`accum_spot` /
+  `accum_point`) in the same list. OGSR's `smapvis` (one occlusion query per static caster, hides
+  casters that never reach the shadow map) runs with it.
+- **Rain**: one worker records the rain-wetness depth map.
+
+Anything a worker cannot do safely stays on the owner, packet by packet: a shader with UAVs or
+unknown resources, a constant binder not marked safe (`R_constant_setup::parallel_safe()`, false by
+default, so every binder added by PBR / SSS / ES / scripts keeps the owner path), translucent
+shadows, volumetric lights, GI, HUD lights.
+
+| Command | Default | What it does |
+|---|---|---|
+| `r4_mt_sun_shadows` | 1 | sun cascades recorded on workers |
+| `r4_mt_local_shadows` | 1 | local-light shadows (and safe light accumulation) recorded on workers |
+| `r4_smapvis` | 1 | occlusion-query culling of static local-light shadow casters (also works with `r4_mt_local_shadows 0`) |
+| `r4_mt_rain_shadows` | 1 | rain-wetness depth map recorded on a worker |
+
+Adapted while porting:
+
+- **CSM.** With `r4_sun_csm 1` the near cascades record straight into their slice of the shadow-map
+  array (no extra memory), the far cascade into `rt_smap_depth`; the one-pass CSM lighting is
+  unchanged. With `r4_sun_csm 0`, qkff99's layout: two extra private shadow maps (2 × 64 MB at
+  `r2_smap_size 4096`) for cascades 0 and 1.
+- **Grass.** The grass rework uploads instance rows, runs compute copies and indirect draws on the
+  immediate context, so grass shadows are never recorded on a worker: the owner draws them after
+  each cascade's / light's list with the grass rework's own code (sun frustum cull, per-light
+  path). Lights with grass shadows keep owner lighting.
+- **Static screen quads** stay owner-only; a worker resetting the light-marker stencil writes its own
+  dynamic quad.
+- No upscaler: qkff99's DLSS hooks (render size, jitter, scene depth) are replaced by the plain
+  screen size and `HW.pBaseZB`. The sampler cache has no DLSS variants; anisotropy / LOD bias
+  changes resynchronise the workers.
+- Not ported: view preparation, qkff99's grass recording (`RenderShadow`), the upscaled light
+  occlusion and visibility diagnostics (`c922790d`), and `6631dc22`'s change of the
+  `r2_exp_donttest_uns` default.
+
+Caveats:
+
+- Untested in game. qkff99 measured lower mean and p95 frame times on their build; the CSM, grass
+  and screen-quad paths above are new and nobody has run them yet.
+- Each switch can be turned off on its own at any time; with all four at 0 the renderer takes the
+  previous code paths (the only difference left is that `RCache` and the state caches are looked up
+  through the active context, a thread-local read).
+- `r4_smapvis` hides a static caster only after a query saw zero samples, and resets when the light
+  moves or its static list changes; if a local-light shadow ever goes missing, try `r4_smapvis 0`.
+- Workers are 8 extra threads (3 sun, 4 local, 1 rain) that sleep when idle.
+
+Checked: `tools/check_cpp.py` over every R4 translation unit (228 files, so the `RCache` /
+`StateManager` macro change is covered everywhere) and the shared files for R3: only the known
+clang noise (`xr_vector` / `vector<bool>` shims, MSVC-only dependent template names). Not built
+with MSVC or run.

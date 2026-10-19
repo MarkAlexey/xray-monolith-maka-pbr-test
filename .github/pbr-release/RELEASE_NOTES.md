@@ -6,8 +6,8 @@ Automatic build of [`pbr-test-s3ds-mt-sss-lass`](https://github.com/{{REPO}}/tre
 This branch adds Zira3l137's [xray-monolith-lass](https://github.com/Zira3l137/xray-monolith-lass)
 work on top of the PBR build: the first-person body fix, jiggle bones (with the skeleton loader fixes
 they need) and alpha-tested surfaces that honour their authored ref. It also carries TheLostInPlace's
-grass rendering rework and qkff99's CPU-side render optimisations (step 1 of their
-`mt-consolidated-fixes` branch: no multithreaded shadows or DLSS yet). LASS's picture-in-picture scopes
+grass rendering rework and qkff99's CPU-side render optimisations and multithreaded shadow
+recording (from their `mt-consolidated-fixes` branch; no DLSS / FSR here). LASS's picture-in-picture scopes
 are not included.
 
 Demonized's Modded Exes (multithreaded build) with physically based materials ported from IX-Ray,
@@ -112,7 +112,10 @@ needs grass shaders with the `DT_INST` paths: the GAMMA zips have them; with you
 run the overlay tool or the compat generator (both add them).
 `r__static_screen_quad` (on): repeated screen quads from static vertex buffers.
 
-qkff99's optimisations have no switches. `sheduler_budget_max` (5): ceiling of the per-frame
+Multithreaded shadows (qkff99, all on): `r4_mt_sun_shadows`, `r4_mt_local_shadows`, `r4_mt_rain_shadows`,
+`r4_smapvis` (occlusion culling of local-light shadow casters). If shadows break or the game
+crashes, set the four to 0 in `user.ltx` and report which one fixed it.
+qkff99's other optimisations have no switches. `sheduler_budget_max` (5): ceiling of the per-frame
 object-update budget in ms (IX-Ray value); raise it (up to 66, the old value) if NPCs react late in
 busy scenes.
 
