@@ -520,18 +520,26 @@ def patch_hud(text, what):
         '#include "sload.h"\n#include "pbr_hud.h"\t' + BANNER + "PBR materials on weapons and hands\n",
         what,
     )
-    # Fix up the decoded surface before its normal is transformed (rain drops are added after)
-    text = regex_once(
-        text,
-        r"(\n)([ \t]*float3[ \t]+Ne[ \t]*=[ \t]*mul)",
-        lambda m: m.group(1)
-        + "#ifdef USE_PBR\n"
-        + "\tfloat4 pbr_hud = pbr_hud_decode(S, I.tcdh.xy);\t" + BANNER + "IX-Ray material, see pbr_hud.h\n"
-        + "#endif\n"
-        + m.group(2),
-        what,
-        flags=0,
-    )
+    # Fix up the decoded surface before its normal is first COPIED. Old SSS shaders copy it in
+    # "float3 Ne = mul(..., S.normal)"; SSS/Atmospherics HUD shaders since HUD_NORMAL_STRENGTH
+    # copy it earlier, into "float3 hud_nmap = float3(S.normal.xy * ...)", and only use that
+    # copy afterwards. Anchoring on "float3 Ne" there left PBR weapons and hands with the
+    # legacy-decoded normal (IX-Ray keeps the normal in G/A, legacy reads A/B/G): sideways
+    # normals, almost no sun, reflections from the wrong direction. So the decode goes in
+    # front of the first declaration that reads S.normal, whatever its name. In-place edits
+    # before it (SSS's "S.normal.xy *= 0.7" on world surfaces) are overwritten by the decode,
+    # as before. The match is the first one after the last sload(), so it is outside the
+    # MSAA alpha-test branches that declare S.
+    text = text.replace("\r\n", "\n") if "\r\n" in text else text
+    decl = re.compile(r"\n([ \t]*float[234]?[ \t]+\w+[ \t]*=[^;\n]*\bS\.normal\b)")
+    last_sload = max(text.rfind("sload"), 0)
+    m = decl.search(text, last_sload)
+    if not m:
+        raise PatchError(f"{what}: no declaration reading S.normal after sload()")
+    insert = ("\n#ifdef USE_PBR\n"
+              "\tfloat4 pbr_hud = pbr_hud_decode(S, I.tcdh.xy);\t" + BANNER + "IX-Ray material, see pbr_hud.h\n"
+              "#endif")
+    text = text[:m.start()] + insert + text[m.start():]
     text = regex_once(
         text,
         r"(\n)([ \t]*return[ \t]+O[ \t]*;)",
