@@ -5,6 +5,7 @@ float g_fSCREEN;
 
 extern float r_dtex_range;
 extern float r_ssaDISCARD;
+extern float r_ssaDISCARD_view;
 extern float r_ssaDONTSORT;
 extern float r_ssaLOD_A;
 extern float r_ssaLOD_B;
@@ -18,6 +19,7 @@ void CRender::Calculate()
 	float fov_factor = _sqr(90.f / Device.fFOV);
 	g_fSCREEN = float(T->get_width() * T->get_height()) * fov_factor * (EPS_S + ps_r__LOD);
 	r_ssaDISCARD = _sqr(ps_r__ssaDISCARD) / g_fSCREEN;
+	r_ssaDISCARD_view = r_ssaDISCARD;
 	r_ssaDONTSORT = _sqr(ps_r__ssaDONTSORT / 3) / g_fSCREEN;
 	r_ssaLOD_A = _sqr(ps_r2_ssaLOD_A / 3) / g_fSCREEN;
 	r_ssaLOD_B = _sqr(ps_r2_ssaLOD_B / 3) / g_fSCREEN;
