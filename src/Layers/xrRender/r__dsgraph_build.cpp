@@ -16,6 +16,10 @@ using namespace R_dsgraph;
 // Scene graph actual insertion and sorting ////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 float r_ssaDISCARD;
+// The main view's discard threshold, written only by CRender::Calculate(). The grass
+// visibility pass (CDetailManager::UpdateVisibleM) runs on a worker thread with r2_mt and reads
+// this copy: r_ssaDISCARD itself is swapped for the VSLR cube faces while that worker runs.
+float r_ssaDISCARD_view;
 float r_ssaDONTSORT;
 float r_ssaLOD_A, r_ssaLOD_B;
 float r_ssaGLOD_start, r_ssaGLOD_end;

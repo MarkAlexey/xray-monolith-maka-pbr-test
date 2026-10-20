@@ -291,8 +291,11 @@ void CRender::render_reflections()
 	Target->vslr_far = far_dist;
 
 	// Screen-space-area thresholds for a size x size, 90 degree view (IX-Ray does the same).
-	// Nothing else traverses the scene at this point of the frame, so the globals are safe to
-	// swap; they are recomputed for the main view below and by CRender::Calculate() next frame.
+	// The scene traversals of this frame run on this thread, so swapping the globals is safe for
+	// them; they are restored below. The one reader on another thread is the grass visibility
+	// pass (MT_CALC with r2_mt, running right now): it reads r_ssaDISCARD_view, which this
+	// function leaves alone. Anything new that reads these globals off the main thread must
+	// take its own copy in CRender::Calculate() too.
 	const float saved_g_fSCREEN = g_fSCREEN;
 	const float saved_DISCARD = r_ssaDISCARD, saved_DONTSORT = r_ssaDONTSORT;
 	const float saved_LOD_A = r_ssaLOD_A, saved_LOD_B = r_ssaLOD_B;
