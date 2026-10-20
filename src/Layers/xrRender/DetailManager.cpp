@@ -289,7 +289,11 @@ void CDetailManager::Unload()
 	xr_free(dtSlots); // heap-owned wide slot array (was a VFS alias pre-v4)
 }
 
-extern ECORE_API float r_ssaDISCARD;
+// Main-view threshold (R_calculate.cpp), not r_ssaDISCARD: this pass runs on a worker with r2_mt
+// while the main thread renders the VSLR cube faces with a 256x256-view r_ssaDISCARD swapped in.
+// Reading the swapped value culled or re-thinned whole slots for 15-30 frames at a time, so far
+// grass came back as a different batch every time it re-entered the view.
+extern ECORE_API float r_ssaDISCARD_view;
 extern float ps_r__ssaDISCARD_exp;
 extern float ps_r__ssaDISCARD_fade_k;
 void CDetailManager::UpdateVisibleM()
@@ -308,8 +312,10 @@ void CDetailManager::UpdateVisibleM()
 	float fade_start = 1.f;
 	fade_start = fade_start * fade_start;
 	float fade_range = fade_limit - fade_start;
-	float r_ssaCHEAP = 16 * r_ssaDISCARD;
-    float fade_start_ssa = r_ssaDISCARD * ps_r__ssaDISCARD_fade_k;
+	// One read per pass, so every slot in it uses the same threshold
+	const float ssa_discard = r_ssaDISCARD_view;
+	float r_ssaCHEAP = 16 * ssa_discard;
+    float fade_start_ssa = ssa_discard * ps_r__ssaDISCARD_fade_k;
 
 	// Initialize 'vis' and 'cache'
 	// Collect objects for rendering
@@ -404,7 +410,7 @@ void CDetailManager::UpdateVisibleM()
 								              ? (Item.scale)
 								              : (Item.scale * alpha_i);
 							float ssa = psDeviceFlags2.test(rsNoScale) ? scale : scale * scale * Rq_drcp;
-							if (ssa < r_ssaDISCARD)
+							if (ssa < ssa_discard)
 							{
 								Item.alpha_target = 0;
 								continue;
@@ -414,7 +420,7 @@ void CDetailManager::UpdateVisibleM()
                             if (ssa < fade_start_ssa)
                             {
                                 // Base probability of survival
-                                float survival_chance = (ssa - r_ssaDISCARD) / (fade_start_ssa - r_ssaDISCARD);
+                                float survival_chance = (ssa - ssa_discard) / (fade_start_ssa - ssa_discard);
 
                                 // Get the index of this specific grass blade inside the slot
                                 u32 item_index = (u32)(siIT - &(*sp.items.begin()));
