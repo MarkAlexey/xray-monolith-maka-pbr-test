@@ -6,7 +6,8 @@
 #     1. packs gamedata/ (PBR, SSLR and CSM shaders, scripts, configs) into
 #        db/mods/00_modded_exes_gamedata.db0, exactly like upstream Modded Exes;
 #     2. builds the exes listed in the build matrix with MSBuild (DX11 and DX11-AVX by default,
-#        the only renderer PBR runs on);
+#        the only renderer PBR runs on), plus ProfiledDX11: the DX11 exe with the Optick profiler
+#        compiled in, shipped separately as AnomalyDX11_Profiled.exe (see "Profiled build" below);
 #     3. zips the user-facing tools (compat patch generator, shader pack builder, texture packer);
 #     3b. builds the GAMMA shader installer PBR_shaders_GAMMA_FOMOD.zip (overlay or full pack,
 #        tools/make_shader_fomod.py over build_shader_packs.py's zips; job "shader_packs", see
@@ -22,6 +23,20 @@
 #     that name: pbr-test-s3ds-mt-sss-lass publishes "pbr-test-lass-latest" /
 #     "pbr-test-lass-<version>" and STALKER-Anomaly-PBR-Test-lass_*.zip, so it never replaces
 #     the main branch's release. Any other branch gets "pbr-test-<branch>-...".
+#
+# Profiled build (ProfiledDX11)
+#   Upstream's ProfiledDX11 configuration defines XRCORE_PROFILER, so every PROF_EVENT /
+#   PROF_TAG / PROF_FRAME in the engine (about 500 markers, the qkff99 shadow / HOM / grass
+#   counters included) is live and the Optick GUI can connect to the running game. The other
+#   configurations compile those markers out.
+#   - Shipped as <package>_profiled.zip: bin/AnomalyDX11_Profiled.exe, renamed so it can sit next
+#     to the normal AnomalyDX11.exe; it uses the same db0 and gamedata as the main zip.
+#   - Its PDB keeps the name the linker wrote into the exe (AnomalyDX11.pdb), so it is in
+#     symbols/ of that zip, not next to the exe: it would clash with the release PDB. Optick's
+#     events and tags need no PDB; only sampled callstacks (and a debugger) do.
+#   - The leg may fail without stopping the release (continue-on-error): the main zips still
+#     ship, just without the profiled one. Remove "ProfiledDX11" from the matrix to skip it.
+#   - Slower than the release exe while the profiler is linked in, and more so while capturing.
 #
 # Settings: the env block below and the build matrix (add "DX10" etc. if you want the other
 # renderers; they do not run PBR).
@@ -118,10 +133,12 @@ jobs:
   build:
     name: Build ${{ matrix.buildconf }}
     runs-on: windows-latest
+    # The profiled leg is a developer extra: its failure must not hold back the release
+    continue-on-error: ${{ matrix.buildconf == 'ProfiledDX11' }}
     strategy:
       fail-fast: false
       matrix:
-        buildconf: [ "DX11", "DX11-AVX" ]
+        buildconf: [ "DX11", "DX11-AVX", "ProfiledDX11" ]
     steps:
       - name: Configure pagefile
         uses: al-cheb/configure-pagefile-action@v1.3
@@ -149,13 +166,21 @@ jobs:
           $bin = "./_build/_game/bin_dbg"
           if (-not (Get-ChildItem "$bin/*.exe" -ErrorAction SilentlyContinue)) { throw "no exe in $bin" }
           New-Item -ItemType Directory -Force out | Out-Null
-          Copy-Item "$bin/*.exe" out/
-          Copy-Item "$bin/*.pdb" out/ -ErrorAction SilentlyContinue
+          if ("${{ matrix.buildconf }}" -eq "ProfiledDX11") {
+            # Same TargetName as the release DX11 exe: rename it so both can live in bin/
+            if (-not (Test-Path "$bin/AnomalyDX11.exe")) { throw "no AnomalyDX11.exe from ProfiledDX11" }
+            Copy-Item "$bin/AnomalyDX11.exe" out/AnomalyDX11_Profiled.exe
+            Copy-Item "$bin/AnomalyDX11.pdb" out/ -ErrorAction SilentlyContinue
+          } else {
+            Copy-Item "$bin/*.exe" out/
+            Copy-Item "$bin/*.pdb" out/ -ErrorAction SilentlyContinue
+          }
 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: bin-${{ matrix.buildconf }}
+          # bin-* artifacts go into the main zip; the profiled one is packaged on its own
+          name: ${{ matrix.buildconf == 'ProfiledDX11' && 'profiled' || 'bin' }}-${{ matrix.buildconf }}
           path: out/*
           if-no-files-found: error
           retention-days: ${{ env.RETENTION_DAYS }}
@@ -291,6 +316,30 @@ jobs:
           cp tools/make_pbr_compat_patch.py tools/make_pbr_overlay.py tools/build_shader_pack.py tools/pack_pbr_textures.py tools/make_shader_fomod.py tools_pkg/tools/
           cp notes.md tools_pkg/README-PBR.md
           (cd tools_pkg && zip -qr "../${{ steps.v.outputs.name }}_tools.zip" .)
+
+          # Profiled DX11 exe (Optick), when that leg built
+          if ls artifacts/profiled-ProfiledDX11/AnomalyDX11_Profiled.exe >/dev/null 2>&1; then
+            mkdir -p prof_pkg/bin prof_pkg/symbols
+            cp artifacts/profiled-ProfiledDX11/AnomalyDX11_Profiled.exe prof_pkg/bin/
+            cp artifacts/profiled-ProfiledDX11/*.pdb prof_pkg/symbols/ 2>/dev/null || true
+            cat > prof_pkg/README-PROFILED.txt <<'TXT'
+          Profiled DX11 exe (Optick profiler compiled in), same commit as the main zip.
+
+          - Install the main zip first, then put bin/AnomalyDX11_Profiled.exe into the game's bin/
+            next to AnomalyDX11.exe and start it instead (in Mod Organizer: add it as an executable).
+          - Start the Optick GUI and connect to the game; Capture records CPU events, the engine's
+            tags and the worker threads. Use a GUI from the same Optick generation as the engine:
+            src/3rd party/optick-git is bombomby/optick at 8abd28d (July 2022, the 1.4 line).
+          - symbols/AnomalyDX11.pdb is this exe's PDB under the name the linker wrote into it. It is
+            only needed for sampled callstacks or a debugger: to use it, run a separate copy of bin/
+            with this exe renamed back to AnomalyDX11.exe and the PDB next to it. Do not drop it next
+            to the release AnomalyDX11.exe (wrong symbols).
+          - Slower than the release exe; use it for profiling, not for playing.
+          TXT
+            (cd prof_pkg && zip -qr "../${{ steps.v.outputs.name }}_profiled.zip" .)
+          else
+            echo "::notice::no profiled exe in this release (ProfiledDX11 skipped or failed)"
+          fi
 
           # GAMMA shader installer (job shader_packs), when it ran and succeeded
           if ls artifacts/shader-packs/*.zip >/dev/null 2>&1; then
