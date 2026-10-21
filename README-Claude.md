@@ -1195,3 +1195,20 @@ the ModConfig 5.0 schema (with and without the DLSS page), each pattern's source
 variant's files (24 / 277 / 26 / 282), and the DLSS full pack carries the patch's 12 untouched
 shaders plus the 3 merged ones (`deffer_impl_flat.ps`, `deffer_grass.vs`, `night_vision.h`).
 Not yet installed through Mod Organizer itself.
+
+### Profiled DX11 build in CI (Optick)
+
+CI builds a third configuration, upstream's `ProfiledDX11`, next to `DX11` and `DX11-AVX`. It is the
+DX11 exe with `XRCORE_PROFILER` defined, so the engine's Optick markers (`PROF_EVENT`, `PROF_FRAME`,
+qkff99's `PROF_TAG` counters: sun / local-light shadow workers, HOM, grass cache) are compiled in
+and the Optick GUI can connect to the game. The release gets it as `*_profiled.zip`:
+`bin/AnomalyDX11_Profiled.exe` (renamed, so it sits next to the normal exe) and its PDB in
+`symbols/` under the name the linker embedded (`AnomalyDX11.pdb`, kept away from the release PDB).
+The leg is `continue-on-error`: if it fails, the release still ships without it. Optick itself is
+upstream's (submodule `src/3rd party/optick-git`, bombomby/optick `8abd28d`); only `PROF_TAG` and
+the markers in the ported code came from qkff99.
+
+Checked: with the profiler switched on (`XRCORE_PROFILER PROFILER_OPTICK`), `check_cpp.py` on the 39
+R4 translation units with `PROF_TAG` / `PROF_EVENT_DYNAMIC` or our own markers reports no new errors
+against the profiler-off build. The packaging step was run locally with and without the profiled
+artifact. Not built with MSVC yet.

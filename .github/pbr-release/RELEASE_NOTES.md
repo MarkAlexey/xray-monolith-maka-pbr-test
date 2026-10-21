@@ -30,6 +30,7 @@ plus engine support for Screen Space Shaders. DX11 only.
 | `dlss-binaries-GAMMA-compatibility-patch-0.5.zip` | brodrigz's DLSS / FSR3 shader compatibility patch (FOMOD for Mod Organizer), unchanged |
 | `*_pdb.zip` | debug symbols; put the `.pdb` files next to the exes for readable crash logs |
 | `*_tools.zip` | Python tools: SSS/ES compatibility patch generator, PBR overlay generator, shader pack builder, shader FOMOD builder, PBR texture packer |
+| `*_profiled.zip` | developers: `AnomalyDX11_Profiled.exe`, the DX11 exe with the Optick profiler compiled in (see its README) |
 | `PBR_shaders_GAMMA_FOMOD.zip` | GAMMA: the PBR shaders as one Mod Organizer installer: overlay (recommended) or full pack, with or without DLSS / FSR 3 |
 
 ## Install
