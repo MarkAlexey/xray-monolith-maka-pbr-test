@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+	<string id="st_hud_blood_wipe">
+		<text>Wipe off blood</text>
+	</string>
+	<string id="st_underwear_bloody">
+		<text>Bloody underwear</text>
+	</string>
+	<string id="st_underwear_bloody_descr">
+		<text>Soaked, and not only in water anymore. Still good enough to wipe your hands with.</text>
+	</string>
+	<string id="st_beadspread_bloody">
+		<text>Bloody bedspread</text>
+	</string>
+	<string id="st_beadspread_bloody_descr">
+		<text>A bedspread someone used as a rag. The stains will never come out.</text>
+	</string>
+</string_table>
