@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+	<string id="st_hud_blood_wipe">
+		<text>Стереть кровь</text>
+	</string>
+	<string id="st_underwear_bloody">
+		<text>Окровавленное бельё</text>
+	</string>
+	<string id="st_underwear_bloody_descr">
+		<text>Промокшее, и уже не только от воды. Руки вытереть ещё сгодится.</text>
+	</string>
+	<string id="st_beadspread_bloody">
+		<text>Окровавленное покрывало</text>
+	</string>
+	<string id="st_beadspread_bloody_descr">
+		<text>Покрывало, которое кто-то пустил на тряпки. Пятна уже не отстирать.</text>
+	</string>
+</string_table>

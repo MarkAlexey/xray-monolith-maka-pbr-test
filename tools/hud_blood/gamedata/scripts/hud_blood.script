@@ -1,0 +1,464 @@
+--[[
+	hud_blood.script - HUD blood (experiment): blood on the player's hands and weapons.
+
+	Keeps one global "how bloody" state and sends it to the blood shader (shaders/r3/hud_blood.h)
+	through the shader bus. All tuning is in configs\plugins\hud_blood.ltx; the atlas tile list
+	is configs\plugins\hud_blood_atlas.ltx (written by tools/make_blood_atlas.py).
+
+	State (saved with the game)
+	  spatter  0..max_amount  drops / spray stamps (hits, close kills, bleeding a little)
+	  smear    0..max_amount  smear stamps (bleeding, wiping fresh blood)
+	  wet      1 fresh .. 0 dry
+	  drip     0..1           how far drips have run (grows while wet, more in rain)
+	  dilution 0..1           rain thinning (paler, see-through); new blood lowers it again
+	  seed     picks the stain pattern; a new one after every full clean
+
+	Adds:    hits (physical hit types), bleeding, close kills of people and mutants (melee more)
+	Removes: drying then flaking, rain (outdoors), wiping with a cloth (inventory menu entry)
+	Time skips (sleep) count as drying time.
+
+	Needs: an exe with the shader bus 7+ and the HUD blood texture binding, SSS with the HUD
+	Raindrops component (its HUD shaders), and the patched HUD shaders from
+	tools/make_hud_blood_overlay.py. Without the bus the script does nothing.
+
+	Debug (debug = true in the settings, or from the Lua console):
+	  hud_blood.add(spatter, smear)   add blood          hud_blood.clear()   remove it
+	  hud_blood.set_wet(w)            0 dry .. 1 fresh   hud_blood.view(n)   0 off, 1 coverage,
+	  hud_blood.print_state()                                                2 axes, 3 dryness
+	  Console: bus_force hud_blood <spatter> <smear> <wet> <drip> overrides row 0, bus_release hud_blood
+
+	Caveats
+	  - One wetness for all blood: new blood makes the old look fresh again.
+	  - Wiping uses inventory menu slot "wipe_slot" (use<N>_functor in mod_system_hud_blood.ltx).
+	    Another mod giving underwear / bedspread the same slot loses or wins depending on load order.
+	  - Kills count only when the actor is the killer (who), at most kill_max_dist away.
+	  - db.actor.bleeding is the engine's bleeding rate; its scale differs between setups, so
+	    bleed_smear may need tuning.
+--]]
+
+local OWNER = "HUD blood (experiment)"
+local SETTINGS_FILE = "plugins\\hud_blood.ltx"
+local ATLAS_FILE = "plugins\\hud_blood_atlas.ltx"
+local ROWS_STATIC_FIRST = 2
+local MAX_TILES = 63
+
+-- Defaults; every key can be overridden in [settings] of plugins\hud_blood.ltx
+local S = {
+	enabled				= true,
+	debug				= false,
+	debug_view			= 0,
+
+	-- adding
+	hit_spatter			= 1.2,		-- spatter per 1.0 health lost
+	hit_max				= 0.35,		-- most spatter one hit adds
+	hit_types			= "wound,fire_wound,strike,explosion,wound_2",
+	bleed_smear			= 0.02,		-- smear per second at bleeding 1
+	bleed_spatter		= 0.004,	-- spatter per second at bleeding 1
+	kill_spatter		= 0.30,		-- close kill at kill_full_dist or nearer
+	kill_smear			= 0.05,
+	kill_full_dist		= 1.0,
+	kill_max_dist		= 3.5,		-- nothing past this
+	melee_mult			= 2.0,		-- kills with a knife in hand
+	max_amount			= 1.2,
+
+	-- removing
+	dry_time			= 180,		-- seconds from fresh to dry
+	flake_time			= 1200,		-- seconds for dried blood to flake off from max_amount
+	rain_wash_time		= 150,		-- seconds of full rain to wash max_amount off
+	rain_rewet			= 0.6,		-- rain makes dried blood this wet at most
+	rain_rewet_time		= 10,
+	rain_dilute_time	= 60,		-- seconds of full rain to full dilution
+	drip_time			= 40,		-- seconds of wet blood for drips to run fully
+	min_rain			= 0.05,		-- rain_factor * sky openness below this is no rain
+	skip_threshold		= 30,		-- game seconds of unexplained time = a time skip
+
+	-- wiping
+	wipe_cooldown		= 3,		-- seconds between wipes
+	wipe_smear			= 0.5,		-- part of the wiped fresh spatter left as smear
+
+	-- look (sent to the shader)
+	spatter_cell		= 0.045,	-- model units (metres) per spatter grid cell
+	smear_cell			= 0.09,
+	normal_strength		= 1.0,
+	fresh_color			= "0.42, 0.015, 0.015",
+	fresh_rough			= 0.10,
+	dry_color			= "0.17, 0.05, 0.035",
+	dry_rough			= 0.70,
+	drip_share			= 0.18,		-- of the spatter cells on walls, this share are drips
+	drop_share			= 0.35,		-- this share are droplets / teardrops
+	band				= 0.35,		-- amount above a cell's threshold for its densest frame
+	edge_dry			= 1.5,		-- how much faster thin blood dries
+	down				= "0, -1, 0",	-- the HUD models' down axis (model space)
+}
+
+local token, tok_mask, tok_na, tok_nb
+local ready = false
+local static_rows = nil
+local hit_types = {}
+local wipe_items = {}		-- section = { bloody = section or nil, fresh = 0..1, dry = 0..1 }
+local species_mult = {}
+
+local st = { spatter = 0, smear = 0, wet = 0, drip = 0, dilution = 0, seed = 1 }
+local last_tg, last_gt, next_wipe, last_debug = nil, nil, 0, 0
+local last_hit_type = nil
+local dirty = true
+
+local function clamp(v, a, b) if v < a then return a elseif v > b then return b end return v end
+local function lerp(a, b, t) return a + (b - a) * t end
+local function dbg(fmt, ...) if S.debug then printf("[hud_blood] " .. fmt, ...) end end
+
+local function vec3(str, def)
+	local t = {}
+	for n in string.gmatch(str or "", "[^,%s]+") do t[#t + 1] = tonumber(n) end
+	if #t < 3 then return def end
+	return t
+end
+
+-------------------------------------------------------------------------------------------
+-- settings
+-------------------------------------------------------------------------------------------
+
+local function read_settings()
+	local ini = ini_file(SETTINGS_FILE)
+	if ini and ini:section_exist("settings") then
+		for k, v in pairs(S) do
+			if ini:line_exist("settings", k) then
+				if type(v) == "number" then
+					S[k] = ini:r_float_ex("settings", k) or v
+				elseif type(v) == "boolean" then
+					S[k] = ini:r_bool_ex("settings", k, v)
+				else
+					S[k] = ini:r_string_ex("settings", k) or v
+				end
+			end
+		end
+	end
+
+	hit_types = {}
+	for name in string.gmatch(S.hit_types, "[^,%s]+") do
+		if hit[name] ~= nil then hit_types[hit[name]] = true else printf("! [hud_blood] unknown hit type '%s'", name) end
+	end
+
+	-- [wipe_items]  section = bloody_section, strength_on_fresh, strength_on_dry   (bloody "-" = stays)
+	wipe_items = {}
+	if ini and ini:section_exist("wipe_items") then
+		for i = 0, ini:line_count("wipe_items") - 1 do
+			local _, id, value = ini:r_line("wipe_items", i, "", "")
+			local p = str_explode(value or "", ",")
+			local bloody = p[1] and p[1] ~= "" and p[1] ~= "-" and p[1] or nil
+			wipe_items[id] = { bloody = bloody, fresh = tonumber(p[2]) or 0.5, dry = tonumber(p[3]) or 0.3 }
+		end
+	end
+
+	-- [species]  species = multiplier for close kills (0 = no blood)
+	species_mult = {}
+	if ini and ini:section_exist("species") then
+		for i = 0, ini:line_count("species") - 1 do
+			local _, id, value = ini:r_line("species", i, "", "")
+			species_mult[id] = tonumber(value) or 1
+		end
+	end
+end
+
+-- the shader's static rows (2 ..): look settings, tile counts, the atlas tiles
+local function read_atlas()
+	local ini = ini_file(ATLAS_FILE)
+	if not (ini and ini:section_exist("hud_blood_textures")) then
+		printf("! [hud_blood] %s missing or has no [hud_blood_textures]: no blood", ATLAS_FILE)
+		return nil
+	end
+	local tex = {
+		mask = ini:r_string_ex("hud_blood_textures", "mask"),
+		na = ini:r_string_ex("hud_blood_textures", "normal_a"),
+		nb = ini:r_string_ex("hud_blood_textures", "normal_b"),
+		size = ini:r_float_ex("hud_blood_textures", "size") or 1024,
+		max_lod = ini:r_float_ex("hud_blood_textures", "max_lod") or 5,
+		padding = ini:r_float_ex("hud_blood_textures", "padding_uv") or 0.01,
+	}
+	local counts, tiles = {}, {}
+	for _, set in ipairs({ "spray", "flow", "drops", "smears", "drip" }) do
+		local sec = "hud_blood_set_" .. set
+		local n = 0
+		if ini:section_exist(sec) then
+			n = ini:r_float_ex(sec, "count") or 0
+			for i = 0, n - 1 do
+				local key = string.format("tile_%02d", i)
+				local v = {}
+				for x in string.gmatch(ini:r_string_ex(sec, key) or "", "[^,%s]+") do v[#v + 1] = tonumber(x) end
+				if #v < 4 then
+					printf("! [hud_blood] %s: %s is not u0, v0, u1, v1", sec, key)
+					n = i
+					break
+				end
+				if #tiles >= MAX_TILES then
+					printf("! [hud_blood] more than %d tiles, the rest are ignored", MAX_TILES)
+					n = i
+					break
+				end
+				tiles[#tiles + 1] = { v[1], v[2], v[3], v[4] }
+			end
+		end
+		counts[set] = n
+	end
+
+	local fc = vec3(S.fresh_color, { 0.42, 0.015, 0.015 })
+	local dc = vec3(S.dry_color, { 0.17, 0.05, 0.035 })
+	local dn = vec3(S.down, { 0, -1, 0 })
+	local rows = {
+		{ S.spatter_cell, S.smear_cell, tex.max_lod, tex.padding },					-- 2
+		{ fc[1], fc[2], fc[3], S.fresh_rough },										-- 3
+		{ dc[1], dc[2], dc[3], S.dry_rough },										-- 4
+		{ counts.spray, counts.flow, counts.drops, counts.smears },					-- 5
+		{ counts.drip, S.drip_share, S.drop_share, S.band },						-- 6
+		{ dn[1], dn[2], dn[3], S.edge_dry },										-- 7
+		{ tex.size, 0, 0, 0 },														-- 8
+	}
+	for i = 1, #tiles do rows[#rows + 1] = tiles[i] end
+	dbg("atlas: %d spray, %d flow, %d drops, %d smears, %d drip tiles", counts.spray, counts.flow, counts.drops, counts.smears, counts.drip)
+	return rows, tex
+end
+
+-------------------------------------------------------------------------------------------
+-- state
+-------------------------------------------------------------------------------------------
+
+local function push()
+	if not (token and ready) then return end
+	local on = S.enabled
+	shader_bus.set_array(token, 0, {
+		{ on and st.spatter or 0, on and st.smear or 0, st.wet, st.drip },
+		{ st.dilution, st.seed, S.debug_view, S.normal_strength },
+	})
+	dirty = false
+end
+
+local function reset()
+	st.spatter, st.smear, st.wet, st.drip, st.dilution = 0, 0, 0, 0, 0
+	st.seed = math.random(1, 4095)
+	dirty = true
+end
+
+-- new blood: fresh, less diluted, a new pattern if it was clean
+local function add_blood(spatter, smear)
+	if spatter <= 0 and smear <= 0 then return end
+	local before = st.spatter + st.smear
+	if before < 0.01 then
+		reset()
+	end
+	st.spatter = clamp(st.spatter + spatter, 0, S.max_amount)
+	st.smear = clamp(st.smear + smear, 0, S.max_amount)
+	local after = st.spatter + st.smear
+	if after > 0 then st.dilution = st.dilution * (before / after) end
+	st.wet = 1
+	dirty = true
+end
+
+-- dt seconds; rain 0..1 (0 = none / indoors)
+local function simulate(dt, rain)
+	if dt <= 0 then return end
+	local b = db.actor and db.actor.bleeding or 0
+	if b > 0.001 then
+		add_blood(b * S.bleed_spatter * dt, b * S.bleed_smear * dt)
+	end
+	if st.spatter <= 0 and st.smear <= 0 then return end
+
+	st.wet = math.max(0, st.wet - dt / S.dry_time)
+	st.drip = math.min(1, st.drip + dt * st.wet / S.drip_time)
+	local dryness = 1 - st.wet
+	local flake = dt * dryness * S.max_amount / S.flake_time
+	st.spatter = math.max(0, st.spatter - flake)
+	st.smear = math.max(0, st.smear - flake)
+
+	if rain > S.min_rain then
+		local wash = dt * rain * S.max_amount / S.rain_wash_time
+		st.spatter = math.max(0, st.spatter - wash)
+		st.smear = math.max(0, st.smear - wash)
+		if st.wet < S.rain_rewet then
+			st.wet = math.min(S.rain_rewet, st.wet + dt * rain / S.rain_rewet_time)
+		end
+		st.dilution = math.min(1, st.dilution + dt * rain / S.rain_dilute_time)
+		st.drip = math.min(1, st.drip + dt * rain / S.drip_time)
+	end
+
+	if st.spatter < 0.005 and st.smear < 0.005 then
+		reset()
+	end
+	dirty = true
+end
+
+local function rain_now()
+	local r = level.rain_factor and level.rain_factor() or 0
+	local hemi = level.rain_hemi and level.rain_hemi() or 1
+	return clamp(r * hemi, 0, 1)
+end
+
+-------------------------------------------------------------------------------------------
+-- callbacks
+-------------------------------------------------------------------------------------------
+
+local function actor_on_update()
+	if not ready then return end
+	local tg = time_global()
+	local gt = game.get_game_time()
+	if last_tg then
+		-- real time, capped so a pause or a loading screen is not counted
+		local dt = clamp((tg - last_tg) / 1000, 0, 0.5)
+		simulate(dt, rain_now())
+
+		-- a time skip (sleep, a script moving time): count it as drying time, no rain
+		local gdt = gt:diffSec(last_gt)
+		local tf = level.get_time_factor and level.get_time_factor() or 1
+		local expected = dt * tf
+		if gdt > expected + S.skip_threshold and tf > 0 then
+			local skip = (gdt - expected) / tf
+			dbg("time skip: %.0f game s = %.0f s of drying", gdt, skip)
+			while skip > 0 do
+				local step = math.min(skip, 5)
+				simulate(step, 0)
+				skip = skip - step
+			end
+		end
+	end
+	last_tg, last_gt = tg, gt
+	if dirty then push() end
+
+	if S.debug and tg > last_debug + 5000 then
+		last_debug = tg
+		dbg("spatter %.2f smear %.2f wet %.2f drip %.2f dilution %.2f seed %d rain %.2f bleeding %.3f",
+			st.spatter, st.smear, st.wet, st.drip, st.dilution, st.seed, rain_now(), db.actor.bleeding or 0)
+	end
+end
+
+local function actor_on_before_hit(shit, bone_id, flags)
+	last_hit_type = shit and shit.type
+end
+
+local function actor_on_hit_callback(obj, amount, local_direction, who, bone_index)
+	if not ready or not amount or amount <= 0 then return end
+	if last_hit_type ~= nil and not hit_types[last_hit_type] then return end
+	add_blood(math.min(S.hit_max, amount * S.hit_spatter), 0)
+	dbg("hit %.3f (type %s) -> spatter %.2f", amount, tostring(last_hit_type), st.spatter)
+end
+
+local function on_kill(victim, who, monster)
+	if not ready or not (victim and who and db.actor) or who:id() ~= AC_ID then return end
+	local d = victim:position():distance_to(db.actor:position())
+	local span = math.max(0.01, S.kill_max_dist - S.kill_full_dist)
+	local f = clamp(1 - (d - S.kill_full_dist) / span, 0, 1)
+	if f <= 0 then return end
+	local mult = 1
+	if monster then
+		local sp = SYS_GetParam(0, victim:section(), "species")
+		if sp and species_mult[sp] then mult = species_mult[sp] end
+	end
+	local item = db.actor:active_item()
+	if item and IsMelee(item) then mult = mult * S.melee_mult end
+	if mult <= 0 then return end
+	add_blood(S.kill_spatter * f * mult, S.kill_smear * f * mult)
+	dbg("kill at %.1f m (x%.2f) -> spatter %.2f smear %.2f", d, mult, st.spatter, st.smear)
+end
+
+local function npc_on_death_callback(victim, who) on_kill(victim, who, false) end
+local function monster_on_death_callback(victim, who) on_kill(victim, who, true) end
+
+local function save_state(m_data)
+	m_data.hud_blood = { st.spatter, st.smear, st.wet, st.drip, st.dilution, st.seed }
+end
+
+local function load_state(m_data)
+	local t = m_data.hud_blood
+	if type(t) == "table" then
+		st.spatter, st.smear, st.wet = t[1] or 0, t[2] or 0, t[3] or 0
+		st.drip, st.dilution, st.seed = t[4] or 0, t[5] or 0, t[6] or 1
+	end
+	dirty = true
+end
+
+local function actor_on_first_update()
+	last_tg, last_gt = nil, nil
+	if token and static_rows then
+		shader_bus.set_array(token, ROWS_STATIC_FIRST, static_rows)
+	end
+	push()
+end
+
+-------------------------------------------------------------------------------------------
+-- wiping (inventory menu, see mod_system_hud_blood.ltx)
+-------------------------------------------------------------------------------------------
+
+-- menu entry name, or nil to hide it
+function menu_wipe(obj)
+	if not ready or not obj or not wipe_items[obj:section()] then return end
+	if st.spatter + st.smear < 0.02 or time_global() < next_wipe then return end
+	return game.translate_string("st_hud_blood_wipe")
+end
+
+function wipe(obj)
+	if not ready or not obj then return end
+	local cfg = wipe_items[obj:section()]
+	if not cfg then return end
+	local strength = clamp(lerp(cfg.fresh, cfg.dry, 1 - st.wet), 0, 1)
+	local removed = st.spatter * strength
+	st.spatter = st.spatter - removed
+	st.smear = clamp(st.smear * (1 - strength) + removed * st.wet * S.wipe_smear, 0, S.max_amount)
+	st.drip = st.drip * (1 - strength)
+	if st.spatter < 0.005 and st.smear < 0.005 then reset() end
+	next_wipe = time_global() + S.wipe_cooldown * 1000
+	dirty = true
+	push()
+	dbg("wiped with %s (%.2f) -> spatter %.2f smear %.2f", obj:section(), strength, st.spatter, st.smear)
+	if cfg.bloody then
+		alife_create_item(cfg.bloody, db.actor)
+		alife_release(obj)
+	end
+end
+
+-------------------------------------------------------------------------------------------
+-- debug
+-------------------------------------------------------------------------------------------
+
+function add(spatter, smear) add_blood(tonumber(spatter) or 0.5, tonumber(smear) or 0); push() end
+function clear() reset(); push() end
+function set_wet(w) st.wet = clamp(tonumber(w) or 1, 0, 1); dirty = true; push() end
+function view(n) S.debug_view = tonumber(n) or 0; dirty = true; push() end
+function print_state()
+	printf("[hud_blood] spatter %.2f smear %.2f wet %.2f drip %.2f dilution %.2f seed %d ready %s",
+		st.spatter, st.smear, st.wet, st.drip, st.dilution, st.seed, tostring(ready))
+end
+
+-------------------------------------------------------------------------------------------
+
+function on_game_start()
+	if not shader_bus then
+		printf("! [hud_blood] no shader bus in this exe: HUD blood is off")
+		return
+	end
+	read_settings()
+	local rows, tex = read_atlas()
+	if not rows then return end
+	token = shader_bus.register("hud_blood", OWNER, "HUD blood state, look settings and atlas tiles")
+	tok_mask = shader_bus.register("hud_blood_mask", OWNER, "HUD blood atlas: masks")
+	tok_na = shader_bus.register("hud_blood_na", OWNER, "HUD blood atlas: spray / flow normals")
+	tok_nb = shader_bus.register("hud_blood_nb", OWNER, "HUD blood atlas: drops / smears / drip normals")
+	if not (token and tok_mask and tok_na and tok_nb) then
+		printf("! [hud_blood] shader bus refused a lane: HUD blood is off")
+		return
+	end
+	shader_bus.set_texture(tok_mask, tex.mask or "")
+	shader_bus.set_texture(tok_na, tex.na or "")
+	shader_bus.set_texture(tok_nb, tex.nb or "")
+	static_rows = rows
+	shader_bus.set_array(token, ROWS_STATIC_FIRST, static_rows)
+	ready = true
+	reset()
+	push()
+
+	RegisterScriptCallback("actor_on_first_update", actor_on_first_update)
+	RegisterScriptCallback("actor_on_update", actor_on_update)
+	RegisterScriptCallback("actor_on_before_hit", actor_on_before_hit)
+	RegisterScriptCallback("actor_on_hit_callback", actor_on_hit_callback)
+	RegisterScriptCallback("npc_on_death_callback", npc_on_death_callback)
+	RegisterScriptCallback("monster_on_death_callback", monster_on_death_callback)
+	RegisterScriptCallback("save_state", save_state)
+	RegisterScriptCallback("load_state", load_state)
+end

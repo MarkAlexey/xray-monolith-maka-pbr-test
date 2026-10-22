@@ -1,0 +1,51 @@
+; HUD blood (experiment): inventory entry "Wipe off blood" on cloths, and their bloody versions.
+; DLTX: merged into system.ltx. Slot 4 of the custom menu entries is used (use4_*); a mod that
+; gives these items a use4 entry too overrides this one or is overridden, by load order.
+
+![underwear]
+use4_functor            = hud_blood.menu_wipe
+use4_action_functor     = hud_blood.wipe
+
+![beadspread]
+use4_functor            = hud_blood.menu_wipe
+use4_action_functor     = hud_blood.wipe
+
+; Bloody versions: like the clean items (same model and icon), cheaper, not a repair part
+[underwear_bloody]:tch_junk
+visual                  = dynamics\equipments\sumka1.ogf
+description             = st_underwear_bloody_descr
+inv_name                = st_underwear_bloody
+inv_name_short          = st_underwear_bloody
+inv_grid_width          = 2
+inv_grid_height         = 1
+inv_grid_x              = 0
+inv_grid_y              = 42
+cost                    = 90
+inv_weight              = 0.05
+attach_angle_offset     = -0.287979, 1.560923, 1.544060
+attach_position_offset  = 0.096910, -0.013594, 0.107925
+attach_bone_name        = bip01_r_hand
+auto_attach             = false
+snd_on_take             = outfit
+tier                    = 2
+use4_functor            = hud_blood.menu_wipe
+use4_action_functor     = hud_blood.wipe
+
+[beadspread_bloody]:tch_junk
+visual                  = dynamics\equipments\trade\bedspread.ogf
+description             = st_beadspread_bloody_descr
+inv_name                = st_beadspread_bloody
+inv_name_short          = st_beadspread_bloody
+inv_grid_width          = 2
+inv_grid_height         = 1
+inv_grid_x              = 5
+inv_grid_y              = 43
+cost                    = 110
+inv_weight              = 0.8
+attach_angle_offset     = -0.287979, 1.560923, 1.544060
+attach_position_offset  = 0.096910, -0.013594, 0.107925
+attach_bone_name        = bip01_r_hand
+auto_attach             = false
+tier                    = 3
+use4_functor            = hud_blood.menu_wipe
+use4_action_functor     = hud_blood.wipe

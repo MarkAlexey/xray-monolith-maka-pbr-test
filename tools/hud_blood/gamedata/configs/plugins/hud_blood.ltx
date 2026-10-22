@@ -1,0 +1,70 @@
+; HUD blood (experiment) - settings for scripts\hud_blood.script
+; Every key is optional; the script's defaults are the values shown. Times are in seconds of
+; play (pauses do not count; sleeping counts as drying time).
+
+[settings]
+enabled             = true
+debug               = false     ; print the state every 5 s and on every event
+debug_view          = 0         ; 0 off, 1 coverage, 2 projection axes, 3 dryness
+
+; --- adding blood
+hit_spatter         = 1.2       ; spatter per 1.0 health lost to a hit
+hit_max             = 0.35      ; most spatter one hit adds
+hit_types           = wound, fire_wound, strike, explosion, wound_2
+bleed_smear         = 0.02      ; smear per second at bleeding 1
+bleed_spatter       = 0.004
+kill_spatter        = 0.30      ; a kill at kill_full_dist or nearer
+kill_smear          = 0.05
+kill_full_dist      = 1.0
+kill_max_dist       = 3.5       ; kills further away add nothing
+melee_mult          = 2.0       ; kills with a knife in hand
+max_amount          = 1.2
+
+; --- removing it
+dry_time            = 180       ; fresh -> dry
+flake_time          = 1200      ; dried blood flakes off (from max_amount to 0)
+rain_wash_time      = 150       ; full rain, outdoors, washes max_amount off
+rain_rewet          = 0.6       ; rain makes dried blood this wet at most
+rain_rewet_time     = 10
+rain_dilute_time    = 60
+drip_time           = 40        ; wet blood runs into full drips
+min_rain            = 0.05
+
+; --- wiping
+wipe_cooldown       = 3
+wipe_smear          = 0.5       ; part of wiped FRESH spatter that stays as smear
+
+; --- look (sent to the shader)
+spatter_cell        = 0.045     ; metres per spatter grid cell (bigger = bigger, fewer stains)
+smear_cell          = 0.09
+normal_strength     = 1.0
+fresh_color         = 0.42, 0.015, 0.015
+fresh_rough         = 0.10
+dry_color           = 0.17, 0.05, 0.035
+dry_rough           = 0.70
+drip_share          = 0.18      ; spatter cells on walls that are drips
+drop_share          = 0.35      ; spatter cells that are droplets / teardrops
+band                = 0.35      ; amount above a stain's threshold for its densest frame
+edge_dry            = 1.5       ; how much faster thin blood dries
+down                = 0, -1, 0  ; down axis of the HUD models (model space)
+
+; Cloths for the inventory menu entry "Wipe off blood".
+; section = becomes (after a wipe; - = stays), strength on fresh blood, strength on dried blood
+; The entry itself comes from use4_functor in mod_system_hud_blood.ltx (add new cloths there too).
+[wipe_items]
+underwear           = underwear_bloody, 0.55, 0.85     ; soaked: better on dried blood
+beadspread          = beadspread_bloody, 0.80, 0.40    ; dry cloth: better on fresh blood
+underwear_bloody    = -, 0.30, 0.45
+beadspread_bloody   = -, 0.40, 0.20
+
+; Close-kill multiplier by the monster's "species" (see its section in configs\creatures).
+; Species not listed count 1.
+[species]
+poltergeist         = 0
+rat                 = 0.3
+tushkano            = 0.3
+cat                 = 0.5
+zombie              = 0.7
+boar                = 1.2
+chimera             = 1.3
+gigant              = 1.5
