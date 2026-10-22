@@ -242,6 +242,9 @@ void CBlender_Model_EbB::Compile(CBlender_Compile& C)
 			{
 				uber_deffer(C, true, "model_hud", "base_hud", false, 0, true);
 				C.r_dx10Texture("s_hud_rain", "fx\\hud_rain");
+#if RENDER == R_R4
+				hud_blood_bind(C);
+#endif
 			}
 			else
 				uber_deffer(C, true, "model", "base", false, 0, true);
