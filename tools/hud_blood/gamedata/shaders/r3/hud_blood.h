@@ -37,7 +37,7 @@
 //   row 5  x spray tiles  y flow tiles  z drop tiles  w smear tiles
 //   row 6  x drip tiles  y drip share  z drop share  w breakup band
 //   row 7  xyz down axis (model space)  w edge drying
-//   row 8  x atlas size in pixels
+//   row 8  x atlas size in pixels  y projection normal (1 smooth, 0 per triangle)  z axis sharpness
 //   row 9+ tiles u0 v0 u1 v1, in the order spray, flow, drops, smears, drip
 //
 // Cost: nothing while both amounts are 0 (one uniform branch). With blood: per projection
@@ -47,8 +47,8 @@
 //  - Needs an exe with the shader bus 7+ AND the blender change that binds the three atlas
 //    textures on HUD models (blender_deffer_model.cpp / Blender_Model_EbB.cpp, HUD branch).
 //    Without the binding the atlas reads 0 and nothing shows; without the bus it compiles out.
-//  - The projection axis comes from a flat (per triangle) normal: where a triangle near 45
-//    degrees meets one past it, the blend can step at the edge.
+//  - Projection axis (row 8.y): smooth normal (default) has no triangle seams but follows the
+//    animation on bending parts; per triangle is fixed but steps at triangle edges.
 //  - One wetness for all blood: a new hit makes old dried blood look fresh again.
 //  - Flipbook frames step (no blending between frames), so a stain changes frame in small jumps.
 //  - Only the bump HUD shaders are patched; HUD models with the flat shader get no blood.
@@ -250,9 +250,17 @@ void hud_blood_apply( inout surface_bumped S, inout float4 pbr, inout float3 Ne,
 		return;
 
 	const float3 Ng		= normalize( float3( M1.z, M2.z, M3.z ) );
-	float3 no			= cross( dox, doy );
+	// projection axis: the smooth (interpolated) normal taken back into model space, or the
+	// per-triangle normal of the bind-pose position. Smooth has no seams at triangle edges; on
+	// bending parts (fingers) its axis follows the animation, so stamps near 45 degrees
+	// cross-fade a little while the hand moves. Per triangle never moves but steps at edges.
+	float3 no;
+	if ( bus_hud_blood[ 8 ].y > 0.5 )
+		no				= mul( Ng, (float3x3)m_WV );	// eye -> model: the rotation, transposed
+	else
+		no				= cross( dox, doy );
 	no					= dot( no, no ) > 1e-20 ? normalize( no ) : float3( 0, 1, 0 );
-	float3 wa			= pow( abs( no ), 8 );
+	float3 wa			= pow( abs( no ), clamp( bus_hud_blood[ 8 ].z, 1, 16 ) );
 	wa					/= max( wa.x + wa.y + wa.z, 1e-6 );
 
 	// the two strongest axes
