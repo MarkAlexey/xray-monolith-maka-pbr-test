@@ -38,10 +38,17 @@ wipe_smear          = 0.5       ; part of wiped FRESH spatter that stays as smea
 spatter_cell        = 0.045     ; metres per spatter grid cell (bigger = bigger, fewer stains)
 smear_cell          = 0.09
 normal_strength     = 1.0
-fresh_color         = 0.42, 0.015, 0.015
+fresh_color         = 0.34, 0.012, 0.012  ; colour of THICK fresh blood (thin blood is see-through)
 fresh_rough         = 0.10
-dry_color           = 0.17, 0.05, 0.035
+dry_color           = 0.15, 0.05, 0.032   ; colour of thick dried blood
 dry_rough           = 0.70
+; Blood as a film that absorbs light (Beer-Lambert): what is under it shows through
+; exp(-absorption * depth). Fresh blood absorbs green and blue ~10x more than red.
+fresh_absorption    = 0.33, 3.17, 3.63
+dry_absorption      = 1.6, 3.2, 3.5       ; dried blood absorbs red too: brown
+depth_scale         = 1.5                 ; depth of a full mask: more = darker, more opaque
+albedo_gamma        = 2.2                 ; 1 if your shader stack stores linear albedo
+thickness_blur      = 2.0                 ; how much thicker drop centres are than their edges
 drip_share          = 0.18      ; spatter cells on walls that are drips
 drop_share          = 0.35      ; spatter cells that are droplets / teardrops
 band                = 0.35      ; amount above a stain's threshold for its densest frame
