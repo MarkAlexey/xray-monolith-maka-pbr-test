@@ -24,7 +24,8 @@
 	Debug (debug = true in the settings, or from the Lua console):
 	  hud_blood.add(spatter, smear)   add blood          hud_blood.clear()   remove it
 	  hud_blood.set_wet(w)            0 dry .. 1 fresh   hud_blood.view(n)   0 off, 1 coverage,
-	  hud_blood.print_state()                                                2 axes, 3 dryness
+	  hud_blood.print_state()                                                2 axes, 3 dryness,
+	                                                                         4 stamp grid
 	  hud_blood.tune(key, value)      change a setting live (look settings apply at once),
 	  hud_blood.tune()                list the settings
 	  Console: bus_force hud_blood <spatter> <smear> <wet> <drip> overrides row 0, bus_release hud_blood

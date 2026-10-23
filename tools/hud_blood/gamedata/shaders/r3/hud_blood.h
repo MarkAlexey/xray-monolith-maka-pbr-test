@@ -47,7 +47,7 @@
 // Data, all from the shader bus (docs/shader_bus.md), written by gamedata/scripts/hud_blood.script:
 //   bus_hud_blood[]  rows below           $user$bus_hud_blood_mask / _na / _nb  the atlas
 //   row 0  x spatter amount  y smear amount  z wetness (1 fresh, 0 dry)  w drip
-//   row 1  x dilution  y seed  z debug view  w normal strength
+//   row 1  x dilution  y seed  z debug view (1 coverage, 2 axes, 3 dryness, 4 grid)  w normal strength
 //   row 2  x spatter cell (model units)  y smear cell  z max mip  w uv padding
 //   row 3  rgb thick fresh blood colour, w wet roughness
 //   row 4  rgb thick dried blood colour, w dry roughness
@@ -309,6 +309,21 @@ void hud_blood_apply( inout surface_bumped S, inout float4 pbr, inout float3 Ne,
 	float3 down			= bus_hud_blood[ 7 ].xyz;
 	down				= dot( down, down ) > 1e-6 ? normalize( down ) : float3( 0, -1, 0 );
 	const uint seed		= uint( max( r1.y, 0 ) );
+
+	// debug 4: the spatter grid of the main projection. Each cell one flat colour with smooth
+	// edges inside it: cells must be square patches that follow the surface. A cell pattern
+	// that breaks along triangle edges means the position the stamps are placed with
+	// (SSS's I.RDrops) jumps between triangles.
+	if ( r1.z > 3.5 && r1.z < 4.5 )
+	{
+		float3 ex, ey;
+		bool drips;
+		hb_basis( a1, down, ex, ey, drips );
+		const float2 g	= float2( dot( Po, ex ), dot( Po, ey ) ) / max( bus_hud_blood[ 2 ].x, 1e-4 );
+		const float4 h	= hb_rand4( int2( floor( g ) ), 77u );
+		S.base.rgb		= h.xyz * ( 0.6 + 0.4 * min( frac( g.x ), frac( g.y ) ) );
+		return;
+	}
 
 	float cov = 0, th = 0, wsum = 0;
 	float3 nb = 0;	// eye-space perturbation
