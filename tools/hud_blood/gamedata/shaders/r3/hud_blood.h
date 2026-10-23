@@ -24,24 +24,38 @@
 //    (flaking, rain, a wipe).
 //    Flow stamps (drips) grow with the drip value and only appear on surfaces the down axis
 //    lies in; they are never rotated.
-//  - Surface: colour fresh -> dried (thin parts dry first), metalness 0, roughness wet ->
-//    dry, wet blood flattens the original normal, the stamps' own normal on top; rain
-//    dilution moves the colour back towards the original.
+//  - Colour: blood is a film that absorbs light (Beer-Lambert): transmittance
+//    T = exp(-k * d), k per colour channel (fresh blood absorbs green and blue ~10x more than
+//    red), d = thickness. The surface under it is seen through the film (base * T) and blends
+//    towards the colour of thick blood by the film's opacity (1 - T.g):
+//        base = lerp( base * T, thick_colour, 1 - T.g )
+//    so thin blood tints cloth pink-red, thick blood is deep red on anything, blood on black
+//    steel stays dark. Thickness = the stamp's mask times a blurred (lower mip) read of it:
+//    thick in the middle, thin at the edges. Drying moves k and the thick colour to dried
+//    blood (brown, absorbs red too); rain dilution thins the film (d * (1 - dilution)).
+//    T is taken to gamma space (pow 1/2.2, a setting) since the G-buffer albedo is gamma.
+//  - Surface: metalness fades with the film's opacity (thin blood on steel keeps a red-tinted
+//    metal reflection), roughness wet -> dry, wet blood flattens the original normal, the
+//    stamps' own normal on top; thin parts dry first.
 //
 // Data, all from the shader bus (docs/shader_bus.md), written by gamedata/scripts/hud_blood.script:
 //   bus_hud_blood[]  rows below           $user$bus_hud_blood_mask / _na / _nb  the atlas
 //   row 0  x spatter amount  y smear amount  z wetness (1 fresh, 0 dry)  w drip
 //   row 1  x dilution  y seed  z debug view  w normal strength
 //   row 2  x spatter cell (model units)  y smear cell  z max mip  w uv padding
-//   row 3  rgb fresh colour, w wet roughness     row 4  rgb dried colour, w dry roughness
+//   row 3  rgb thick fresh blood colour, w wet roughness
+//   row 4  rgb thick dried blood colour, w dry roughness
 //   row 5  x spray tiles  y flow tiles  z drop tiles  w smear tiles
 //   row 6  x drip tiles  y drip share  z drop share  w breakup band
 //   row 7  xyz down axis (model space)  w edge drying
 //   row 8  x atlas size in pixels  y projection normal (1 smooth, 0 per triangle)  z axis sharpness
-//   row 9+ tiles u0 v0 u1 v1, in the order spray, flow, drops, smears, drip
+//          w thickness blur (mip levels above the stamp's)
+//   row 9  xyz absorption k of fresh blood, w thickness scale (depth of a full mask)
+//   row 10 xyz absorption k of dried blood, w gamma of the G-buffer albedo (1 = linear)
+//   row 11+ tiles u0 v0 u1 v1, in the order spray, flow, drops, smears, drip
 //
 // Cost: nothing while both amounts are 0 (one uniform branch). With blood: per projection
-// axis 2 layers x 4 cells, 2 texture reads per cell that has a stamp under the pixel.
+// axis 2 layers x 4 cells, 3 texture reads per cell that has a stamp under the pixel.
 //
 // Caveats
 //  - Needs an exe with the shader bus 7+ AND the blender change that binds the three atlas
@@ -58,7 +72,7 @@
 #if defined(SHADER_BUS) && SHADER_BUS >= 7
 
 #define HB_ROWS			72
-#define HB_TILES		9
+#define HB_TILES		11
 #define HB_PI2			6.2831853
 
 uniform float4	bus_hud_blood[HB_ROWS];
@@ -101,7 +115,8 @@ void hb_basis( int a, float3 down, out float3 ex, out float3 ey, out bool drips 
 
 struct hb_acc
 {
-	float	cov;	// coverage (also the blood's thickness)
+	float	cov;	// coverage
+	float	th;		// thickness (mask x its blurred self)
 	float2	nq;		// normal xy in the projection plane, weighted by coverage
 	float	w;		// sum of the weights
 };
@@ -131,6 +146,11 @@ void hb_stamp( inout hb_acc acc, float2 uvl, float2x2 R, float4 rect, float lod_
 	else					{ m = mk.b;	n = s_hud_blood_nb.SampleLevel( smp_base, uv, lod ).rg; }
 	if ( m <= 0.002 )
 		return;
+	// thickness: the same mask a few mips blurrier, so drops are thick in the middle
+	const float lodb	= min( lod + bus_hud_blood[ 8 ].w, bus_hud_blood[ 2 ].z );
+	float4 mb		= s_hud_blood_mask.SampleLevel( smp_base, uv, lodb );
+	const float mbk	= kind == 0 ? mb.r : ( kind == 1 ? mb.g : mb.b );
+	acc.th			= max( acc.th, m * saturate( mbk * 1.6 ) );
 	n				= n * 2 - 1;
 	// uv = R * local + 0.5, so a normal (a gradient) goes back with R transposed
 	float2 nq		= mul( n, R );
@@ -275,7 +295,7 @@ void hud_blood_apply( inout surface_bumped S, inout float4 pbr, inout float3 Ne,
 	down				= dot( down, down ) > 1e-6 ? normalize( down ) : float3( 0, -1, 0 );
 	const uint seed		= uint( max( r1.y, 0 ) );
 
-	float cov = 0, wsum = 0;
+	float cov = 0, th = 0, wsum = 0;
 	float3 nb = 0;	// eye-space perturbation
 	[unroll] for ( int k = 0; k < 2; ++k )
 	{
@@ -292,7 +312,7 @@ void hud_blood_apply( inout surface_bumped S, inout float4 pbr, inout float3 Ne,
 		const float qfoot	= max( length( dqx ), length( dqy ) );
 
 		hb_acc acc;
-		acc.cov = 0; acc.nq = 0; acc.w = 0;
+		acc.cov = 0; acc.th = 0; acc.nq = 0; acc.w = 0;
 		const uint salt		= seed * 8u + uint( a ) * 2u;
 		hb_layer( acc, 0, q, qfoot, drips, salt );
 		hb_layer( acc, 1, q, qfoot, drips, salt + 1u );
@@ -303,6 +323,7 @@ void hud_blood_apply( inout surface_bumped S, inout float4 pbr, inout float3 Ne,
 		hb_frame( Ng, dPx, dPy, dqx, dqy, T, B );
 		const float2 nq	= acc.nq / max( acc.w, 1e-4 );
 		cov				+= acc.cov * wk;
+		th				+= acc.th * wk;
 		nb				+= ( T * nq.x + B * nq.y ) * acc.cov * wk;
 		wsum			+= wk;
 	}
@@ -323,21 +344,25 @@ void hud_blood_apply( inout surface_bumped S, inout float4 pbr, inout float3 Ne,
 
 	const float dil		= saturate( r1.x );
 	const float wet		= saturate( r0.z );
-	const float a		= saturate( cov * ( 1 - 0.5 * dil ) );
-	// thin parts (low coverage) dry first
-	const float dry		= saturate( ( 1 - wet ) * ( 1 + ( 1 - cov ) * bus_hud_blood[ 7 ].w ) );
+	const float a		= saturate( cov );
+	// thin parts dry first
+	const float dry		= saturate( ( 1 - wet ) * ( 1 + ( 1 - th ) * bus_hud_blood[ 7 ].w ) );
 	if ( dbg > 2.5 )
 	{
-		S.base.rgb	= float3( dry, a, 0 );			// debug 3: dryness, coverage
+		S.base.rgb	= float3( dry, a, th );			// debug 3: dryness, coverage, thickness
 		return;
 	}
 
-	float3 col			= lerp( bus_hud_blood[ 3 ].rgb, bus_hud_blood[ 4 ].rgb, dry );
-	col					= lerp( col, S.base.rgb, dil * 0.6 );
-	S.base.rgb			= lerp( S.base.rgb, col, a );
+	// the film: Beer-Lambert transmittance over the surface, thick blood's own colour on top
+	const float d		= th * bus_hud_blood[ 9 ].w * ( 1 - dil );
+	const float3 kab	= lerp( bus_hud_blood[ 9 ].xyz, bus_hud_blood[ 10 ].xyz, dry );
+	const float3 T		= pow( exp( -kab * d ), 1.0 / max( bus_hud_blood[ 10 ].w, 1 ) );
+	const float op		= saturate( 1 - min( T.g, T.b ) );
+	const float3 thick	= lerp( bus_hud_blood[ 3 ].rgb, bus_hud_blood[ 4 ].rgb, dry );
+	S.base.rgb			= lerp( S.base.rgb * T, thick, op );
 
 	const float rough	= lerp( bus_hud_blood[ 3 ].w, bus_hud_blood[ 4 ].w, dry );
-	pbr.x				= lerp( pbr.x, 0, a );
+	pbr.x				= pbr.x * ( 1 - op );
 	pbr.y				= max( 0.02, lerp( pbr.y, rough, a ) );
 	S.gloss				= lerp( S.gloss, ( 1 - rough ) * ( 1 - rough ), a );
 
