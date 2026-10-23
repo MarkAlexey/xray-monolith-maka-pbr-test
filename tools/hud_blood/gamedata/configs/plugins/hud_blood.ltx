@@ -47,6 +47,8 @@ drop_share          = 0.35      ; spatter cells that are droplets / teardrops
 band                = 0.35      ; amount above a stain's threshold for its densest frame
 edge_dry            = 1.5       ; how much faster thin blood dries
 down                = 0, -1, 0  ; down axis of the HUD models (model space)
+smooth_projection   = true      ; false: per-triangle projection axis (never moves, but seams)
+axis_sharpness      = 6         ; 1..16: lower blends the projections over a wider angle
 
 ; Cloths for the inventory menu entry "Wipe off blood".
 ; section = becomes (after a wipe; - = stays), strength on fresh blood, strength on dried blood

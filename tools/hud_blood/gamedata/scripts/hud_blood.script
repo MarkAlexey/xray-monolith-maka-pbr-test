@@ -25,6 +25,8 @@
 	  hud_blood.add(spatter, smear)   add blood          hud_blood.clear()   remove it
 	  hud_blood.set_wet(w)            0 dry .. 1 fresh   hud_blood.view(n)   0 off, 1 coverage,
 	  hud_blood.print_state()                                                2 axes, 3 dryness
+	  hud_blood.tune(key, value)      change a setting live (look settings apply at once),
+	  hud_blood.tune()                list the settings
 	  Console: bus_force hud_blood <spatter> <smear> <wet> <drip> overrides row 0, bus_release hud_blood
 
 	Caveats
@@ -88,6 +90,8 @@ local S = {
 	drop_share			= 0.35,		-- this share are droplets / teardrops
 	band				= 0.35,		-- amount above a cell's threshold for its densest frame
 	edge_dry			= 1.5,		-- how much faster thin blood dries
+	smooth_projection	= true,		-- false: per-triangle projection axis (fixed, but seams)
+	axis_sharpness		= 6,		-- 1..16: lower blends the projections over a wider angle
 	down				= "0, -1, 0",	-- the HUD models' down axis (model space)
 }
 
@@ -211,7 +215,7 @@ local function read_atlas()
 		{ counts.spray, counts.flow, counts.drops, counts.smears },					-- 5
 		{ counts.drip, S.drip_share, S.drop_share, S.band },						-- 6
 		{ dn[1], dn[2], dn[3], S.edge_dry },										-- 7
-		{ tex.size, 0, 0, 0 },														-- 8
+		{ tex.size, S.smooth_projection and 1 or 0, S.axis_sharpness, 0 },		-- 8
 	}
 	for i = 1, #tiles do rows[#rows + 1] = tiles[i] end
 	dbg("atlas: %d spray, %d flow, %d drops, %d smears, %d drip tiles", counts.spray, counts.flow, counts.drops, counts.smears, counts.drip)
@@ -421,6 +425,40 @@ function add(spatter, smear) add_blood(tonumber(spatter) or 0.5, tonumber(smear)
 function clear() reset(); push() end
 function set_wet(w) st.wet = clamp(tonumber(w) or 1, 0, 1); dirty = true; push() end
 function view(n) S.debug_view = tonumber(n) or 0; dirty = true; push() end
+-- live tuning from the Lua console: hud_blood.tune("spatter_cell", 0.03); hud_blood.tune() lists
+-- the keys. Lasts until the game is loaded again; put the values in plugins\hud_blood.ltx to keep them.
+function tune(key, value)
+	if key == nil then
+		local keys = {}
+		for k in pairs(S) do keys[#keys + 1] = k end
+		table.sort(keys)
+		for _, k in ipairs(keys) do printf("[hud_blood] %s = %s", k, tostring(S[k])) end
+		return
+	end
+	if S[key] == nil then printf("! [hud_blood] no setting '%s' (hud_blood.tune() lists them)", tostring(key)) return end
+	if type(S[key]) == "number" then
+		S[key] = tonumber(value) or S[key]
+	elseif type(S[key]) == "boolean" then
+		S[key] = value == true or value == 1 or value == "true" or value == "1"
+	else
+		S[key] = tostring(value)
+	end
+	if key == "hit_types" then
+		hit_types = {}
+		for name in string.gmatch(S.hit_types, "[^,%s]+") do
+			if hit[name] ~= nil then hit_types[hit[name]] = true end
+		end
+	end
+	local rows = read_atlas()
+	if rows and token then
+		static_rows = rows
+		shader_bus.set_array(token, ROWS_STATIC_FIRST, static_rows)
+	end
+	dirty = true
+	push()
+	printf("[hud_blood] %s = %s", key, tostring(S[key]))
+end
+
 function print_state()
 	printf("[hud_blood] spatter %.2f smear %.2f wet %.2f drip %.2f dilution %.2f seed %d ready %s",
 		st.spatter, st.smear, st.wet, st.drip, st.dilution, st.seed, tostring(ready))
