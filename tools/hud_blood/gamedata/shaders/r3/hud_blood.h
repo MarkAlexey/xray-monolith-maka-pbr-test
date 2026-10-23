@@ -52,7 +52,8 @@
 //          w thickness blur (mip levels above the stamp's)
 //   row 9  xyz absorption k of fresh blood, w thickness scale (depth of a full mask)
 //   row 10 xyz absorption k of dried blood, w gamma of the G-buffer albedo (1 = linear)
-//   row 11+ tiles u0 v0 u1 v1, in the order spray, flow, drops, smears, drip
+//   row 11 x projection blend (0 weighted, 1 union)  y union fade start  z union fade end
+//   row 12+ tiles u0 v0 u1 v1, in the order spray, flow, drops, smears, drip
 //
 // Cost: nothing while both amounts are 0 (one uniform branch). With blood: per projection
 // axis 2 layers x 4 cells, 3 texture reads per cell that has a stamp under the pixel.
@@ -72,7 +73,7 @@
 #if defined(SHADER_BUS) && SHADER_BUS >= 7
 
 #define HB_ROWS			72
-#define HB_TILES		11
+#define HB_TILES		12
 #define HB_PI2			6.2831853
 
 uniform float4	bus_hud_blood[HB_ROWS];
@@ -289,7 +290,14 @@ void hud_blood_apply( inout surface_bumped S, inout float4 pbr, inout float3 Ne,
 	if ( wa.z > wa[ a1 ] )	{ a2 = a1; a1 = 2; }
 	else if ( wa.z > wa[ a2 ] )	a2 = 2;
 	const float w1		= wa[ a1 ], w2 = wa[ a2 ];
-	const bool two		= w2 > 0.1;
+	// blend of the two projections. Weighted: each pattern at its weight, so a stain in the
+	// overlap is a thinner (pinker) ghost. Union: both patterns at full strength while the
+	// weaker one's share is above "fade end", fading out down to "fade start", so stains stay
+	// solid and the weaker axis cannot smear stamps along a grazing surface.
+	const float4 r11	= bus_hud_blood[ 11 ];
+	const bool uni		= r11.x > 0.5;
+	const float f_lo	= saturate( r11.y ), f_hi = max( saturate( r11.z ), f_lo + 0.01 );
+	const bool two		= uni ? w2 / max( w1 + w2, 1e-6 ) > f_lo : w2 > 0.1;
 
 	float3 down			= bus_hud_blood[ 7 ].xyz;
 	down				= dot( down, down ) > 1e-6 ? normalize( down ) : float3( 0, -1, 0 );
@@ -322,10 +330,19 @@ void hud_blood_apply( inout surface_bumped S, inout float4 pbr, inout float3 Ne,
 		float3 T, B;
 		hb_frame( Ng, dPx, dPy, dqx, dqy, T, B );
 		const float2 nq	= acc.nq / max( acc.w, 1e-4 );
-		cov				+= acc.cov * wk;
-		th				+= acc.th * wk;
-		nb				+= ( T * nq.x + B * nq.y ) * acc.cov * wk;
-		wsum			+= wk;
+		const float f	= uni ? smoothstep( f_lo, f_hi, wk ) : wk;
+		if ( uni )
+		{
+			cov			= max( cov, acc.cov * f );
+			th			= max( th, acc.th * f );
+		}
+		else
+		{
+			cov			+= acc.cov * f;
+			th			+= acc.th * f;
+		}
+		nb				+= ( T * nq.x + B * nq.y ) * acc.cov * f;
+		wsum			+= f;
 	}
 
 	const float dbg	= r1.z;

@@ -55,7 +55,10 @@ band                = 0.35      ; amount above a stain's threshold for its dense
 edge_dry            = 1.5       ; how much faster thin blood dries
 down                = 0, -1, 0  ; down axis of the HUD models (model space)
 smooth_projection   = true      ; false: per-triangle projection axis (never moves, but seams)
-axis_sharpness      = 6         ; 1..16: lower blends the projections over a wider angle
+axis_sharpness      = 3         ; 1..16: lower blends the projections over a wider angle
+projection_blend    = 1         ; 0 weighted (thin ghost stains where projections overlap), 1 union
+union_fade_start    = 0.25      ; union: the weaker projection's share where its stains disappear
+union_fade_end      = 0.40      ; ... and where they are at full strength (keep below 0.5)
 
 ; Cloths for the inventory menu entry "Wipe off blood".
 ; section = becomes (after a wipe; - = stays), strength on fresh blood, strength on dried blood
