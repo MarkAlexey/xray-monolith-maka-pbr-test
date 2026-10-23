@@ -42,7 +42,7 @@ local OWNER = "HUD blood (experiment)"
 local SETTINGS_FILE = "plugins\\hud_blood.ltx"
 local ATLAS_FILE = "plugins\\hud_blood_atlas.ltx"
 local ROWS_STATIC_FIRST = 2
-local MAX_TILES = 61		-- 72 shader rows, tiles from row 11
+local MAX_TILES = 60		-- 72 shader rows, tiles from row 12
 
 -- Defaults; every key can be overridden in [settings] of plugins\hud_blood.ltx
 local S = {
@@ -96,7 +96,10 @@ local S = {
 	band				= 0.35,		-- amount above a cell's threshold for its densest frame
 	edge_dry			= 1.5,		-- how much faster thin blood dries
 	smooth_projection	= true,		-- false: per-triangle projection axis (fixed, but seams)
-	axis_sharpness		= 6,		-- 1..16: lower blends the projections over a wider angle
+	axis_sharpness		= 3,		-- 1..16: lower blends the projections over a wider angle
+	projection_blend	= 1,		-- 0 weighted (thin ghost stains in the overlap), 1 union
+	union_fade_start	= 0.25,		-- union: the weaker projection's share where it disappears
+	union_fade_end		= 0.40,		-- ... and where it is at full strength
 	down				= "0, -1, 0",	-- the HUD models' down axis (model space)
 }
 
@@ -225,6 +228,7 @@ local function read_atlas()
 		{ tex.size, S.smooth_projection and 1 or 0, S.axis_sharpness, S.thickness_blur },	-- 8
 		{ kf[1], kf[2], kf[3], S.depth_scale },										-- 9
 		{ kd[1], kd[2], kd[3], S.albedo_gamma },									-- 10
+		{ S.projection_blend, S.union_fade_start, S.union_fade_end, 0 },			-- 11
 	}
 	for i = 1, #tiles do rows[#rows + 1] = tiles[i] end
 	dbg("atlas: %d spray, %d flow, %d drops, %d smears, %d drip tiles", counts.spray, counts.flow, counts.drops, counts.smears, counts.drip)
