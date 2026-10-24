@@ -100,6 +100,7 @@ local S = {
 	projection_blend	= 1,		-- 0 weighted (thin ghost stains in the overlap), 1 union
 	union_fade_start	= 0.25,		-- union: the weaker projection's share where it disappears
 	union_fade_end		= 0.40,		-- ... and where it is at full strength
+	metal_dither		= true,		-- metal under blood: dithered metal / not metal (needs TAA, DLSS or FSR)
 	down				= "0, -1, 0",	-- the HUD models' down axis (model space)
 }
 
@@ -228,7 +229,7 @@ local function read_atlas()
 		{ tex.size, S.smooth_projection and 1 or 0, S.axis_sharpness, S.thickness_blur },	-- 8
 		{ kf[1], kf[2], kf[3], S.depth_scale },										-- 9
 		{ kd[1], kd[2], kd[3], S.albedo_gamma },									-- 10
-		{ S.projection_blend, S.union_fade_start, S.union_fade_end, 0 },			-- 11
+		{ S.projection_blend, S.union_fade_start, S.union_fade_end, S.metal_dither and 1 or 0 },	-- 11
 	}
 	for i = 1, #tiles do rows[#rows + 1] = tiles[i] end
 	dbg("atlas: %d spray, %d flow, %d drops, %d smears, %d drip tiles", counts.spray, counts.flow, counts.drops, counts.smears, counts.drip)
