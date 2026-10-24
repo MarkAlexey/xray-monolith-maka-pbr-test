@@ -8,7 +8,9 @@
 // deffer_base_hud_aref_bump.ps), right before pack_gbuffer(), through the patch that
 // tools/make_hud_blood_overlay.py applies:
 //
-//     hud_blood_apply( S, pbr, Ne, I.position.xyz, I.RDrops.xyz, I.M1, I.M2, I.M3 );
+//     hud_blood_apply( S, pbr, Ne, I.position.xyz, I.RDrops.xyz, I.M1, I.M2, I.M3, hb_pos.xy );
+//
+// (hb_pos = the pixel's SV_Position, which the patch adds to main())
 //
 // How it works
 //  - Where: stamps from a texture atlas (spray / flow flipbooks, drops, smears, a teardrop,
@@ -37,6 +39,10 @@
 //  - Surface: metalness fades with the film's opacity (thin blood on steel keeps a red-tinted
 //    metal reflection), roughness wet -> dry, wet blood flattens the original normal, the
 //    stamps' own normal on top; thin parts dry first.
+//  - Metal under blood is dithered (LV's idea, row 11.w): a pixel is either metal or not, by a
+//    4x4 Bayer threshold, instead of an in-between metalness that no real surface has. TAA /
+//    DLSS / FSR average the pattern into a proper mix of steel and blood; without temporal AA
+//    it can show as a fine 4x4 pattern on thin blood over metal.
 //
 // Data, all from the shader bus (docs/shader_bus.md), written by gamedata/scripts/hud_blood.script:
 //   bus_hud_blood[]  rows below           $user$bus_hud_blood_mask / _na / _nb  the atlas
@@ -53,6 +59,7 @@
 //   row 9  xyz absorption k of fresh blood, w thickness scale (depth of a full mask)
 //   row 10 xyz absorption k of dried blood, w gamma of the G-buffer albedo (1 = linear)
 //   row 11 x projection blend (0 weighted, 1 union)  y union fade start  z union fade end
+//          w metal dither under blood (1 on)
 //   row 12+ tiles u0 v0 u1 v1, in the order spray, flow, drops, smears, drip
 //
 // Cost: nothing while both amounts are 0 (one uniform branch). With blood: per projection
@@ -258,7 +265,7 @@ void hb_frame( float3 N, float3 dPx, float3 dPy, float2 dqx, float2 dqy, out flo
 // S, pbr (x metal, y rough, z AO, w sss) and Ne (eye space, normalized) are changed in place.
 // Pe = eye-space position, Po = bind-pose model position, M1..M3 = tangent to eye rows.
 void hud_blood_apply( inout surface_bumped S, inout float4 pbr, inout float3 Ne, float3 Pe, float3 Po,
-	float3 M1, float3 M2, float3 M3 )
+	float3 M1, float3 M2, float3 M3, float2 spos )
 {
 	const float4 r0	= bus_hud_blood[ 0 ];
 	const float4 r1	= bus_hud_blood[ 1 ];
@@ -380,6 +387,14 @@ void hud_blood_apply( inout surface_bumped S, inout float4 pbr, inout float3 Ne,
 
 	const float rough	= lerp( bus_hud_blood[ 3 ].w, bus_hud_blood[ 4 ].w, dry );
 	pbr.x				= pbr.x * ( 1 - op );
+	if ( bus_hud_blood[ 11 ].w > 0.5 )
+	{
+		// LV: metal is metal or not; 4x4 Bayer threshold, averaged by temporal AA
+		const uint2 bp	= uint2( spos ) & 3u;
+		const uint bx	= bp.x ^ bp.y;
+		const uint b4	= ( ( bx & 1u ) << 3 ) | ( ( bp.y & 1u ) << 2 ) | ( bx & 2u ) | ( ( bp.y & 2u ) >> 1 );
+		pbr.x			= pbr.x > ( float( b4 ) + 0.5 ) * 0.0625 ? 1.0 : 0.0;
+	}
 	pbr.y				= max( 0.02, lerp( pbr.y, rough, a ) );
 	S.gloss				= lerp( S.gloss, ( 1 - rough ) * ( 1 - rough ), a );
 
@@ -393,7 +408,7 @@ void hud_blood_apply( inout surface_bumped S, inout float4 pbr, inout float3 Ne,
 #else	// no shader bus 7: nothing
 
 void hud_blood_apply( inout surface_bumped S, inout float4 pbr, inout float3 Ne, float3 Pe, float3 Po,
-	float3 M1, float3 M2, float3 M3 )
+	float3 M1, float3 M2, float3 M3, float2 spos )
 {
 }
 

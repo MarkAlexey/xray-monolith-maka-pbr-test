@@ -59,6 +59,8 @@ axis_sharpness      = 3         ; 1..16: lower blends the projections over a wid
 projection_blend    = 1         ; 0 weighted (thin ghost stains where projections overlap), 1 union
 union_fade_start    = 0.25      ; union: the weaker projection's share where its stains disappear
 union_fade_end      = 0.40      ; ... and where they are at full strength (keep below 0.5)
+metal_dither        = true      ; metal under blood is dithered metal / not metal (averaged by TAA,
+                                ; DLSS or FSR; without temporal AA it can show as a fine pattern)
 
 ; Cloths for the inventory menu entry "Wipe off blood".
 ; section = becomes (after a wipe; - = stays), strength on fresh blood, strength on dried blood

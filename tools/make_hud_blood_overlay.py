@@ -67,7 +67,12 @@ TAG = "// [HUD blood]"
 
 INCLUDE_RE = re.compile(r'#include\s+"sload\.h"[^\n]*\n')
 CALL_RE = re.compile(r'[ \t]*Ne\s*=\s*normalize\s*\(\s*Ne\s*\)\s*;[^\n]*\n')
-ARGS = "Ne, I.position.xyz, I.RDrops.xyz, I.M1, I.M2, I.M3"
+ARGS = "Ne, I.position.xyz, I.RDrops.xyz, I.M1, I.M2, I.M3, hb_pos.xy"
+# main() gets the pixel position (metal dithering): "main( p_bumped I )" gains
+# ", float4 hb_pos : SV_Position"; SSS's MSAA alpha-to-coverage variant already has
+# "float4 pos2d : SV_Position", which a #define renames to hb_pos
+MAIN_RE = re.compile(r'(\bmain\s*\(\s*p_bumped\s+I)(\s*\))')
+POS2D_RE = re.compile(r'float4\s+pos2d\s*:\s*SV_Position')
 CALL_PBR = (f"#ifdef USE_PBR\n"
             f"\thud_blood_apply( S, pbr_hud, {ARGS} );\t{TAG}\n"
             f"#else\n"
@@ -113,7 +118,12 @@ def patch(name, text):
         sys.exit(f'error: {name}: #include "sload.h" not found once; nothing written')
     if len(CALL_RE.findall(t)) != 1:
         sys.exit(f"error: {name}: 'Ne = normalize(Ne);' not found once; nothing written")
+    if not MAIN_RE.search(t) and not POS2D_RE.search(t):
+        sys.exit(f"error: {name}: 'main( p_bumped I )' not found; nothing written")
     t = INCLUDE_RE.sub(lambda m: m.group(0) + f'#include "hud_blood.h"\t{TAG} blood on hands and weapons\n', t, count=1)
+    t = MAIN_RE.sub(lambda m: m.group(1) + ", float4 hb_pos : SV_Position" + m.group(2), t)
+    if POS2D_RE.search(t):
+        t = INCLUDE_RE.sub(lambda m: m.group(0) + f"#define pos2d hb_pos\t{TAG} the pixel position has one name\n", t, count=1)
     call = CALL_PBR if "float4 pbr_hud" in t else CALL_LEGACY
     t = CALL_RE.sub(lambda m: m.group(0) + call, t, count=1)
     return t.replace("\n", "\r\n") if crlf else t
