@@ -121,11 +121,13 @@ env:
   DLSS_DLL_SHA256: 3975567b8943c53acce397f2b72380092f84f162d00b0d2c7d08a1025c563983
   DLSS_PATCH_ZIP: .github/pbr-release/dlss/dlss-binaries-GAMMA-compatibility-patch-0.5.zip
   # Patch components stacked on top of the GAMMA shader sources, lowest first. "base" is the
-  # SSS 23.5 part; add the Atmospherics component matching the sources repository's
-  # atmospherics/ ("atmos_rc7" for 2.69 RC7.x, nothing for 2.68.93; for the October 2026
-  # update "atmos_2026_10", plus "atmos_2026_10_ssr" / "atmos_2026_10_il" when its installer
-  # uses Atmospherics' own SSR / indirect light)
-  DLSS_PATCH_COMPONENTS: base atmos_rc7
+  # SSS 23.5 part; then the Atmospherics components matching the sources repository's
+  # atmospherics/. The packs target the October 2026 Atmospherics update only (it is faster;
+  # the older versions are not supported by these packs): "atmos_2026_10", plus
+  # "atmos_2026_10_ssr" / "atmos_2026_10_il" because its installer was run with Atmospherics'
+  # own SSR / indirect light (drop one if the sources use SSS's instead). Other values:
+  # "atmos_rc7" for 2.69 RC7.x, nothing for 2.68.93.
+  DLSS_PATCH_COMPONENTS: base atmos_2026_10 atmos_2026_10_ssr atmos_2026_10_il
 
 jobs:
   pack_gamedata:

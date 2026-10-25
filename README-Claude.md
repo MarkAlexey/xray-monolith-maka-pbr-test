@@ -1186,8 +1186,11 @@ Shaders: the DLSS shaders are **not** in this build's db0 (only the menu script 
 are), so a missing patch is reported instead of half-working. CI attaches brodrigz's GAMMA
 compatibility patch 0.5 unchanged, downloads `nvngx_dlss.dll` 310.9.1 from NVIDIA's repository
 (SHA-256 pinned) into `bin/`, and builds the GAMMA shader packs with the patch's `base` and
-`atmos_rc7` components on top (`build_shader_packs.py --top-layer`, `DLSS_PATCH_COMPONENTS` in the
-workflow; set it to `base` alone for Atmospherics 2.68.93 sources).
+Atmospherics components on top (`build_shader_packs.py --top-layer`, `DLSS_PATCH_COMPONENTS` in the
+workflow). The packs target the October 2026 Atmospherics update only: `atmos_2026_10`,
+`atmos_2026_10_ssr` and `atmos_2026_10_il`, which `tools/make_dlss_atmos_component.py` added to
+the patch from that Atmospherics' own shaders with brodrigz's DLSS edits (`atmos_rc7` for 2.69
+RC7.x and `base` alone for 2.68.93 remain possible values).
 
 Caveats:
 
