@@ -32,12 +32,13 @@ What the patch does
     - deffer_base_hud_*bump.ps (MV main file, HUD Raindrops): first-person models with PBR
       textures are written to the G-buffer as PBR (pbr_hud.h). SSS compiles every weapon and
       hand with these shaders, which never wrote the PBR material, so PBR weapons rendered as
-      legacy (white plastic). Needs the patched gbuffer_stage.h above.
+      legacy (white plastic). Needs the patched gbuffer_stage.h above. Also reads the
+      per-texture option HUD_REFLECT (pbr_hud.h: tones the reflection down, e.g. for skin).
   World PBR under SSS / ES (these files replace the exe's PBR versions, so without the edits
   PBR textures wrote their material and nothing read it: lit as legacy, metals white):
     - deffer_base_bump.ps, deffer_base_aref_bump.ps (ES 01 PBR, SSS MV main file): write the
       PBR material like the HUD shaders (pbr_hud.h). Under SSS's sload.h: no POM / detail
-      bump on PBR textures.
+      bump on PBR textures. Also reads the per-texture option WORLD_REFLECT.
     - accum_sun_near/far.ps, accum_sun.ps, accum_base.ps, accum_omni_unshadowed.ps,
       accum_indirect.ps (ES, SSS main file, 02 SSS, 08 Shadow & Light, 91 Flora): PBR pixels
       take the IX-Ray lighting (pbr_ixray.h), with SSS's screen-space/contact shadows and
@@ -536,8 +537,17 @@ def patch_hud(text, what):
     m = decl.search(text, last_sload)
     if not m:
         raise PatchError(f"{what}: no declaration reading S.normal after sload()")
+    # Per-texture reflection scale (pbr_hud.h): HUD_REFLECT in the first-person shaders,
+    # WORLD_REFLECT in the world ones, decided by the file name (deffer_base_hud_* = HUD)
+    opt = "HUD_REFLECT" if "_hud_" in os.path.basename(what.split(":")[-1]) else "WORLD_REFLECT"
     insert = ("\n#ifdef USE_PBR\n"
               "\tfloat4 pbr_hud = pbr_hud_decode(S, I.tcdh.xy);\t" + BANNER + "IX-Ray material, see pbr_hud.h\n"
+              "#endif\n"
+              f"#ifdef {opt}\n"
+              f"\tS.gloss = pbr_reflect_gloss(S.gloss, {opt});\t" + BANNER + "texture's reflection scale, see pbr_hud.h\n"
+              "#\tifdef USE_PBR\n"
+              f"\tpbr_hud.y = pbr_reflect_rough(pbr_hud.y, {opt});\n"
+              "#\tendif\n"
               "#endif")
     text = text[:m.start()] + insert + text[m.start():]
     text = regex_once(
