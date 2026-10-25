@@ -256,6 +256,8 @@ float3 pbr_light_sun( pbr_material M, float3 P, float3 N, float3 light_dir, floa
 
 TextureCube		sky_s0;
 TextureCube		sky_s1;
+// combine_1 patched for a mod that declares them itself skips its declaration (compat patch)
+#define PBR_SKY_DECLARED
 
 #ifdef USE_OFFSCREEN_REFLECTIONS
 // IX-Ray VSLR: the surroundings captured around the camera as an octahedral panorama
