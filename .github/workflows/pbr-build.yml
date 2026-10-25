@@ -29,7 +29,10 @@
 #     repository and checked against DLSS_DLL_SHA256 (the build fails if it does not match).
 #     FSR3 is built into the exe and needs no DLL.
 #   - The DLSS / FSR3 shader compatibility patch (brodrigz, .github/pbr-release/dlss/) is
-#     attached to the release unchanged; the in-game DLSS/FSR3 shaders come only from it.
+#     attached to the release; the in-game DLSS/FSR3 shaders come only from it. It is brodrigz's
+#     0.5 plus components for the October 2026 Atmospherics update (atmos_2026_10, _ssr, _il,
+#     better_beefs_atmos_2026_10), made by tools/make_dlss_atmos_component.py from that
+#     Atmospherics' own shaders with his DLSS edits.
 #   - The shader packs are built twice, for the plain GAMMA stack and with that patch's
 #     components on top of it (DLSS_PATCH_COMPONENTS); the FOMOD's second page picks between
 #     them. Overlay + DLSS: DLSS patch first, then the PBR overlay above it.
@@ -119,7 +122,9 @@ env:
   DLSS_PATCH_ZIP: .github/pbr-release/dlss/dlss-binaries-GAMMA-compatibility-patch-0.5.zip
   # Patch components stacked on top of the GAMMA shader sources, lowest first. "base" is the
   # SSS 23.5 part; add the Atmospherics component matching the sources repository's
-  # atmospherics/ ("atmos_rc7" for 2.69 RC7.x, nothing for 2.68.93)
+  # atmospherics/ ("atmos_rc7" for 2.69 RC7.x, nothing for 2.68.93; for the October 2026
+  # update "atmos_2026_10", plus "atmos_2026_10_ssr" / "atmos_2026_10_il" when its installer
+  # uses Atmospherics' own SSR / indirect light)
   DLSS_PATCH_COMPONENTS: base atmos_rc7
 
 jobs:
