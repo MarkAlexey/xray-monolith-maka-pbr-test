@@ -134,6 +134,7 @@ void CBlender_ssfx_ssr::Compile(CBlender_Compile& C)
 
 		C.r_dx10Texture("s_position", r2_RT_P);
 		C.r_dx10Texture("s_rimage", "$user$generic_temp");
+		C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR: the PBR compat patch skips PBR pixels IX-Ray SSLR reflects
 
 		C.r_dx10Texture("ssr_image", r2_RT_ssfx_temp2);
 		C.r_dx10Texture("s_gloss_data", r2_RT_ssfx_temp3);
