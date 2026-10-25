@@ -449,9 +449,17 @@ def il_factor(text):
     blend = "\t\tpbr_il = lerp( (float3)1.0, pbr_il, PBR_IL_INTENSITY );\n"
     es = "lerp( (float3)1.0f, IL_sample * ( 30.0f * ssfx_il_setup.y ), IL_sample )"
     gamma = "pbr_to_linear( lerp( (float3)1.0f, IL_sample * ( 7.5f * ssfx_il_setup.y ), IL_sample ) )"
-    head = "\t\tfloat3 pbr_il = 1.0;\n#ifdef SSFX_INDIRECT_LIGHT\n"
+    head = "\t\tfloat3 pbr_il = 1.0;\n\t\tfloat3 pbr_il_add = 0;\n#ifdef SSFX_INDIRECT_LIGHT\n"
     if "IL_sample" not in text or "SSFX_INDIRECT_LIGHT" not in text:
-        return "\t\tfloat3 pbr_il = 1.0;\t// no SSS Indirect Light in this combine_1\n"
+        return "\t\tfloat3 pbr_il = 1.0;\t// no SSS Indirect Light in this combine_1\n\t\tfloat3 pbr_il_add = 0;\n"
+    if "ATMOS_IL" in text and re.search(r"\bil_in\b", text):
+        # Atmospherics 2026: with ATMOS_IL its own indirect light replaces SSS's. It is an added
+        # bounce (il_in, linear, already scaled by the MCM intensity / HUD / vibrance), not a
+        # factor: added to the PBR diffuse ambient (patch_combine). SSS's factor stays for ATMOS_IL 0.
+        head = ("\t\tfloat3 pbr_il = 1.0;\n\t\tfloat3 pbr_il_add = 0;\n"
+                "#if defined(SSFX_INDIRECT_LIGHT) && ATMOS_IL\n"
+                "\t\tpbr_il_add = il_in * PBR_IL_INTENSITY;\t" + BANNER + "Atmospherics' indirect light (added bounce)\n"
+                "#elif defined(SSFX_INDIRECT_LIGHT)\n")
     if "7.5f * ssfx_il_setup.y" in text and "30.0f * ssfx_il_setup.y" in text:
         # SSS main file: both paths, picked by SSFX_ENHANCED_SHADERS like SSS does
         return (head + "#\tifdef SSFX_ENHANCED_SHADERS\n\t\tpbr_il = " + es + ";\n#\telse\n"
@@ -480,6 +488,10 @@ def patch_combine(text, what):
     Not applied to PBR pixels: the static-sun (r2 static lighting) term.
     """
     text = add_pbr_include(text, what)
+    # A combine_1 that declares the sky cubemaps itself (Atmospherics 2026) would declare them a
+    # second time after pbr_ixray.h's: keep one declaration (pbr_ixray.h defines PBR_SKY_DECLARED)
+    text = re.sub(r"(?m)^([ \t]*TextureCube[ \t]+sky_s[01][ \t]*;[^\n]*)$",
+                  lambda m: "#ifndef PBR_SKY_DECLARED\t" + BANNER + "declared in pbr_ixray.h\n" + m.group(1) + "\n#endif", text)
     hemi = "lerp( N.w, hud_hemi, HudMask )" if ("hud_hemi" in text and "HudMask" in text) else "N.w"
     ao = ("\n#ifdef SSFX_AO\n\t\tfloat pbr_occ = ssfx_ao.Sample( smp_linear, I.tc0 ).w;\n#else\n"
           "\t\tfloat pbr_occ = occ.x;\n#endif\n") if "ssfx_ao" in text else "\t\tfloat pbr_occ = occ.x;\n"
@@ -493,7 +505,7 @@ def patch_combine(text, what):
         "\t{\n"
         + ao + il +
         f"\t\tfloat3 pbr_amb = pbr_ambient_ex( pbr_m, P.xyz, N.xyz, {hemi}, pbr_occ * pbr_m.ao, pbr_il );\n"
-        "\t\tcolor = pbr_to_gamma( L.rgb + pbr_amb );\n"
+        "\t\tcolor = pbr_to_gamma( L.rgb + pbr_amb + pbr_il_add * pbr_m.diffuse * pbr_occ * pbr_m.ao );\n"
         "#ifdef PBR_DEBUG_VIEW\n"
         "\t\t// pbr_ixray.h: 1 normal, 2 AO, 3 roughness, 4 metalness, 5 ambient only, 6 direct only,\n"
         "\t\t// 7 SSS indirect light factor (grey 0.5 = no change, brighter = more bounce light)\n"
