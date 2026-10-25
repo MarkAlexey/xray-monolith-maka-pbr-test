@@ -356,6 +356,9 @@ def patch_screenspace_common(text, what):
     return text
 
 
+SSR_ATMOS_ANCHOR = re.compile(r"\n([ \t]*float4[ \t]+Pos[ \t]*=[ \t]*s_position\.Sample\([ \t]*smp_nofilter[ \t]*,[ \t]*I\.tc0[ \t]*\)[ \t]*;)")
+
+
 def patch_ssr_combine(text, what):
     text = replace_once(
         text,
@@ -363,6 +366,19 @@ def patch_ssr_combine(text, what):
         '#include "screenspace_common.h"\n#include "sslr_settings.h"\t' + BANNER + "IX-Ray SSLR interop\n",
         what,
     )
+    if "\t// Scene + SSR\n" not in text and len(SSR_ATMOS_ANCHOR.findall(text)) == 1:
+        # Atmospherics 2026's combine (cubemap replacement, its own SSR with ATMOS_SSR). Its
+        # lmodel / hmodel are not patched, so IX-Ray SSLR reflects only PBR pixels (combine_1,
+        # pbr_ixray.h): skip this SSR there, keep it on every legacy pixel and on the HUD.
+        # Needs the exe that binds s_surface to this pass (blender_blur.cpp); an older exe reads 0
+        # there, so every pixel counts as legacy and this SSR stays on everywhere, as before.
+        return SSR_ATMOS_ANCHOR.sub(lambda m: (
+            m.group(0) +
+            "\n#if defined(USE_SSLR_REFLECTIONS) && defined(PBR_GBUFFER) && SSLR_REPLACE_SSFX_SSR\n"
+            "\t" + BANNER + "IX-Ray SSLR reflects PBR pixels (combine_1): no second reflection on top of it.\n"
+            "\tif (Pos.z >= SSLR_HUD_DEPTH && gbuffer_load_surface(I.tc0, I.hpos.xy, 0).w >= 0.25f)\n"
+            "\t\treturn float4(color, 1.0f);\n"
+            "#endif"), text, count=1)
     return replace_once(
         text,
         "\t// Scene + SSR\n",
