@@ -1,5 +1,6 @@
 #include "common.h"
 #include "sload.h"
+#include "pbr_hud.h"	// reflection scale (WORLD_REFLECT)
 
 f_deffer main ( p_bumped I )
 {
@@ -29,6 +30,12 @@ f_deffer main ( p_bumped I )
 # endif
 #endif
 
+#ifdef WORLD_REFLECT
+	S.gloss = pbr_reflect_gloss( S.gloss, WORLD_REFLECT );	// the texture's reflection scale, see pbr_hud.h
+#	ifdef USE_PBR
+	S.pbr.y = pbr_reflect_rough( S.pbr.y, WORLD_REFLECT );
+#	endif
+#endif
 	O			= pack_gbuffer(
 								float4	(Ne, 										h		),
 								float4 	(I.position.xyz + Ne*S.height*def_virtualh, ms		),

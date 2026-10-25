@@ -43,6 +43,22 @@
 // they do not change the PBR roughness (same limitation as rain on PBR world surfaces).
 //////////////////////////////////////////////////////////////////////////////////////////
 
+// Per-texture reflection scale, for skin, cloth or leather that reflects too much. In the
+// texture's .ltx (next to its THM, or an LTX-only texture), section [shaders_options]:
+//     HUD_REFLECT   = 0.25    first-person models (hands, weapons): SSS's HUD shaders
+//     WORLD_REFLECT = 0.25    everything else that uses this repository's / SSS's / ES's
+//                             deffer_base_bump / deffer_base_aref_bump
+// 1 = unchanged, 0 = no reflection left. Legacy textures: gloss * k. PBR textures: roughness
+// moves towards 1 (lerp(1, rough, k)), so highlights spread out and dim instead of vanishing.
+// The value is part of the shader's name (each value is its own cache entry): restart the
+// game after editing the .ltx, no need to delete the shader cache.
+// Caveats: HUD_REFLECT needs SSS (without it first-person models use the world shaders and
+// read WORLD_REFLECT); terrain, detail objects and the flat (no bump) shaders read neither.
+#if defined(HUD_REFLECT) || defined(WORLD_REFLECT)
+float pbr_reflect_gloss( float gloss, float k )	{ return gloss * saturate( k ); }
+float pbr_reflect_rough( float rough, float k )	{ return lerp( 1.0, rough, saturate( k ) ); }
+#endif
+
 #ifdef USE_PBR
 
 // Returns the material: x = metalness, y = roughness, z = AO, w = subsurface.

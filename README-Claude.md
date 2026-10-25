@@ -133,12 +133,26 @@ As in IX-Ray, a texture can have an `.ltx` file next to it with the same name, f
 ```ini
 [shaders_options]
 USE_DX_NORMAL_MAP = 1   ; the normal map is DirectX style (green down)
+HUD_REFLECT       = 0.25 ; first-person models (hands, weapons): a quarter of the reflection
+WORLD_REFLECT     = 0.6  ; everything else using this texture: 60% of the reflection
 ```
 
 Every line becomes a shader define for that texture's G-buffer shader (DX11 only), and is added
 to the shader's name so the shader cache keeps the combinations apart. A value of `0` leaves the
-line out. `USE_DX_NORMAL_MAP` is the option the shaders here understand; others are passed
-through for future use. The file is read when the game starts.
+line out. The file is read when the game starts. The options the shaders here understand:
+
+- `USE_DX_NORMAL_MAP`: see above.
+- `HUD_REFLECT` and `WORLD_REFLECT` (0..1): tone down the reflection of a texture that looks too
+  wet, such as bare skin or leather gloves. 1 is unchanged. Legacy textures get their gloss scaled,
+  PBR textures get rougher (`lerp(1, roughness, k)`), so highlights spread and dim. `HUD_REFLECT`
+  works in SSS's first-person shaders (`deffer_base_hud_*`), `WORLD_REFLECT` in the world ones
+  (`deffer_base_bump` / `deffer_base_aref_bump`: this repository's, and SSS's / ES's through the
+  compatibility patch and the overlay), so hands can be toned down without changing the NPCs
+  that share the texture, or the other way around. Without SSS first-person models are drawn
+  with the world shaders and read `WORLD_REFLECT`. Terrain, detail objects (grass) and the flat
+  (no bump map) shaders read neither.
+
+Other options are passed through for future use.
 
 ### Global options and the debug view
 

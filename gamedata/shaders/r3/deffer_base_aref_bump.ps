@@ -4,6 +4,7 @@
 
 #include "common.h"
 #include "sload.h"
+#include "pbr_hud.h"	// reflection scale (WORLD_REFLECT)
 
 #ifdef	ATOC
 
@@ -74,6 +75,12 @@ f_deffer 	main	( p_bumped I )
 # endif
 #endif
 
+#ifdef WORLD_REFLECT
+	S.gloss = pbr_reflect_gloss( S.gloss, WORLD_REFLECT );	// the texture's reflection scale, see pbr_hud.h
+#	ifdef USE_PBR
+	S.pbr.y = pbr_reflect_rough( S.pbr.y, WORLD_REFLECT );
+#	endif
+#endif
 #ifndef EXTEND_F_DEFFER
 	O = pack_gbuffer(
 						float4	(Ne,										h),
