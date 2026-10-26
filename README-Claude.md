@@ -1328,3 +1328,23 @@ Caveats:
 - The packs and the overlay must be regenerated with this branch's tools (CI does). Light shaders
   from an older overlay write skin pixels the old way (unmarked): they then simply get no
   scattering, since `combine_1` and the blur only resolve marked pixels.
+
+### Skin diffuse ramp (separate patch on top of skin SSS)
+
+Branch `pbr-test-s3ds-mt-sss-lass-skin-ramp-dlss`, shaders only (`pbr_ixray.h`). For PBR pixels
+with a subsurface value, the diffuse N.L of every light is replaced by a ramp that softens and
+tints the shadow line, in the light passes themselves (no blur pass: also for world skin, with
+MSAA, and with `r4_skin_sss 0`). `PBR_SKIN_RAMP` at the top of the ramp block:
+
+- `0` off (N.L as before).
+- `1` (default) ProcRamp: N.L blurred by a Gaussian of width `PBR_SKIN_RAMP_WIDTH` x subsurface
+  (pre-integrated skin, Penner style); the light wrapping past the shadow line is faded and
+  tinted by Beer-Lambert absorption, `PBR_SKIN_RAMP_ABSORB` (low red: red reaches furthest).
+- `2` LVutner's `sss()`: N.L plus a fixed warm band at the shadow line (`PBR_SKIN_RAMP_LV_IR`,
+  `PBR_SKIN_RAMP_LV_TINT`). Cheaper and stronger; it adds light on the lit side too, up to about
+  +0.13 at N.L 0.5.
+
+Both take the signed N.L and are not clamped (the wrap lives at N.L < 0); the sun's IX-Ray
+wrap-around translucency is skipped for those pixels so the light does not wrap twice. Caveats:
+shadow maps still cut the wrap where they darken the far side; with the screen-space blur on as
+well, the two overlap at the shadow line (lower the width); the r2 static sun is not ramped.

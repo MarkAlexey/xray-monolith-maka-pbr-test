@@ -255,6 +255,95 @@ float3 pbr_light_sun( pbr_material M, float3 P, float3 N, float3 light_dir, floa
 // pbr_accum() returns diff * albedo + spec, which is exactly what the float3 functions above
 // return (ixr_brdf() = lerp( diffuse, specular, F ) = diffuse * ( 1 - F ) + specular * F).
 
+//////////////////////////////////////////////////////////////////////////////////////////
+// Skin diffuse ramp (experiment): soft, tinted shadow line for PBR pixels with a subsurface
+// value, per light, in the light passes. Replaces N.L in the diffuse of those pixels (and the sun's
+// wrap-around translucency, pbr_translucency_irradiance, which would wrap a second time).
+// Independent of the screen-space blur (skin_sss.h, r4_skin_sss): works on world skin too, with
+// MSAA, and without the blur passes. With both on they overlap at the shadow line: use a
+// smaller PBR_SKIN_RAMP_WIDTH then.
+//   0 = off (N.L, as before)
+//   1 = ProcRamp: N.L blurred by a Gaussian (pre-integrated skin, Penner style), the light that
+//       wraps past the shadow line tinted and faded by Beer-Lambert absorption over its path
+//   2 = LVutner's sss(): N.L plus a fixed warm band at the shadow line (cheaper, artistic; adds
+//       light on the lit side too, up to about +0.13 at N.L 0.5, so it is not energy conserving)
+// Caveats:
+//  - Both take the SIGNED N.L and their result is not clamped: the wrap lives at N.L < 0.
+//  - Shadow maps still multiply the light afterwards, so self-shadowing cuts the wrap where the
+//    shadow map darkens the far side; the screen-space blur softens that edge if it is on.
+//  - Not applied to the r2 static sun (r2_sun off), which combine_1 lights with pbr_light_sun().
+#ifndef PBR_SKIN_RAMP
+#	define PBR_SKIN_RAMP 1
+#endif
+// Pixels with a subsurface value below this keep N.L
+#ifndef PBR_SKIN_RAMP_MIN
+#	define PBR_SKIN_RAMP_MIN 0.02
+#endif
+// 1: Gaussian width (standard deviation, in N.L units) at subsurface 1; scaled by the pixel's value
+#ifndef PBR_SKIN_RAMP_WIDTH
+#	define PBR_SKIN_RAMP_WIDTH 0.3
+#endif
+// 1: absorption per unit path, linear rgb: low red = red light gets furthest into the shadow
+//    (green / blue: haemoglobin-like, as the HUD blood film's)
+#ifndef PBR_SKIN_RAMP_ABSORB
+#	define PBR_SKIN_RAMP_ABSORB float3( 1.0, 3.17, 3.63 )
+#endif
+// 2: LVutner's "ir" at subsurface 1 (scaled by the pixel's value; below 0.04 it does nothing)
+//    and the band's colour
+#ifndef PBR_SKIN_RAMP_LV_IR
+#	define PBR_SKIN_RAMP_LV_IR 0.5
+#endif
+#ifndef PBR_SKIN_RAMP_LV_TINT
+#	define PBR_SKIN_RAMP_LV_TINT float3( 1.0, 0.4, 0.1 )
+#endif
+
+bool pbr_skin_ramp_on( pbr_material M )
+{
+	return PBR_SKIN_RAMP != 0 && M.sss > PBR_SKIN_RAMP_MIN;
+}
+
+// ProcRamp: ndl signed (not clamped), o = Gaussian width
+float3 pbr_proc_ramp( float ndl, float o )
+{
+	o			= max( o, 1e-7 );
+	float rO	= 1.0 / o;
+	float lmb	= max( ndl, 0.0 );
+	float NvO	= lmb * rO;
+	float AvO	= abs( ndl ) * rO;
+
+	float A		= exp( -0.5 * NvO * NvO ) * ( o * 0.398942281 );	// o x normal pdf
+	float x		= min( NvO * 0.417193, 1.0 );
+	float B		= 0.5 + x * ( 1.0 - 0.5 * x );						// approximate normal CDF
+
+	float C		= AvO + A;											// path length proxy
+	float3 D	= exp( -PBR_SKIN_RAMP_ABSORB * C );					// Beer-Lambert absorption
+
+	return lmb * B + D * ( A * o );
+}
+
+// LVutner's skin approximation: ndl signed (not clamped)
+float3 pbr_lv_ramp( float ndl, float ir )
+{
+	float pndl	= saturate( ndl );
+	float nndl	= saturate( -ndl );
+	float back	= pow( max( 1.0 - nndl, 0.0 ), 3.0 / ( ir + 0.01 ) );
+	return pndl + PBR_SKIN_RAMP_LV_TINT * 0.53 * ( 1.0 - pndl ) * ( 1.0 - pndl ) * back * saturate( ir - 0.04 );
+}
+
+// Diffuse N.L term of the light functions below: N.L, or the ramp for subsurface pixels.
+// ndl signed.
+float3 pbr_diffuse_ndl( pbr_material M, float ndl )
+{
+#if PBR_SKIN_RAMP == 1
+	[branch] if( pbr_skin_ramp_on( M ) )
+		return pbr_proc_ramp( ndl, PBR_SKIN_RAMP_WIDTH * M.sss );
+#elif PBR_SKIN_RAMP == 2
+	[branch] if( pbr_skin_ramp_on( M ) )
+		return pbr_lv_ramp( ndl, PBR_SKIN_RAMP_LV_IR * M.sss );
+#endif
+	return max( ndl, 0.0 );
+}
+
 struct pbr_split
 {
 	float3	diff;	// diffuse irradiance x ( 1 - Fresnel ), linear, albedo NOT applied
@@ -281,11 +370,11 @@ pbr_split pbr_direct_split( pbr_material M, float3 color, float3 L, float3 N, fl
 	float  D	= ixr_D_GGX( NdotH, M.roughness );
 	float  G	= ixr_G_Smith( NdotL, NdotV, M.roughness );
 	float3 F	= ixr_F_Schlick( M.specular, HdotV );
-	float3 li	= pbr_to_linear( color ) * NdotL;
+	float3 lc	= pbr_to_linear( color );
 
 	pbr_split S;
-	S.diff	= li * ( 1.0 - F );
-	S.spec	= li * ( 0.25 * D * G ) * F;
+	S.diff	= lc * pbr_diffuse_ndl( M, dot( N, -L ) ) * ( 1.0 - F );	// signed N.L (skin ramp)
+	S.spec	= lc * NdotL * ( 0.25 * D * G ) * F;
 	return S;
 }
 
@@ -334,7 +423,9 @@ pbr_split pbr_light_sun_split( pbr_material M, float3 P, float3 N, float3 light_
 	float3 V = normalize( P );
 
 	pbr_split S	= pbr_direct_split( M, color, L, N, V );
-	S.diff		+= pbr_translucency_irradiance( M, color, L, N ) + pbr_legacy_translucency_irradiance( M, color, L, N, V );
+	// the skin ramp already wraps the light (pbr_diffuse_ndl): no second wrap from the translucency
+	float3 wrap	= pbr_skin_ramp_on( M ) ? (float3)0.0 : pbr_translucency_irradiance( M, color, L, N );
+	S.diff		+= wrap + pbr_legacy_translucency_irradiance( M, color, L, N, V );
 	return S;
 }
 
