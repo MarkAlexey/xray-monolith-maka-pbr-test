@@ -190,7 +190,7 @@ float4 main( v2p_csm I ) : SV_Target
 #ifdef PBR_GBUFFER
 	pbr_material pm = pbr_load_unified( GLD_P( I.tc0, I.hpos, 0 ), _C, m );
 	[branch] if( pm.enabled )
-		return float4( pbr_light_sun( pm, gbd.P, _N.xyz, Ldynamic_dir.xyz, Ldynamic_color.rgb ) * pbr_to_linear( s ), 0 );
+		return pbr_accum( pm, gbd.P, pbr_light_sun_split( pm, gbd.P, _N.xyz, Ldynamic_dir.xyz, Ldynamic_color.rgb ), pbr_to_linear( s ) );
 #endif
 
 	float4 light = plight_infinity( m, _P, _N, _C, Ldynamic_dir );

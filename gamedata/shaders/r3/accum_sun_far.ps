@@ -75,10 +75,10 @@ float4 main ( v2p_volume I ) : SV_Target
 	//\ Far edge fading code
 
 #ifdef PBR_GBUFFER
-	// IX-Ray PBR pixel: linear radiance, no separate specular
+	// IX-Ray PBR pixel: linear radiance, no separate specular (skin: diffuse and specular apart, pbr_accum)
 	pbr_material pm = pbr_load_unified( GLD_P(I.tc.xy/I.tc.w, I.hpos, ISAMPLE), _C, m );
 	[branch] if( pm.enabled )
-		return float4( pbr_light_sun( pm, gbd.P, _N.xyz, Ldynamic_dir.xyz, Ldynamic_color.rgb ) * pbr_to_linear( s ), 0 );
+		return pbr_accum( pm, gbd.P, pbr_light_sun_split( pm, gbd.P, _N.xyz, Ldynamic_dir.xyz, Ldynamic_color.rgb ), pbr_to_linear( s ) );
 #endif
 
 	return 		blend( Ldynamic_color * light * s/*float4( 1.f, 0.2f, 0.2f, 1.f)*/, I.tc );

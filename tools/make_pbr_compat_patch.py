@@ -412,12 +412,15 @@ def patch_ssr_combine(text, what):
 #    shadows, contact shadows, lightmaps and shadow fading into the shadow factor, so PBR pixels
 #    get all of them.
 # PBR pixels write linear radiance and no separate specular (alpha 0); combine_1 adds the ambient.
+# They go through pbr_accum() (pbr_ixray.h): with skin subsurface scattering on (skin_sss.h,
+# r4_skin_sss) first-person skin pixels store their diffuse irradiance and specular apart instead.
+# Each kind: (the light split into diffuse / specular, what it is multiplied by afterwards).
 
 LIGHT_KINDS = {
-    "sun": "pbr_light_sun( pbr_m, gbd.P, _N.xyz, Ldynamic_dir.xyz, Ldynamic_color.rgb ) * pbr_to_linear( {shadow} )",
-    "local": "pbr_light_local( pbr_m, gbd.P, _N.xyz, Ldynamic_pos, Ldynamic_color.rgb ) * {shadow} * pbr_to_linear( lightmap.rgb )",
-    "omni": "pbr_light_local( pbr_m, gbd.P, _N.xyz, Ldynamic_pos, Ldynamic_color.rgb )",
-    "indirect": "pbr_to_linear( Ldynamic_color.xyz ) * att * light * hemi * pbr_m.diffuse",
+    "sun": ("pbr_light_sun_split( pbr_m, gbd.P, _N.xyz, Ldynamic_dir.xyz, Ldynamic_color.rgb )", "pbr_to_linear( {shadow} )"),
+    "local": ("pbr_light_local_split( pbr_m, gbd.P, _N.xyz, Ldynamic_pos, Ldynamic_color.rgb )", "{shadow} * pbr_to_linear( lightmap.rgb )"),
+    "omni": ("pbr_light_local_split( pbr_m, gbd.P, _N.xyz, Ldynamic_pos, Ldynamic_color.rgb )", "1.0"),
+    "indirect": ("pbr_split_diffuse( pbr_to_linear( Ldynamic_color.xyz ) * att * light * hemi )", "1.0"),
 }
 
 # Where the final return construct starts, most specific first (SSS, then ES)
@@ -454,13 +457,14 @@ def make_light_patch(kind):
         gld = loads[-1].group(1)
         # SSS's far cascade folds clouds and shadows into "shadows"; everything else uses "s"
         shadow = "shadows" if (kind == "sun" and re.search(r"\bshadows[ \t]*\*=[ \t]*s\b", text[:pos])) else "s"
-        expr = LIGHT_KINDS[kind].format(shadow=shadow)
+        split, mult = LIGHT_KINDS[kind]
+        mult = mult.format(shadow=shadow)
         block = (
             "\n#ifdef PBR_GBUFFER\n"
-            "\t" + BANNER + "IX-Ray PBR pixel: linear radiance, no separate specular (pbr_ixray.h)\n"
+            "\t" + BANNER + "IX-Ray PBR pixel: linear radiance, no separate specular (pbr_ixray.h; skin: pbr_accum)\n"
             f"\tpbr_material pbr_m = pbr_load( {gld}, gbd.C );\n"
             "\t[branch] if( pbr_m.enabled )\n"
-            f"\t\treturn float4( {expr}, 0 );\n"
+            f"\t\treturn pbr_accum( pbr_m, gbd.P, {split}, {mult} );\n"
             "#endif\n"
         )
         return text[:pos] + block + text[pos:]
@@ -528,6 +532,10 @@ def patch_combine(text, what):
         "\t[branch] if( pbr_m.enabled )\n"
         "\t{\n"
         + ao + il +
+        "#ifdef PBR_SKIN_SSS\n"
+        "\t\t" + BANNER + "skin subsurface scattering: blurred diffuse x albedo + specular (skin_sss.h)\n"
+        "\t\tL.rgb = skin_sss_resolve( pbr_m.sss, pbr_m.diffuse, P.xyz, L, I.pos2d.xy );\n"
+        "#endif\n"
         f"\t\tfloat3 pbr_amb = pbr_ambient_ex( pbr_m, P.xyz, N.xyz, {hemi}, pbr_occ * pbr_m.ao, pbr_il );\n"
         "\t\tcolor = pbr_to_gamma( L.rgb + pbr_amb + pbr_il_add * pbr_m.diffuse * pbr_occ * pbr_m.ao );\n"
         "#ifdef PBR_DEBUG_VIEW\n"

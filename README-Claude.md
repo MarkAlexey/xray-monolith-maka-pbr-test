@@ -1251,3 +1251,80 @@ Checked: with the profiler switched on (`XRCORE_PROFILER PROFILER_OPTICK`), `che
 R4 translation units with `PROF_TAG` / `PROF_EVENT_DYNAMIC` or our own markers reports no new errors
 against the profiler-off build. The packaging step was run locally with and without the profiled
 artifact. Not built with MSVC yet.
+
+## The `pbr-test-s3ds-mt-sss-lass-skin-dlss` branch: skin subsurface scattering (experiment)
+
+Screen-space subsurface scattering for first-person PBR skin (hands), after Jorge Jimenez's
+separable SSS (Jimenez et al. 2015, "Separable Subsurface Scattering"). Light reaching the skin
+spreads under it before it comes back out, red the furthest: shadow edges on the hands turn soft
+and warm instead of hard and grey. Specular highlights stay sharp. Based on the DLSS branch; its CI release is
+`pbr-test-lass-skin-dlss-latest`.
+
+How it works (`gamedata/shaders/r3/skin_sss.h` has the details):
+
+1. The light passes (`pbr_accum()` in `pbr_ixray.h`, used by this repository's `accum_*.ps` and by
+   the compatibility patch for SSS's / ES's / Atmospherics' light shaders) store skin pixels in the
+   light accumulator as diffuse irradiance (albedo not yet applied) in rgb and the specular
+   luminance, made negative, in alpha. The negative alpha marks the pixel as skin. Every other
+   pixel is stored exactly as before. No extra render target in the light passes, so mods'
+   light shaders keep working.
+2. `r4_rendertarget_phase_skin_sss.cpp` runs two full-screen passes before `combine_1`:
+   horizontal (`skin_sss_blur_h.ps`, accumulator to an RGBA16F target with the depth in alpha),
+   then vertical (`skin_sss_blur_v.ps`, to an R11G11B10F target). Each skin pixel reads
+   `SKIN_SSS_TAPS` neighbours (default 17) along the skin diffusion profile; neighbours that are
+   not skin, or much further away in depth (fingers in front of the palm), are replaced by the
+   centre colour. Pixels that are not skin return after one or two loads.
+3. `combine_1` (`skin_sss_resolve()`) rebuilds the skin's light: blurred irradiance x albedo +
+   specular, the specular colour taken from the unblurred light.
+
+Which pixels: PBR pixels with a subsurface value on first-person models (view depth below 1.2 m,
+SSLR's HUD test). The subsurface value is the `_bump#` blue channel. For a skin texture whose
+blue channel is empty, set it in the texture's `.ltx`:
+
+```
+[shaders_options]
+SKIN_SSS = 0.8     ; 0..1, replaces the bump# blue channel; also scales the scatter width
+```
+
+Restart the game after editing the `.ltx`. The value also drives the sun's wrap-around
+translucency, which PBR skin already had.
+
+Console:
+
+| Command | Default | What it does |
+|---|---|---|
+| `r4_skin_sss 0/1` | 1 | On / off. Needs a restart (changes the light and combine shaders). Off with MSAA. |
+| `r4_skin_sss_width` | 0.012 | Scatter width in metres at subsurface 1 (red spreads this far, blue less). |
+| `r4_skin_sss_strength` | 1 | 0 = unblurred (to compare), 1 = full scattering. |
+| `r4_skin_sss_debug 0..3` | 0 | 1 = skin mask (red tint = subsurface value), 2 = blurred light only, 3 = what the scattering changed (x 4). |
+| `r4_skin_sss_timer 0/1` | 0 | Logs the GPU time of both passes every 120 frames (D3D11 timestamp queries). |
+
+Shader settings (top of `skin_sss.h`, restart to apply): `SKIN_SSS_TAPS` 11 / 17 / 25,
+`SKIN_SSS_HUD_DEPTH`, `SKIN_SSS_MIN`, `SKIN_SSS_DEPTH_FADE_START` / `_END`. The kernels come from
+`tools/make_skin_sss_kernel.py` (Jimenez's profile; `FALLOFF` / `STRENGTH` per colour channel at
+its top); its 25-tap kernel matches the values in Jimenez's demo.
+
+Why R11G11B10F only for the result: accumulating the skin's light into a separate R11G11B10F
+target with hardware blending would need a second render target in every light pass, including
+the mods' light shaders. The accumulator's alpha already gives room for the split (the legacy
+pipeline keeps its specular there the same way), so the light passes write nothing extra. The
+R11G11B10F target holds the blurred result that `combine_1` reads once (32 bits a pixel instead
+of 64).
+
+Caveats:
+
+- Untested in game. Shaders compile with DXC on the vanilla stack and on SSS + ES + the October
+  2026 Atmospherics with the generated overlay (no new errors, with and without
+  `USE_SKIN_SSS`); the engine files pass `tools/check_cpp.py` with no new errors.
+- Only direct light scatters. The ambient (IBL) diffuse and the r2 static sun are added in
+  `combine_1` after the blur.
+- The specular colour of a skin pixel comes from its total diffuse light: exact for one light,
+  a mix with several differently coloured lights on the same pixel.
+- A skin pixel that no light pass reaches at all is not marked: it is neither blurred nor used as
+  a neighbour. Shadowed pixels are still marked (the sun pass covers the screen).
+- Each light adds a tiny marker (1e-4) to the stored specular; one is removed again, so N lights
+  on a pixel leave (N - 1) x 1e-4 of extra specular.
+- World geometry closer than 1.2 m with a subsurface value is treated as first-person too.
+- The packs and the overlay must be regenerated with this branch's tools (CI does). Light shaders
+  from an older overlay write skin pixels the old way (unmarked): they then simply get no
+  scattering, since `combine_1` and the blur only resolve marked pixels.

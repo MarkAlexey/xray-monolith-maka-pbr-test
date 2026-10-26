@@ -89,6 +89,10 @@
 #define		r2_RT_sslr_color		"$user$sslr_color"	// combine_1 output of the last MAIN-view frame (RGBA8, the colour SSLR reflects)
 #define		r2_RT_sslr_pos_old		"$user$sslr_pos_old"	// G-buffer positions of the last main-view frame (history validation)
 
+// Monolith: skin subsurface scattering (r4_rendertarget_phase_skin_sss.cpp, skin_sss.h)
+#define		r2_RT_skin_sss_tmp		"$user$skin_sss_tmp"	// RGBA16F: horizontally blurred skin irradiance, a = view depth (0 = not skin)
+#define		r2_RT_skin_sss			"$user$skin_sss"		// R11G11B10F: blurred skin irradiance, read by combine_1 as s_skin_sss
+
 // Monolith: IX-Ray VSLR (offscreen reflections, r4_rendertarget_phase_vslr.cpp)
 #define		r2_RT_vslr_color		"$user$vslr_color"	// cubemap, R11G11B10F: linear radiance of the scene around the camera
 #define		r2_RT_vslr_dist			"$user$vslr_dist"	// cubemap, R16F: distance from the camera (cleared to "far")

@@ -321,6 +321,9 @@
     <ClInclude Include="blender_sslr.h">
       <Filter>Shading templates</Filter>
     </ClInclude>
+    <ClInclude Include="blender_skin_sss.h">
+      <Filter>Shading templates</Filter>
+    </ClInclude>
     <ClInclude Include="dx11MinMaxSMBlender.h">
       <Filter>Shading templates</Filter>
     </ClInclude>
@@ -960,6 +963,9 @@
     <ClCompile Include="blender_sslr.cpp">
       <Filter>Shading templates</Filter>
     </ClCompile>
+    <ClCompile Include="blender_skin_sss.cpp">
+      <Filter>Shading templates</Filter>
+    </ClCompile>
     <ClCompile Include="dx11HDAOCSBlender.cpp">
       <Filter>Shading templates</Filter>
     </ClCompile>
@@ -1084,6 +1090,9 @@
       <Filter>Core_Target</Filter>
     </ClCompile>
     <ClCompile Include="r4_rendertarget_phase_sslr.cpp">
+      <Filter>Core_Target</Filter>
+    </ClCompile>
+    <ClCompile Include="r4_rendertarget_phase_skin_sss.cpp">
       <Filter>Core_Target</Filter>
     </ClCompile>
     <ClCompile Include="r4_rendertarget_phase_vslr.cpp">

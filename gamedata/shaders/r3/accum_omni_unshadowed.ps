@@ -28,10 +28,10 @@ float4 main ( float4 tc:TEXCOORD0, float4 pos2d : SV_Position ) : SV_Target
 	float4 light = plight_local( m, _P, _N, _C, Ldynamic_pos, Ldynamic_pos.w, rsqr );
 	
 #ifdef PBR_GBUFFER
-	// IX-Ray PBR pixel: linear radiance, no separate specular
+	// IX-Ray PBR pixel: linear radiance, no separate specular (skin: diffuse and specular apart, pbr_accum)
 	pbr_material pm = pbr_load_unified( GLD_P(tcProj, pos2d, ISAMPLE), _C, m );
 	[branch] if( pm.enabled )
-		return float4( pbr_light_local( pm, gbd.P, _N.xyz, Ldynamic_pos, Ldynamic_color.rgb ), 0 );
+		return pbr_accum( pm, gbd.P, pbr_light_local_split( pm, gbd.P, _N.xyz, Ldynamic_pos, Ldynamic_color.rgb ), 1.0 );
 #endif
 
 	return float4(Ldynamic_color * light);

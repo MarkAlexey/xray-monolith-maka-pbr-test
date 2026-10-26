@@ -90,9 +90,17 @@ float4 pbr_hud_decode( inout surface_bumped S, float2 tc )
 }
 
 #ifdef PBR_GBUFFER
+// Per-texture subsurface value, for skin textures whose bump# blue channel is empty. In the
+// texture's .ltx, section [shaders_options]:
+//     SKIN_SSS = 0.8    0..1, replaces the bump# blue channel (subsurface) everywhere on it
+// It drives the sun's wrap-around translucency (pbr_ixray.h) and, on first-person models, the
+// skin subsurface scattering width (skin_sss.h, r4_skin_sss). Restart the game after editing.
 // The value deffer_base_bump.ps writes to the material target for PBR pixels
 float4 pbr_hud_surface( float4 pbr )
 {
+#ifdef SKIN_SSS
+	pbr.w = saturate( SKIN_SSS );
+#endif
 	return float4( pbr.x, pbr.y, pbr.z, 0.5 + 0.5 * pbr.w );
 }
 #endif

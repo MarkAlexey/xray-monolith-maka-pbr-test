@@ -277,6 +277,13 @@ float ps_r4_vslr_far = 0.4f; // r4_vslr_far, capture distance as a fraction of t
 float ps_r4_vslr_intensity = 1.0f; // r4_vslr_intensity, how strongly the capture replaces the sky reflection
 int ps_r4_vslr_localize = 2; // LEWD r4_vslr_localize: 0 = direction lookup (IX-Ray), 1..4 = distance-impostor refinement steps
 
+// Skin subsurface scattering (r4_rendertarget_phase_skin_sss.cpp, shaders r3\skin_sss*.h)
+int ps_r4_skin_sss = 1; // r4_skin_sss, needs a game restart (read in CRender::create)
+float ps_r4_skin_sss_width = 0.012f; // r4_skin_sss_width, scatter width in metres (view space) at subsurface 1
+float ps_r4_skin_sss_strength = 1.0f; // r4_skin_sss_strength, 0 = unblurred, 1 = full scattering
+int ps_r4_skin_sss_debug = 0; // r4_skin_sss_debug, 1 = skin mask, 2 = blurred light, 3 = what scattering changed
+int ps_r4_skin_sss_timer = 0; // r4_skin_sss_timer, 1 = log the blur's GPU time every 120 frames
+
 // IX-Ray CSM
 int ps_r4_sun_csm = 1; // r4_sun_csm, needs a game restart (read in CRender::create)
 float ps_r4_sun_csm_blend = 0.1f; // cross-fade band between cascades, fraction of a cascade
@@ -1453,6 +1460,13 @@ void xrRender_initconsole()
 	CMD4(CCC_Float, "r4_vslr_far", &ps_r4_vslr_far, 0.05f, 1.f);
 	CMD4(CCC_Float, "r4_vslr_intensity", &ps_r4_vslr_intensity, 0.f, 1.f);
 	CMD4(CCC_Integer, "r4_vslr_localize", &ps_r4_vslr_localize, 0, 4);
+
+	// Skin subsurface scattering
+	CMD4(CCC_Integer, "r4_skin_sss", &ps_r4_skin_sss, 0, 1);
+	CMD4(CCC_Float, "r4_skin_sss_width", &ps_r4_skin_sss_width, 0.f, 0.1f);
+	CMD4(CCC_Float, "r4_skin_sss_strength", &ps_r4_skin_sss_strength, 0.f, 1.f);
+	CMD4(CCC_Integer, "r4_skin_sss_debug", &ps_r4_skin_sss_debug, 0, 3);
+	CMD4(CCC_Integer, "r4_skin_sss_timer", &ps_r4_skin_sss_timer, 0, 1);
 
 	// IX-Ray CSM
 	CMD4(CCC_Integer, "r4_sun_csm", &ps_r4_sun_csm, 0, 1);

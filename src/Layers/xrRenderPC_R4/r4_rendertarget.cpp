@@ -2,6 +2,7 @@
 #include "../xrRender/resourcemanager.h"
 #include "blender_light_occq.h"
 #include "blender_sslr.h"
+#include "blender_skin_sss.h"
 #include "blender_accum_csm.h"
 #include "blender_light_mask.h"
 #include "blender_light_direct.h"
@@ -526,6 +527,9 @@ CRenderTarget::CRenderTarget()
 	b_sslr = xr_new<CBlender_sslr>();
 	b_vslr = xr_new<CBlender_vslr>();
 
+	// Skin subsurface scattering
+	b_skin_sss = xr_new<CBlender_skin_sss>();
+
 	// HDAO
 	b_hdao_cs = xr_new<CBlender_CS_HDAO>();
 	if (RImplementation.o.dx10_msaa)
@@ -1035,6 +1039,17 @@ CRenderTarget::CRenderTarget()
 		s_sslr.create(b_sslr);
 	}
 
+	// Skin subsurface scattering: an RGBA16F and an R11G11B10F target at scene resolution
+	// (~18 MB at 4K, ~5 MB at 1080p). D3DFMT_V16U16 maps to DXGI_FORMAT_R11G11B10_FLOAT
+	// (dx10TextureUtils.cpp).
+	if (RImplementation.o.skin_sss)
+	{
+		u32 w = dlss::RenderWidth(), h = dlss::RenderHeight();
+		rt_skin_sss_tmp.create(r2_RT_skin_sss_tmp, w, h, D3DFMT_A16B16G16R16F, 1);
+		rt_skin_sss.create(r2_RT_skin_sss, w, h, D3DFMT_V16U16, 1);
+		s_skin_sss.create(b_skin_sss);
+	}
+
 	// IX-Ray VSLR: two cubemaps, a depth face and the panorama (r4_rendertarget_phase_vslr.cpp)
 	if (RImplementation.o.vslr)
 	{
@@ -1534,6 +1549,8 @@ CRenderTarget::~CRenderTarget()
 
 	xr_delete(b_hdao_cs);
 	xr_delete(b_sslr);
+	release_skin_sss_timer();
+	xr_delete(b_skin_sss);
 	destroy_vslr();
 	xr_delete(b_vslr);
 	if (RImplementation.o.dx10_msaa)

@@ -48,6 +48,7 @@ void CBlender_combine::Compile(CBlender_Compile& C)
 		C.r_dx10Texture("s_env_fwd", r2_RT_vslr_env); // IX-Ray VSLR (only declared with USE_OFFSCREEN_REFLECTIONS)
 		C.r_dx10Texture("s_env_dist", r2_RT_vslr_envdist); // LEWD: localized VSLR (same condition)
 		C.r_dx10Texture("s_half_depth", r2_RT_half_depth);
+		C.r_dx10Texture("s_skin_sss", r2_RT_skin_sss); // skin subsurface scattering (only declared with USE_SKIN_SSS, no MSAA)
 
 		C.r_dx10Texture("ssfx_ao", r2_RT_ssfx_temp);
 		C.r_dx10Texture("ssfx_il", r2_RT_ssfx_temp2);

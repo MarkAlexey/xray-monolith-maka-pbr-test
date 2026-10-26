@@ -249,6 +249,113 @@ float3 pbr_light_sun( pbr_material M, float3 P, float3 N, float3 light_dir, floa
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////
+// The same lights split into diffuse and specular, for the light accumulator (pbr_accum).
+// Skin subsurface scattering (skin_sss.h) blurs the diffuse part of skin pixels before the
+// albedo is applied, so it must reach the accumulator separately. For every other pixel
+// pbr_accum() returns diff * albedo + spec, which is exactly what the float3 functions above
+// return (ixr_brdf() = lerp( diffuse, specular, F ) = diffuse * ( 1 - F ) + specular * F).
+
+struct pbr_split
+{
+	float3	diff;	// diffuse irradiance x ( 1 - Fresnel ), linear, albedo NOT applied
+	float3	spec;	// specular radiance, linear
+};
+
+pbr_split pbr_split_diffuse( float3 irradiance )
+{
+	pbr_split S;
+	S.diff	= irradiance;
+	S.spec	= 0;
+	return S;
+}
+
+pbr_split pbr_direct_split( pbr_material M, float3 color, float3 L, float3 N, float3 V )
+{
+	float3 H	= normalize( L + V );
+
+	float NdotL	= max( 0.0, dot( N, -L ) );
+	float NdotH	= max( 0.0, dot( N, -H ) );
+	float NdotV	= max( 0.0, dot( N, -V ) );
+	float HdotV	= max( 0.0, dot( H, V ) );
+
+	float  D	= ixr_D_GGX( NdotH, M.roughness );
+	float  G	= ixr_G_Smith( NdotL, NdotV, M.roughness );
+	float3 F	= ixr_F_Schlick( M.specular, HdotV );
+	float3 li	= pbr_to_linear( color ) * NdotL;
+
+	pbr_split S;
+	S.diff	= li * ( 1.0 - F );
+	S.spec	= li * ( 0.25 * D * G ) * F;
+	return S;
+}
+
+// pbr_translucency() / pbr_legacy_translucency() without the albedo: diffuse light only
+float3 pbr_translucency_irradiance( pbr_material M, float3 color, float3 L, float3 N )
+{
+	float NdotL		= dot( L, N );
+	float scale		= 0.36 * NdotL;
+
+	float att		= scale + 0.0769; att *= att * 1.171;
+	float factor	= 1.0 - saturate( abs( scale ) * 13.0 - 1.0 );
+
+	float sss		= lerp( saturate( NdotL ), att, factor * factor );
+	return pbr_to_linear( color * saturate( 3.5 * sss + 0.1 ) ) * M.sss;
+}
+
+float3 pbr_legacy_translucency_irradiance( pbr_material M, float3 color, float3 L, float3 N, float3 V )
+{
+#ifdef PBR_UNIFIED
+	[branch] if( M.flora )
+		return pbr_to_linear( color ) * SSS( N, -V, -L );
+#endif
+	return 0;
+}
+
+// pbr_light_local() split
+pbr_split pbr_light_local_split( pbr_material M, float3 P, float3 N, float4 light_pos, float3 color )
+{
+	float3 L2P	= P - light_pos.xyz;
+	float3 L	= normalize( L2P );
+	N			= normalize( N );
+	float3 V	= normalize( P );
+	float att	= pbr_attenuation( L2P, light_pos.w );
+
+	pbr_split S	= pbr_direct_split( M, color, L, N, V );
+	S.diff		= ( S.diff + pbr_legacy_translucency_irradiance( M, color, L, N, V ) ) * att;
+	S.spec		*= att;
+	return S;
+}
+
+// pbr_light_sun() split
+pbr_split pbr_light_sun_split( pbr_material M, float3 P, float3 N, float3 light_dir, float3 color )
+{
+	N = normalize( N );
+	float3 L = normalize( light_dir );
+	float3 V = normalize( P );
+
+	pbr_split S	= pbr_direct_split( M, color, L, N, V );
+	S.diff		+= pbr_translucency_irradiance( M, color, L, N ) + pbr_legacy_translucency_irradiance( M, color, L, N, V );
+	return S;
+}
+
+#include "skin_sss.h"	// screen-space skin subsurface scattering (USE_SKIN_SSS, r4_skin_sss)
+
+// What a light pass writes to the accumulator for a PBR pixel. k = everything the light is
+// multiplied by after the BRDF (shadow, projector colour, attenuation the caller applies).
+//  - skin (skin_sss.h): rgb = diffuse irradiance, a = -( specular luminance + mark )
+//  - otherwise: rgb = linear radiance, a = 0 (as before)
+float4 pbr_accum( pbr_material M, float3 P, pbr_split S, float3 k )
+{
+	float3 d	= S.diff * k;
+	float3 s	= S.spec * k;
+#ifdef PBR_SKIN_SSS
+	[branch] if( skin_sss_is_skin( M.sss, P.z ) )
+		return float4( d, -( skin_sss_luma( s ) + SKIN_SSS_MARK ) );
+#endif
+	return float4( d * M.diffuse + s, 0 );
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////
 // Ambient / image based lighting (metalic_roughness_ambient.hlsli), combine_1 only.
 // Needs env_s0, env_s1 and env_color from hmodel.h.
 

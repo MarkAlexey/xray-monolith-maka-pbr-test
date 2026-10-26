@@ -88,7 +88,11 @@ _out main ( _input I, uint iSample : SV_SAMPLEINDEX )
 	pbr_material pm = pbr_load_unified( GLD_P(I.tc0, I.pos2d, ISAMPLE), D, pbr_m );
 	float3 pbr_light = L.rgb;
 #ifdef PBR_ES
-	pbr_light += L.a * pbr_to_linear( D.rgb );	// Enhanced Shaders keeps self-illumination in alpha
+	pbr_light += max( L.a, 0.0 ) * pbr_to_linear( D.rgb );	// Enhanced Shaders keeps self-illumination in alpha (skin: negative, skin_sss.h)
+#endif
+#ifdef PBR_SKIN_SSS
+	// skin subsurface scattering: blurred diffuse x albedo + specular (skin_sss.h)
+	pbr_light = skin_sss_resolve( pm.sss, pm.diffuse, P.xyz, L, I.pos2d.xy ) + ( pbr_light - L.rgb );
 #endif
 #endif
 

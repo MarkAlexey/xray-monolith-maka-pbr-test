@@ -202,6 +202,27 @@ static class cl_sslr_params : public R_constant_setup
 	}
 } binder_sslr_params;
 
+// Skin subsurface scattering (skin_sss.h): x = scatter width (view-space metres), y = strength,
+// z unused, w = debug view
+static class cl_skin_sss_params : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_r4_skin_sss_width, ps_r4_skin_sss_strength, 0.f, float(ps_r4_skin_sss_debug));
+	}
+} binder_skin_sss_params;
+
+// Skin subsurface scattering: view-space units -> UV. xy = HUD projection _11 / 2, _22 / 2 (the
+// blur works on first-person models), zw = the same for the world projection
+static class cl_skin_sss_proj : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, Device.mProjectHud._11 * 0.5f, Device.mProjectHud._22 * 0.5f,
+			Device.mProject._11 * 0.5f, Device.mProject._22 * 0.5f);
+	}
+} binder_skin_sss_proj;
+
 // IX-Ray VSLR, read by pbr_ixray.h (s_env_fwd): x = intensity, y = mip count of the panorama
 // (roughness picks the mip), z = capture distance in metres (fog weight), w unused
 static class cl_vslr_params : public R_constant_setup
@@ -604,6 +625,12 @@ void CRender::create()
 		&& FS.exist(fn, "$game_shaders$", "r3\\deffer_vslr_bump", ".ps");
 	Msg("- IX-Ray VSLR %s", o.vslr ? "ON" : (ps_r4_vslr_enable && o.dx10_msaa ? "OFF (MSAA)" : "OFF"));
 
+	// Skin subsurface scattering: needs its blur shaders and the PBR material target; the blur
+	// reads the single-sampled G-buffer, so not with MSAA (r4_rendertarget_phase_skin_sss.cpp)
+	o.skin_sss = (ps_r4_skin_sss != 0) && !o.dx10_msaa && FS.exist(fn, "$game_shaders$", "r3\\skin_sss_blur_h", ".ps")
+		&& FS.exist(fn, "$game_shaders$", "r3\\skin_sss_blur_v", ".ps");
+	Msg("- Skin SSS %s", o.skin_sss ? "ON" : (ps_r4_skin_sss && o.dx10_msaa ? "OFF (MSAA)" : "OFF"));
+
 	// IX-Ray single-pass cascaded sun (r4_rendertarget_accum_csm.cpp)
 	o.sun_csm = (ps_r4_sun_csm != 0) && !o.dx10_msaa && !o.sunfilter && o.HW_smap && FS.exist(fn, "$game_shaders$", "r3\\accum_sun_csm", ".ps");
 	Msg("- IX-Ray CSM %s", o.sun_csm ? "ON" : "OFF");
@@ -614,6 +641,8 @@ void CRender::create()
 	RM->RegisterConstantSetup("water_intensity", &binder_water_intensity);
 	RM->RegisterConstantSetup("sslr_params", &binder_sslr_params);
 	RM->RegisterConstantSetup("vslr_params", &binder_vslr_params);
+	RM->RegisterConstantSetup("skin_sss_params", &binder_skin_sss_params);
+	RM->RegisterConstantSetup("skin_sss_proj", &binder_skin_sss_proj);
 	RM->RegisterConstantSetup("vslr_center", &binder_vslr_center);
 	RM->RegisterConstantSetup("sun_shafts_intensity", &binder_sun_shafts_intensity);
 	RM->RegisterConstantSetup("m_AlphaRef", &binder_alpha_ref);
@@ -2180,6 +2209,17 @@ HRESULT CRender::shader_compile(
 		def_it++;
 	}
 	sh_name[len] = '0' + char(o.vslr);
+	++len;
+
+	// Skin subsurface scattering: light shaders store skin pixels split, combine_1 resolves them
+	// (skin_sss.h, pbr_ixray.h)
+	if (o.skin_sss)
+	{
+		defines[def_it].Name = "USE_SKIN_SSS";
+		defines[def_it].Definition = "1";
+		def_it++;
+	}
+	sh_name[len] = '0' + char(o.skin_sss);
 	++len;
 
 	//Be carefull!!!!! this should be at the end to correctly generate

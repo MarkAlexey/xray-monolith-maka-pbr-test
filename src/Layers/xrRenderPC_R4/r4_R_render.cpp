@@ -395,6 +395,11 @@ void CRender::Render()
 
 	phase = PHASE_NORMAL;
 
+	// Skin subsurface scattering: blur the skin's diffuse light before combine_1 reads it
+	// (r4_rendertarget_phase_skin_sss.cpp)
+	if (RImplementation.o.skin_sss)
+		Target->phase_skin_sss();
+
 	// Postprocess
 	{
 		PIX_EVENT_C(DEFER_LIGHT_COMBINE, dx10_marker_lights);

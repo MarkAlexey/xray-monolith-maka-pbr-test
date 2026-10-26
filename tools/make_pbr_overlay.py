@@ -61,7 +61,7 @@ Caveats
     the game and silently undo a patched file. Check Mod Organizer's conflict tab: every overlay
     file must be "winning".
   - Headers only this repository ships (pbr_ixray.h, pbr_hud.h, ixray_brdf.h, sslr_*.h,
-    hdr_ibl.h) are copied in when INCLUDE_REPO_HEADERS is on, so the overlay matches the PBR
+    hdr_ibl.h, skin_sss*.h) are copied in when INCLUDE_REPO_HEADERS is on, so the overlay matches the PBR
     code it was made with. They are also in the exe's gamedata archive: if you update the exe
     later, regenerate the overlay (or turn the option off and rely on the exe's copies).
   - Under SSS's sload.h, PBR textures get no POM / parallax and no detail bump (see pbr_hud.h);
@@ -101,7 +101,7 @@ PATCH_GRASS_INST = True
 # Copy this repository's PBR-only headers into the overlay (see the caveat above).
 INCLUDE_REPO_HEADERS = True
 REPO_HEADERS = ["pbr_ixray.h", "pbr_hud.h", "ixray_brdf.h", "hdr_ibl.h", "sslr_apply.h", "sslr_settings.h",
-                "vslr_common.h"]
+                "vslr_common.h", "skin_sss.h", "skin_sss_kernel.h"]
 
 # Files whose failure stops the run: without them PBR textures are wrong. Any other file that
 # fails is left out with a warning.

@@ -6,6 +6,7 @@
 #include "../xrRender/light_db.h"
 class light;
 struct RecordedLight;
+struct skin_sss_timer; // r4_rendertarget_phase_skin_sss.cpp
 
 //#define DU_SPHERE_NUMVERTEX 92
 //#define DU_SPHERE_NUMFACES	180
@@ -70,6 +71,7 @@ public:
 	IBlender* b_hdao_cs;
 	IBlender* b_sslr = nullptr; // IX-Ray SSLR
 	IBlender* b_vslr = nullptr; // IX-Ray VSLR panorama
+	IBlender* b_skin_sss = nullptr; // skin subsurface scattering blur
 	IBlender* b_hdao_msaa_cs;
 
 	// [SSS Stuff]
@@ -257,6 +259,12 @@ private:
 	ref_rt rt_sslr_pos_old; // last main-view frame's G-buffer positions
 	ref_shader s_sslr;
 	u32 sslr_history_frame = u32(-1); // frame the SSLR history was last written, -1 = invalid
+
+	// Skin subsurface scattering (see r4_rendertarget_phase_skin_sss.cpp)
+	ref_rt rt_skin_sss_tmp;
+	ref_rt rt_skin_sss;
+	ref_shader s_skin_sss;
+	skin_sss_timer* skin_sss_gpu_timer = nullptr; // r4_skin_sss_timer, GPU time of the blur
 
 public: // read by CRender::render_reflections() and binder_vslr_params
 	// IX-Ray VSLR (see r4_rendertarget_phase_vslr.cpp). Created by hand like the CSM array:
@@ -478,6 +486,8 @@ public:
 	void phase_ssao();
 	void phase_hdao();
 	void phase_sslr(); // IX-Ray SSLR
+	void phase_skin_sss(); // skin subsurface scattering blur, before combine_1
+	void release_skin_sss_timer();
 	// IX-Ray VSLR (r4_rendertarget_phase_vslr.cpp)
 	void create_vslr(u32 size);
 	void destroy_vslr();
