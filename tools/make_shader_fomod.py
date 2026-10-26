@@ -14,10 +14,12 @@ zips is easy; this tool puts them in one FOMOD that asks two questions and insta
 
 Layout inside the zip (what Mod Organizer sees):
   fomod/info.xml, fomod/ModuleConfig.xml
-  docs/                          README.txt plus each variant's own README / PACK_REPORT
+  docs/                          only with INSTALL_DOCS: README.txt plus each variant's own
+                                 README / PACK_REPORT
   variants/<id>/gamedata/...     one folder per variant: overlay, full, overlay_dlss, full_dlss
-The chosen variant's gamedata/ lands in the mod's gamedata/; docs/ is always installed into
-"PBR shaders - Instructions" (no game files there).
+The chosen variant's gamedata/ lands in the mod's gamedata/. With INSTALL_DOCS on, docs/ is also
+installed into DOCS_DEST ("PBR shaders - Instructions", no game files there); off (default), the
+installer holds game files only and the instructions live wherever you keep them.
 
 Usage
   python make_shader_fomod.py --overlay plain/PBR_overlay_GAMMA.zip --full plain/PBR_shaders_GAMMA.zip \\
@@ -52,6 +54,7 @@ from xml.sax.saxutils import escape
 MOD_NAME = "PBR shaders (GAMMA)"
 AUTHOR = "MarkAlexey / xray-monolith-maka-pbr-test"
 WEBSITE = "https://github.com/MarkAlexey/xray-monolith-maka-pbr-test"
+INSTALL_DOCS = False                        # ship docs/ and install it into DOCS_DEST
 DOCS_DEST = "PBR shaders - Instructions"     # folder in the mod for the docs (not game files)
 
 # Variant id -> (install type flag, dlss flag, label)
@@ -149,7 +152,8 @@ def module_config(variants, with_dlss):
             '<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
             'xsi:noNamespaceSchemaLocation="http://qconsulting.ca/fo3/ModConfig5.0.xsd">'
             f'<moduleName>{escape(MOD_NAME)}</moduleName>'
-            f'<requiredInstallFiles><folder source="docs" destination="{escape(DOCS_DEST)}" priority="0"/></requiredInstallFiles>'
+            + (f'<requiredInstallFiles><folder source="docs" destination="{escape(DOCS_DEST)}" priority="0"/></requiredInstallFiles>'
+               if INSTALL_DOCS else '') +
             f'<installSteps order="Explicit">{"".join(steps)}</installSteps>'
             f'<conditionalFileInstalls><patterns>{"".join(patterns)}</patterns></conditionalFileInstalls>'
             '</config>\n')
@@ -203,12 +207,13 @@ def main():
     with zipfile.ZipFile(a.out, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("fomod/info.xml", info_xml(a.version))
         z.writestr("fomod/ModuleConfig.xml", module_config(list(sources), with_dlss))
-        z.writestr("docs/README.txt", readme.replace("\n", "\r\n"))
+        if INSTALL_DOCS:
+            z.writestr("docs/README.txt", readme.replace("\n", "\r\n"))
         for vid, (files, _) in packs.items():
             for rel, data in files.items():
                 if rel.lower().startswith("gamedata/"):
                     z.writestr(f"variants/{vid}/{rel}", data)
-                else:
+                elif INSTALL_DOCS:
                     z.writestr(f"docs/{vid}_{rel}", data)
     print(f"wrote {a.out}")
     return 0

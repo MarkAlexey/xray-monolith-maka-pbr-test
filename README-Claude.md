@@ -1220,10 +1220,11 @@ made by `tools/make_shader_fomod.py` from `build_shader_packs.py`'s zips:
   patch's `DLSS_PATCH_COMPONENTS`) or **Without** (plain GAMMA stack). The overlay variant needs
   brodrigz's patch installed below it; the full pack contains the DLSS shaders itself (the menu
   script and strings are in the db0), so the patch is optional there.
-- Inside: `fomod/`, `variants/{overlay,full,overlay_dlss,full_dlss}/gamedata/`, and `docs/`
-  (a README plus each variant's README / PACK_REPORT), which always installs into
-  "PBR shaders - Instructions" in the mod folder. brodrigz's patch stays a separate, unchanged
-  download.
+- Inside: `fomod/` and `variants/{overlay,full,overlay_dlss,full_dlss}/gamedata/`: game files
+  only. The installer used to also install a `docs/` folder (a README plus each variant's README /
+  PACK_REPORT) as "PBR shaders - Instructions" in the mod folder; that is off now
+  (`INSTALL_DOCS` in `tools/make_shader_fomod.py` brings it back). brodrigz's patch stays a
+  separate, unchanged download.
 
 CI: the shader job runs `build_shader_packs.py` once into `shader_packs/plain` and, on `-dlss`
 branches, once more with the top layers into `shader_packs/dlss`, then wraps them; only the FOMOD
