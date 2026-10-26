@@ -1187,9 +1187,13 @@ are), so a missing patch is reported instead of half-working. CI attaches brodri
 compatibility patch 0.5 unchanged, downloads `nvngx_dlss.dll` 310.9.1 from NVIDIA's repository
 (SHA-256 pinned) into `bin/`, and builds the GAMMA shader packs with the patch's `base` and
 Atmospherics components on top (`build_shader_packs.py --top-layer`, `DLSS_PATCH_COMPONENTS` in the
-workflow). The packs target the October 2026 Atmospherics update only: `atmos_2026_10`,
-`atmos_2026_10_ssr` and `atmos_2026_10_il`, which `tools/make_dlss_atmos_component.py` added to
-the patch from that Atmospherics' own shaders with brodrigz's DLSS edits (`atmos_rc7` for 2.69
+workflow). The packs target the October 2026 Atmospherics update only: `atmos_2026_10`
+(its AO, indirect light, SSR, SSS and terrain shaders), which `tools/make_dlss_atmos_component.py`
+added to the patch from that Atmospherics' own shaders with brodrigz's DLSS edits. Its SSR and IL
+files used to be optional installer ticks (page "2b"); left unticked, the base component's SSS
+`ssfx_ssr.ps` stayed and failed to compile against Atmospherics' `screenspace_reflections.h`
+(`SSFX_ScreenSpaceReflections: cannot convert output parameter from 'float4' to 'float'`), so
+they are now always part of `atmos_2026_10` (`atmos_rc7` for 2.69
 RC7.x and `base` alone for 2.68.93 remain possible values).
 
 Caveats:

@@ -20,15 +20,18 @@ brodrigz's edits (the same in every file he patched, read off his 0.5 components
   - Better Beef's NVGs: combine_2_naa.ps leaves the NVG lens out of the LUT
 
 Components written (id = --id, default atmos_2026_10):
-  <id>                    deffer_impl_flat.ps, ssfx_sss_ext.ps, ssfx_ao.ps  (always)
-  <id>_ssr                ssfx_ssr.ps        (only with Atmospherics' own SSR, ATMOS_SSR 1)
-  <id>_il                 ssfx_il.ps         (only with Atmospherics' own indirect light, ATMOS_IL 1)
+  <id>                    deffer_impl_flat.ps, ssfx_sss_ext.ps, ssfx_ao.ps, ssfx_il.ps, ssfx_ssr.ps
   better_beefs_<id>       combine_2_naa.ps   (with Better Beef's NVGs)
 A file your Atmospherics does not ship is left out (its component then has fewer files; a
 component left empty is not written and its installer option is not offered).
-The installer (fomod/ModuleConfig.xml) gets the new Atmospherics on page 2 and, when it is
-picked, a page "2b" with Atmospherics' SSR / indirect light choices (they must match what you
-picked in Atmospherics' own installer).
+The installer (fomod/ModuleConfig.xml) gets the new Atmospherics on page 2.
+
+ssfx_ssr.ps / ssfx_il.ps are always part of the main component: Atmospherics ships its own
+screenspace_reflections.h / IL whatever its ATMOS_SSR / ATMOS_IL choice (that choice is only a
+define in atmos_opt_ssr.h / atmos_opt_il.h). Its SSR function takes a "hemi" argument the SSS
+ssfx_ssr.ps in the base component does not pass, so leaving the base copy in place fails to
+compile ("SSFX_ScreenSpaceReflections: cannot convert output parameter from 'float4' to
+'float'"), and the base SSS ssfx_il.ps compiles but writes IL in the old format.
 
 Usage
   python make_dlss_atmos_component.py --atmos Atmospherics.7z|folder \\
@@ -43,8 +46,8 @@ Caveats
     "Motion_Vectors.xy" in a newer ssfx_*.ps by hand.
   - --check-against (a patch component, e.g. atmos_rc7) compares the files produced for the
     files that did not change between that Atmospherics and yours; a mismatch is reported.
-  - Atmospherics' "SSR / IL from SSS" choices: then its installer does not ship ssfx_ssr.ps /
-    ssfx_il.ps, the base component's SSS versions apply, and the 2b options must stay off.
+  - An Atmospherics that does not ship ssfx_ssr.ps / ssfx_il.ps at all: those files are left
+    out and the base component's SSS versions apply (right only if its headers are SSS's too).
 """
 
 import argparse
@@ -59,7 +62,7 @@ import zipfile
 # ------------------------------------------------------------------------------------------
 
 DEFAULT_ID = "atmos_2026_10"
-DEFAULT_LABEL = "Atmospherics, October 2026 update (Atmospherics SSR / IL options)"
+DEFAULT_LABEL = "Atmospherics, October 2026 update"
 INCLUDE = '#include "dlss_contract.h"\n'
 
 # file -> (component suffix, [(regex, replacement, expected count)], add the contract include)
@@ -81,10 +84,10 @@ RULES = {
     "ssfx_ao.ps": ("", [
         (r"(float2\s+ptc\s*=\s*)tc\s*-\s*Motion_Vectors\.xy\s*;", r"\1dlss_reproject(tc - Motion_Vectors.xy);", 1),
     ], True),
-    "ssfx_il.ps": ("_il", [
+    "ssfx_il.ps": ("", [
         (r"(float2\s+ptc\s*=\s*)tc\s*-\s*Motion_Vectors\.xy\s*;", r"\1dlss_reproject(tc - Motion_Vectors.xy);", 1),
     ], True),
-    "ssfx_ssr.ps": ("_ssr", [
+    "ssfx_ssr.ps": ("", [
         (r"(uv_rp\s*=\s*lerp\(\s*Motion_Vectors\.xy\s*,\s*uv_rp\s*,\s*HUD_mask\s*\))\s*;", r"\1 - dlss_history_offset();", 1),
         (r"s_prev_pos\.Sample\(\s*smp_linear\s*,\s*tc\s*-\s*Motion_Vectors\.xy\s*\)",
          "s_prev_pos.Sample(smp_linear, dlss_reproject(tc - Motion_Vectors.xy))", 1),
@@ -182,33 +185,13 @@ def patch_fomod(xml, cid, label, comps):
     flag = f"dlss_{cid}"
     files = [f'<folder source="components\\{cid}\\gamedata" destination="gamedata" priority="100" />',
              f'<file source="selections\\{cid}.txt" destination="DLSS Compatibility - Instructions\\Selected Atmospherics.txt" priority="0" />']
-    desc = (f"Choose this for {label}.\n\nOn the next page, tick the Atmospherics SSR / indirect light options you "
-            "picked in Atmospherics' own installer.\n\nKeep only one Atmospherics version enabled.")
+    desc = (f"Choose this for {label} (its own AO, indirect light, SSR, SSS and terrain shaders with DLSS "
+            "edits).\n\nKeep only one Atmospherics version enabled.")
     p = plugin_xml(label, desc, files, flag)
     anchor = "          </plugins>\n        </group>\n      </optionalFileGroups>\n    </installStep>\n    <installStep name=\"3."
     if xml.count(anchor) != 1:
         sys.exit("error: fomod: the end of page 2 (before page 3) not found; nothing written")
     xml = xml.replace(anchor, p + anchor, 1)
-    sub = []
-    if f"{cid}_ssr" in comps:
-        sub.append(plugin_xml("Atmospherics SSR (ATMOS_SSR 1)",
-                              "Tick if Atmospherics' installer uses Atmospherics' own screen-space reflections.",
-                              [f'<folder source="components\\{cid}_ssr\\gamedata" destination="gamedata" priority="110" />'],
-                              kind="Recommended", indent="              "))
-    if f"{cid}_il" in comps:
-        sub.append(plugin_xml("Atmospherics indirect light (ATMOS_IL 1)",
-                              "Tick if Atmospherics' installer uses Atmospherics' own indirect light.",
-                              [f'<folder source="components\\{cid}_il\\gamedata" destination="gamedata" priority="110" />'],
-                              kind="Recommended", indent="              "))
-    if sub:
-        step = ('    <installStep name="2b. Atmospherics rendering choices">\n'
-                f'      <visible>\n        <flagDependency flag="{flag}" value="On" />\n      </visible>\n'
-                '      <optionalFileGroups order="Explicit">\n'
-                '        <group name="Match Atmospherics\' own installer" type="SelectAny">\n'
-                '          <plugins order="Explicit">\n' + "".join(sub) +
-                '          </plugins>\n        </group>\n      </optionalFileGroups>\n    </installStep>\n')
-        a3 = '    <installStep name="3.'
-        xml = xml.replace(a3, step + a3, 1)
     if f"better_beefs_{cid}" in comps:
         pat = ("      <pattern>\n        <dependencies operator=\"And\">\n"
                f"          <flagDependency flag=\"{flag}\" value=\"On\" />\n"
@@ -267,8 +250,7 @@ def main():
     sel = f"Selected: {a.label}.\r\nPatch: 0.5 + PBR-Test {a.id} (tools/make_dlss_atmos_component.py)\r\n"
     readme_add = (f"\r\n{a.label.upper()}\r\n" + "-" * len(a.label) + "\r\n"
                   f"Added by the PBR-Test build (tools/make_dlss_atmos_component.py): brodrigz's DLSS edits\r\n"
-                  f"applied to that Atmospherics' own AO / SSS / terrain shaders and, if you use them, its own\r\n"
-                  f"SSR and indirect light (page 2b of the installer: match Atmospherics' own choices).\r\n")
+                  f"applied to that Atmospherics' own AO / indirect light / SSR / SSS / terrain shaders.\r\n")
     if a.dry_run:
         print(f"[dry-run] would write {a.out_zip}: {', '.join(sorted(comps))}, selections/{a.id}.txt, fomod, README")
         return 0

@@ -30,7 +30,7 @@
 #     FSR3 is built into the exe and needs no DLL.
 #   - The DLSS / FSR3 shader compatibility patch (brodrigz, .github/pbr-release/dlss/) is
 #     attached to the release; the in-game DLSS/FSR3 shaders come only from it. It is brodrigz's
-#     0.5 plus components for the October 2026 Atmospherics update (atmos_2026_10, _ssr, _il,
+#     0.5 plus components for the October 2026 Atmospherics update (atmos_2026_10,
 #     better_beefs_atmos_2026_10), made by tools/make_dlss_atmos_component.py from that
 #     Atmospherics' own shaders with his DLSS edits.
 #   - The shader packs are built twice, for the plain GAMMA stack and with that patch's
@@ -123,11 +123,10 @@ env:
   # Patch components stacked on top of the GAMMA shader sources, lowest first. "base" is the
   # SSS 23.5 part; then the Atmospherics components matching the sources repository's
   # atmospherics/. The packs target the October 2026 Atmospherics update only (it is faster;
-  # the older versions are not supported by these packs): "atmos_2026_10", plus
-  # "atmos_2026_10_ssr" / "atmos_2026_10_il" because its installer was run with Atmospherics'
-  # own SSR / indirect light (drop one if the sources use SSS's instead). Other values:
-  # "atmos_rc7" for 2.69 RC7.x, nothing for 2.68.93.
-  DLSS_PATCH_COMPONENTS: base atmos_2026_10 atmos_2026_10_ssr atmos_2026_10_il
+  # the older versions are not supported by these packs): "atmos_2026_10" (its AO, IL, SSR, SSS
+  # and terrain shaders; Atmospherics' SSR / IL files are needed whatever its ATMOS_SSR /
+  # ATMOS_IL choice). Other values: "atmos_rc7" for 2.69 RC7.x, nothing for 2.68.93.
+  DLSS_PATCH_COMPONENTS: base atmos_2026_10
 
 jobs:
   pack_gamedata:
