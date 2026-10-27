@@ -6,9 +6,11 @@
 // Output:  u_sslr_temp rgb = resolved colour, a = resolved confidence
 //
 // Reuses the rays of neighbouring pixels, weighted by how likely THIS pixel's GGX lobe would
-// have produced them (IX-Ray's sslr_filter: D(NdotH) of the neighbour's hit as seen from
-// here), plus depth and normal similarity so reflections do not bleed across edges. The
-// radius grows with roughness; mirrors keep their own ray.
+// have produced them (SSLR_RESOLVE_BRDF 1: D x G x N.L of the neighbour's hit direction as
+// seen from here, Stachowiak's ray reuse as in IX-Ray develop; 0: IX-Ray 1.6's D x N.H), with
+// optional 1 / (1 + luminance) against fireflies (SSLR_RESOLVE_FIREFLY), plus depth and normal
+// similarity so reflections do not bleed across edges. The radius grows with roughness;
+// mirrors keep their own ray.
 //////////////////////////////////////////////////////////////////////////////////////////
 
 #include "sslr_common.h"
@@ -78,7 +80,16 @@ void main( uint3 DTid : SV_DispatchThreadID )
 			L			= ll > 1e-4 ? L / ll : N;
 			float3 Hh	= normalize( L + V );
 			float  NdotH = saturate( dot( N, Hh ) );
+#if SSLR_RESOLVE_BRDF
+			float  NdotL = saturate( dot( N, L ) );
+			float  NdotV = max( 1e-4, dot( N, V ) );
+			float  w	= max( sslr_D_GGX( NdotH, rough ) * sslr_G_Smith( NdotL, NdotV, rough ) * NdotL, 1e-5 ) * wg * s.a;
+#else
 			float  w	= max( sslr_D_GGX( NdotH, rough ) * NdotH, 1e-5 ) * wg * s.a;
+#endif
+#if SSLR_RESOLVE_FIREFLY
+			w			*= rcp( 1.0 + sslr_luminance( s.rgb ) );
+#endif
 
 			sum_c.rgb	+= s.rgb * w;
 			sum_cw		+= w;

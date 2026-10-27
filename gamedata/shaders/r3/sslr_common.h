@@ -220,4 +220,14 @@ float sslr_D_GGX( float NdotH, float roughness )
 	return alpha2 * rcp( divider * divider );
 }
 
+// IX-Ray Smith geometry term (same as ixray_brdf.h ixr_G_Smith), for the resolve's lobe weight
+float sslr_G_Smith( float NdotL, float NdotV, float roughness )
+{
+	float r = roughness + 1.0;
+	float k = r * r * 0.125;
+	return rcp( lerp( NdotL, 1.0, k ) ) * rcp( lerp( NdotV, 1.0, k ) );
+}
+
+float sslr_luminance( float3 c ) { return dot( c, float3( 0.2126, 0.7152, 0.0722 ) ); }
+
 #endif	//	SSLR_COMMON_H

@@ -192,6 +192,22 @@ float3 pbr_direct( pbr_material M, float3 color, float3 L, float3 N, float3 V )
 	return pbr_to_linear( color ) * NdotL * brdf;
 }
 
+// IX-Ray's translucency strength. IX-Ray 1.6: saturate( 3.5 * x + 0.1 ), whose 0.1 floor lights
+// the far side of every subsurface pixel ("glowing bushes"); IX-Ray develop (c83074a7) uses
+// saturate( 1.5 * x ). PBR_TRANSLUCENCY_GLOW_FIX 1 (default) = develop's, 0 = 1.6's.
+// The fixed curve is also weaker overall (about 0.4x where it is not clamped).
+#ifndef PBR_TRANSLUCENCY_GLOW_FIX
+#	define PBR_TRANSLUCENCY_GLOW_FIX 1
+#endif
+float pbr_translucency_curve( float x )
+{
+#if PBR_TRANSLUCENCY_GLOW_FIX
+	return saturate( 1.5 * x );
+#else
+	return saturate( 3.5 * x + 0.1 );
+#endif
+}
+
 // IX-Ray's cheap wrap-around translucency, used for the sun on SSS materials
 float3 pbr_translucency( pbr_material M, float3 color, float3 L, float3 N )
 {
@@ -202,7 +218,7 @@ float3 pbr_translucency( pbr_material M, float3 color, float3 L, float3 N )
 	float factor	= 1.0 - saturate( abs( scale ) * 13.0 - 1.0 );
 
 	float sss		= lerp( saturate( NdotL ), att, factor * factor );
-	return pbr_to_linear( color * saturate( 3.5 * sss + 0.1 ) ) * M.sss * M.diffuse;
+	return pbr_to_linear( color * pbr_translucency_curve( sss ) ) * M.sss * M.diffuse;
 }
 
 // Enhanced Shaders' flora translucency (SSS() from the installed common_brdf.h, including the
@@ -388,7 +404,7 @@ float3 pbr_translucency_irradiance( pbr_material M, float3 color, float3 L, floa
 	float factor	= 1.0 - saturate( abs( scale ) * 13.0 - 1.0 );
 
 	float sss		= lerp( saturate( NdotL ), att, factor * factor );
-	return pbr_to_linear( color * saturate( 3.5 * sss + 0.1 ) ) * M.sss;
+	return pbr_to_linear( color * pbr_translucency_curve( sss ) ) * M.sss;
 }
 
 float3 pbr_legacy_translucency_irradiance( pbr_material M, float3 color, float3 L, float3 N, float3 V )
@@ -398,6 +414,57 @@ float3 pbr_legacy_translucency_irradiance( pbr_material M, float3 color, float3 
 		return pbr_to_linear( color ) * SSS( N, -V, -L );
 #endif
 	return 0;
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////
+// Skin transmission (IX-Ray develop d97c480b, after Barre-Brisebois & Bouchard / Green,
+// "real-time approximations to subsurface scattering"): light passing through thin parts
+// towards the eye (fingers or the edge of the hand held against a light), view dependent,
+// which neither the blur (skin_sss.h) nor the ramps above produce. For PBR pixels with a
+// subsurface value, every light (IX-Ray: sun only):
+//     T = pow( saturate( dot( -V, L - N * DISTORTION ) ), POWER ) * SCALE
+// plus, for the sun with the ramp off, IX-Ray's wrap term at the shadow line
+//     saturate( ( N.L + WRAP ) / ( 1 + WRAP ) ) - saturate( N.L )
+// which then replaces IX-Ray 1.6's translucency (as in develop for non-foliage materials).
+// Both tinted by TINT, scaled by the subsurface value, added to the diffuse light (so the
+// blur scatters them too).
+// Caveats:
+//  - No thickness map: a thick palm transmits as much as a thin finger edge. The subsurface
+//    value is the only control per texture.
+//  - Shadow maps still multiply it: where the hand shadows its own far side from the light,
+//    the transmission is shadowed too, so it mostly shows on silhouettes and thin edges.
+//  - PBR_SKIN_TRANSMIT 0 = off (as before).
+#ifndef PBR_SKIN_TRANSMIT
+#	define PBR_SKIN_TRANSMIT 1
+#endif
+#ifndef PBR_SKIN_TRANSMIT_DISTORTION
+#	define PBR_SKIN_TRANSMIT_DISTORTION 0.3		// how far the normal bends the light direction
+#endif
+#ifndef PBR_SKIN_TRANSMIT_POWER
+#	define PBR_SKIN_TRANSMIT_POWER 4.0			// higher = tighter around looking into the light
+#endif
+#ifndef PBR_SKIN_TRANSMIT_SCALE
+#	define PBR_SKIN_TRANSMIT_SCALE 0.25
+#endif
+#ifndef PBR_SKIN_TRANSMIT_WRAP
+#	define PBR_SKIN_TRANSMIT_WRAP 0.5
+#endif
+#ifndef PBR_SKIN_TRANSMIT_TINT
+#	define PBR_SKIN_TRANSMIT_TINT float3( 1.0, 0.35, 0.2 )
+#endif
+
+bool pbr_skin_transmit_on( pbr_material M )
+{
+	return PBR_SKIN_TRANSMIT != 0 && M.sss > PBR_SKIN_RAMP_MIN;
+}
+
+// Diffuse irradiance (albedo not applied). L = light travel direction, V = eye -> point.
+float3 pbr_skin_transmit_irradiance( pbr_material M, float3 color, float3 L, float3 N, float3 V, bool wrap )
+{
+	float T		= pow( saturate( dot( -V, L - N * PBR_SKIN_TRANSMIT_DISTORTION ) ), PBR_SKIN_TRANSMIT_POWER ) * PBR_SKIN_TRANSMIT_SCALE;
+	float ndl	= dot( N, -L );
+	float W		= wrap ? saturate( ( ndl + PBR_SKIN_TRANSMIT_WRAP ) * rcp( 1.0 + PBR_SKIN_TRANSMIT_WRAP ) ) - saturate( ndl ) : 0.0;
+	return pbr_to_linear( color ) * PBR_SKIN_TRANSMIT_TINT * ( ( T + W ) * M.sss );
 }
 
 // pbr_light_local() split
@@ -410,7 +477,8 @@ pbr_split pbr_light_local_split( pbr_material M, float3 P, float3 N, float4 ligh
 	float att	= pbr_attenuation( L2P, light_pos.w );
 
 	pbr_split S	= pbr_direct_split( M, color, L, N, V );
-	S.diff		= ( S.diff + pbr_legacy_translucency_irradiance( M, color, L, N, V ) ) * att;
+	float3 trans = pbr_skin_transmit_on( M ) ? pbr_skin_transmit_irradiance( M, color, L, N, V, false ) : (float3)0.0;
+	S.diff		= ( S.diff + trans + pbr_legacy_translucency_irradiance( M, color, L, N, V ) ) * att;
 	S.spec		*= att;
 	return S;
 }
@@ -423,8 +491,13 @@ pbr_split pbr_light_sun_split( pbr_material M, float3 P, float3 N, float3 light_
 	float3 V = normalize( P );
 
 	pbr_split S	= pbr_direct_split( M, color, L, N, V );
-	// the skin ramp already wraps the light (pbr_diffuse_ndl): no second wrap from the translucency
-	float3 wrap	= pbr_skin_ramp_on( M ) ? (float3)0.0 : pbr_translucency_irradiance( M, color, L, N );
+	// the skin ramp already wraps the light (pbr_diffuse_ndl): no second wrap from the translucency.
+	// With skin transmission, its own wrap term (ramp off) replaces IX-Ray 1.6's translucency.
+	float3 wrap;
+	[branch] if( pbr_skin_transmit_on( M ) )
+		wrap	= pbr_skin_transmit_irradiance( M, color, L, N, V, !pbr_skin_ramp_on( M ) );
+	else
+		wrap	= pbr_skin_ramp_on( M ) ? (float3)0.0 : pbr_translucency_irradiance( M, color, L, N );
 	S.diff		+= wrap + pbr_legacy_translucency_irradiance( M, color, L, N, V );
 	return S;
 }

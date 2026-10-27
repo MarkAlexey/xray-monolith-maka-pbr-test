@@ -77,6 +77,20 @@
 #	define SSLR_FILTER_RADIUS 24.0
 #endif
 
+// Spatial resolve weighting of a neighbour's ray, reused for this pixel (Stachowiak 2015,
+// "Stochastic Screen-Space Reflections"; IX-Ray develop's sslr_filter):
+//   1 = D x G x N.L of this pixel's GGX lobe in the neighbour's hit direction
+//   0 = D x N.H (IX-Ray 1.6, as before)
+#ifndef SSLR_RESOLVE_BRDF
+#	define SSLR_RESOLVE_BRDF 1
+#endif
+// Fireflies: each reused ray also weighted by 1 / (1 + luminance), so a few very bright hits
+// (sun glints, lamps; the reflection is HDR here) do not speckle rough reflections. It darkens
+// bright reflections slightly on rough surfaces. 0 = off
+#ifndef SSLR_RESOLVE_FIREFLY
+#	define SSLR_RESOLVE_FIREFLY 1
+#endif
+
 // Legacy (non-PBR) pixels have no roughness in the G-buffer. Approximate Enhanced Shaders'
 // calc_rough(): rough = lerp(HIGH, LOW, gloss)^2. Only used to shape the SSLR rays; the
 // lighting itself still uses ES's real conversion in combine_1.

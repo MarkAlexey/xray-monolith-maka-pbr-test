@@ -1349,3 +1349,23 @@ Both take the signed N.L and are not clamped (the wrap lives at N.L < 0); the su
 wrap-around translucency is skipped for those pixels so the light does not wrap twice. Caveats:
 shadow maps still cut the wrap where they darken the far side; with the screen-space blur on as
 well, the two overlap at the shadow line (lower the width); the r2 static sun is not ramped.
+
+### Pieces from IX-Ray's develop branch (separate patch on top of the skin ramp)
+
+Branch `pbr-test-s3ds-mt-sss-lass-skin-ixdev-dlss` (local), shaders only:
+
+- **Skin transmission** (`pbr_ixray.h`, `PBR_SKIN_TRANSMIT`, from IX-Ray develop `d97c480b`,
+  after Barre-Brisebois & Bouchard / Green): view-dependent light through thin parts for PBR
+  pixels with a subsurface value, `pow(saturate(dot(-V, L - N * 0.3)), 4) * 0.25`, tinted
+  (1, 0.35, 0.2), scaled by the subsurface value, for every light (IX-Ray: sun only). With the
+  ramp off the sun also gets IX-Ray's wrap term at the shadow line in place of 1.6's
+  translucency. No thickness map; shadow maps still cut it on the self-shadowed side.
+- **Translucency glow fix** (`PBR_TRANSLUCENCY_GLOW_FIX`, develop `c83074a7`):
+  `saturate(1.5 * x)` instead of `saturate(3.5 * x + 0.1)`, whose 0.1 floor lit the far side of
+  every subsurface pixel. Weaker overall.
+- **SSLR resolve weights** (`sslr_settings.h`, develop `454d9ecd`, Stachowiak's stochastic SSR
+  ray reuse): reused neighbour rays weighted by D x G x N.L instead of D x N.H
+  (`SSLR_RESOLVE_BRDF`), and by 1 / (1 + luminance) against fireflies (`SSLR_RESOLVE_FIREFLY`);
+  the Hi-Z trace of that commit is not ported.
+
+Each has a 0 setting that restores the previous behaviour.
