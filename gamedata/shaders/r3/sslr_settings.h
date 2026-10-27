@@ -77,6 +77,24 @@
 #	define SSLR_FILTER_RADIUS 24.0
 #endif
 
+// Hi-Z trace (engine: r4_sslr_hiz 1, defines USE_SSLR_HIZ; Stachowiak 2015 / IX-Ray develop
+// 454d9ecd): world rays walk a min-depth pyramid instead of SSLR_STEPS fixed steps, skipping
+// empty space a whole pyramid cell at a time, so long rays find thin or distant hits the fixed
+// steps jump over. Iterations: pyramid cells visited at most (each a texture load).
+#ifndef SSLR_HIZ_ITERATIONS
+#	define SSLR_HIZ_ITERATIONS 64
+#endif
+// Offset past a cell border, in texels of that level, so a ray does not stall on the border
+#ifndef SSLR_HIZ_EPS
+#	define SSLR_HIZ_EPS 0.005
+#endif
+// The pyramid has no thickness: a ray that passes behind a thin object (pole, branch) reports a
+// hit the thickness test then rejects. 1 = march that pixel's ray the old way instead (finds
+// what is behind the thin object); 0 = count it as a miss (cheaper, cubemap shows there).
+#ifndef SSLR_HIZ_FALLBACK
+#	define SSLR_HIZ_FALLBACK 1
+#endif
+
 // Spatial resolve weighting of a neighbour's ray, reused for this pixel (Stachowiak 2015,
 // "Stochastic Screen-Space Reflections"; IX-Ray develop's sslr_filter):
 //   1 = D x G x N.L of this pixel's GGX lobe in the neighbour's hit direction

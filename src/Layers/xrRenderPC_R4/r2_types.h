@@ -87,6 +87,7 @@
 #define		r2_RT_sslr_data			"$user$sslr_data"	// trace data: xyz hit position (view space), w roughness
 #define		r2_RT_sslr_temp			"$user$sslr_temp"	// spatially resolved reflection
 #define		r2_RT_sslr_color		"$user$sslr_color"	// combine_1 output of the last MAIN-view frame (RGBA8, the colour SSLR reflects)
+#define		r2_RT_sslr_hiz			"$user$sslr_hiz"	// R32F, all mips: min pyramid of -1 / view depth (Hi-Z trace, sslr_hiz_*.cs)
 #define		r2_RT_sslr_pos_old		"$user$sslr_pos_old"	// G-buffer positions of the last main-view frame (history validation)
 
 // Monolith: skin subsurface scattering (r4_rendertarget_phase_skin_sss.cpp, skin_sss.h)

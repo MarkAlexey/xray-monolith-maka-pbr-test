@@ -268,6 +268,7 @@ float ps_r4_sslr_intensity = 1.0f; // how strongly SSLR replaces the cubemap ref
 float ps_r4_sslr_temporal = 0.9f; // history weight
 float ps_r4_sslr_max_dist = 60.0f; // longest ray, metres
 int ps_r4_sslr_skip_ssfx_ssr = 0; // skip the SSS SSR pass while SSLR is on
+int ps_r4_sslr_hiz = 1; // r4_sslr_hiz, Hi-Z traced SSLR (min-depth pyramid), needs a game restart
 
 // IX-Ray VSLR (offscreen cubemap reflections, r4_rendertarget_phase_vslr.cpp)
 int ps_r4_vslr_enable = 0; // r4_vslr_enable, needs a game restart (read in CRender::create)
@@ -1452,6 +1453,7 @@ void xrRender_initconsole()
 	CMD4(CCC_Float, "r4_sslr_temporal", &ps_r4_sslr_temporal, 0.f, 0.98f);
 	CMD4(CCC_Float, "r4_sslr_max_dist", &ps_r4_sslr_max_dist, 1.f, 300.f);
 	CMD4(CCC_Integer, "r4_sslr_skip_ssfx_ssr", &ps_r4_sslr_skip_ssfx_ssr, 0, 1);
+	CMD4(CCC_Integer, "r4_sslr_hiz", &ps_r4_sslr_hiz, 0, 1);
 
 	// IX-Ray VSLR
 	CMD4(CCC_Integer, "r4_vslr_enable", &ps_r4_vslr_enable, 0, 1);

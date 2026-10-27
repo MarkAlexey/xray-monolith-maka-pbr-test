@@ -614,6 +614,11 @@ void CRender::create()
 	// IX-Ray SSLR: needs its compute shaders, cannot run with MSAA (see r4_rendertarget_phase_sslr.cpp)
 	o.sslr = (ps_r4_sslr_enable != 0) && !o.dx10_msaa && FS.exist(fn, "$game_shaders$", "r3\\sslr_render", ".cs");
 	Msg("- IX-Ray SSLR %s", o.sslr ? "ON" : (ps_r4_sslr_enable && o.dx10_msaa ? "OFF (MSAA)" : "OFF"));
+	// Hi-Z traced SSLR (Stachowiak 2015, IX-Ray develop): its two pyramid passes must exist
+	o.sslr_hiz = o.sslr && (ps_r4_sslr_hiz != 0) && FS.exist(fn, "$game_shaders$", "r3\\sslr_hiz_copy", ".cs")
+		&& FS.exist(fn, "$game_shaders$", "r3\\sslr_hiz_reduce", ".cs");
+	if (o.sslr)
+		Msg("- IX-Ray SSLR trace: %s", o.sslr_hiz ? "Hi-Z" : "linear march");
 
 	// Enhanced Shaders present: tells engine-owned shaders which tonemap curve combine_1 uses
 	o.es_installed = FS.exist(fn, "$game_shaders$", "r3\\pbr_settings", ".h") ? 1 : 0;
@@ -2204,6 +2209,16 @@ HRESULT CRender::shader_compile(
 		def_it++;
 	}
 	sh_name[len] = '0' + char(o.sslr);
+	++len;
+
+	// SSLR traced through the min-depth pyramid (sslr_render.cs, r4_rendertarget_phase_sslr.cpp)
+	if (o.sslr_hiz)
+	{
+		defines[def_it].Name = "USE_SSLR_HIZ";
+		defines[def_it].Definition = "1";
+		def_it++;
+	}
+	sh_name[len] = '0' + char(o.sslr_hiz);
 	++len;
 
 	// IX-Ray VSLR: the ambient (pbr_ixray.h) reads the offscreen reflection panorama s_env_fwd

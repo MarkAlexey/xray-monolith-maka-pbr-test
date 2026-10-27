@@ -7,7 +7,9 @@
 //          u_sslr_data xyz = view-space hit position, w = roughness of this pixel
 //
 // One VNDF-jittered ray per pixel, marched in screen space with perspective-correct depth,
-// refined by bisection. Port of IX-Ray's sslr_render.cs.hlsl (LVutner) - see sslr_common.h
+// refined by bisection. With USE_SSLR_HIZ (r4_sslr_hiz) the march is a hierarchical walk of a
+// min-depth pyramid instead (Stachowiak 2015, IX-Ray develop; sslr_hiz_trace below), with the
+// same hit tests. Port of IX-Ray's sslr_render.cs.hlsl (LVutner) - see sslr_common.h
 // for what changed and why.
 //////////////////////////////////////////////////////////////////////////////////////////
 
@@ -20,6 +22,74 @@ float sslr_scene_depth( float2 uv )
 {
 	return s_position.SampleLevel( smp_nofilter, uv, 0 ).z;
 }
+
+#ifdef USE_SSLR_HIZ
+Texture2D<float> s_hiz;	// min pyramid of -1 / view depth, all mips (sslr_hiz_copy / _reduce.cs)
+
+// Hierarchical trace of the screen-space segment uv0 + d * t, t in [0, tmax], whose -1/z goes
+// linearly from s0 to s1 (after IX-Ray develop's HiZTraceSSR, in -1/z instead of hardware
+// depth). Where the ray is in front of a cell's nearest surface and leaves the cell before
+// reaching it, it skips the cell and goes up a level; where it reaches that depth inside the
+// cell it goes down a level; going below level 0 is a hit. Returns the hit parameter in t_out.
+//
+// The walk is in level-0 pixel units: the cell of a pixel at level n is pixel >> n, clamped to
+// the last cell, whose border is the screen edge. That is exactly how sslr_hiz_reduce.cs builds
+// odd-sized levels (the last row / column takes the extra texels). Scaling the UV by the level's
+// size instead (IX-Ray's version) puts some pixels into the neighbouring cell on odd-sized
+// levels and misses their surfaces. Checked on the CPU against a brute-force march: 2000 rays
+// over odd and even buffer sizes agree, except one ray clipping a pixel corner for less than
+// SSLR_HIZ_EPS.
+float sslr_hiz_exit( float2 O, float2 invD, bool2 pos, float2 cell, int level, float2 size, float2 dims )
+{
+	float  sc	= float( 1u << uint( level ) );
+	float2 lo	= cell * sc;
+	float2 hi	= cell >= dims - 1.0 ? size : ( cell + 1.0 ) * sc;
+	float2 pl	= ( pos ? hi : lo ) + ( pos ? SSLR_HIZ_EPS : -SSLR_HIZ_EPS );
+	float2 tp	= ( pl - O ) * invD;
+	return min( tp.x, tp.y );
+}
+
+bool sslr_hiz_trace( float2 uv0, float2 d, float s0, float s1, float tmax, out float t_out )
+{
+	uint2 isize;
+	uint  levels;
+	s_hiz.GetDimensions( 0, isize.x, isize.y, levels );
+	float2 size	= float2( isize );
+	int max_level = int( levels ) - 1;
+
+	float3 O	= float3( uv0 * size, s0 );			// pixels, -1/z
+	float3 D	= float3( d * size, s1 - s0 );
+	D			= abs( D ) > 1e-7 ? D : ( D >= 0.0 ? 1e-7 : -1e-7 );	// keep the sign of tiny components
+	float3 invD	= rcp( D );
+	bool2  pos	= D.xy >= 0.0;
+
+	// Leave the start pixel first, so the ray does not hit its own surface
+	float  t	= sslr_hiz_exit( O.xy, invD.xy, pos, floor( O.xy ), 0, size, size );
+	float3 ray	= O + D * t;
+
+	int  level	= 0;
+	uint it		= 0;
+	[loop]
+	while( level >= 0 && it < SSLR_HIZ_ITERATIONS && t < tmax )
+	{
+		float2 dims		= float2( max( isize >> uint( level ), uint2( 1, 1 ) ) );
+		float2 cell		= min( floor( ray.xy / float( 1u << uint( level ) ) ), dims - 1.0 );
+		float  zs		= s_hiz.Load( int3( cell, level ) );
+
+		float t_cell	= sslr_hiz_exit( O.xy, invD.xy, pos, cell, level, size, dims );
+		float t_surf	= D.z > 0.0 ? ( zs - O.z ) * invD.z : 1e20;
+
+		bool above		= ray.z < zs;			// in front of the cell's nearest surface
+		bool skip		= above && t_cell < t_surf;
+		t				= above ? min( t_cell, t_surf ) : t;
+		ray				= O + D * t;
+		level			= min( level + ( skip ? 1 : -1 ), max_level );
+		++it;
+	}
+	t_out = t;
+	return level < 0 && t < tmax;
+}
+#endif
 
 [numthreads( 8, 8, 1 )]
 void main( uint3 DTid : SV_DispatchThreadID )
@@ -83,9 +153,32 @@ void main( uint3 DTid : SV_DispatchThreadID )
 	float	t_prev	= 0.0;
 	float	t_hit	= -1.0;
 	float	jitter	= sslr_ign( float2( DTid.yx ), sslr_params.w + 7.0 );
+	bool	march	= true;
+
+#ifdef USE_SSLR_HIZ
+	{
+		float th;
+		march = false;
+		[branch] if( sslr_hiz_trace( uv0, d, -iz0, -iz1, tmax, th ) )
+		{
+			// Same thickness test as the march: the pyramid has none of its own
+			float rz	= rcp( lerp( iz0, iz1, th ) );
+			float sz	= sslr_scene_depth( uv0 + d * th );
+			float dz	= rz - sz;
+			float thick	= SSLR_THICKNESS_ABS + SSLR_THICKNESS_REL * sz;
+			if( !sslr_is_sky( sz ) && !sslr_is_hud( sz ) && dz > -thick && dz < thick )
+			{
+				t_hit	= th;
+				t_prev	= th;	// exact already: the bisection below keeps it
+			}
+			else
+				march	= SSLR_HIZ_FALLBACK != 0;	// went behind a thin object
+		}
+	}
+#endif
 
 	[loop]
-	for( uint i = 0; i < SSLR_STEPS; ++i )
+	for( uint i = 0; march && i < SSLR_STEPS; ++i )
 	{
 		float t		= pow( ( float( i ) + jitter ) / float( SSLR_STEPS ), SSLR_STEP_POW ) * tmax;
 		float2 suv	= uv0 + d * t;

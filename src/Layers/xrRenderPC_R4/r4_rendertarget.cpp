@@ -1036,6 +1036,13 @@ CRenderTarget::CRenderTarget()
 		// (SSLR is off with MSAA, so both sources are single-sampled here)
 		rt_sslr_color.create(r2_RT_sslr_color, w, h, D3DFMT_A8R8G8B8, 1);
 		rt_sslr_pos_old.create(r2_RT_sslr_pos_old, w, h, D3DFMT_A16B16G16R16F, 1);
+		// Hi-Z pyramid first: the trace's blender binds it by name (r4_sslr_hiz)
+		if (RImplementation.o.sslr_hiz)
+		{
+			create_sslr_hiz(w, h);
+			if (!t_sslr_hiz_surf)
+				RImplementation.o.sslr_hiz = FALSE;	// shaders are compiled below, without USE_SSLR_HIZ
+		}
 		s_sslr.create(b_sslr);
 	}
 
@@ -1548,6 +1555,7 @@ CRenderTarget::~CRenderTarget()
 	xr_delete(b_sunshafts);
 
 	xr_delete(b_hdao_cs);
+	destroy_sslr_hiz();
 	xr_delete(b_sslr);
 	release_skin_sss_timer();
 	xr_delete(b_skin_sss);

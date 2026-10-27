@@ -8,6 +8,8 @@
 // can read the result as s_refl.
 //
 // Passes (8x8 thread groups, full resolution):
+//   r4_sslr_hiz 1 only: Hi-Z pyramid of this frame's depth (-1/z, min of 2x2 per level):
+//     copy     s_position -> mip 0;  reduce   mip n - 1 -> mip n (one dispatch per level)
 //   0 trace     G-buffer + rt_sslr_color, rt_sslr_pos_old (last main-view frame)
 //                                                           -> rt_sslr, rt_sslr_data
 //   1 resolve   rt_sslr + rt_sslr_data                      -> rt_sslr_temp
@@ -25,6 +27,63 @@
 //   - IX-Ray's offscreen cubemap reflections (VSLR) are a separate pass
 //     (r4_rendertarget_phase_vslr.cpp) read by the consumer; misses fall back to the
 //     cubemap reflection in the consumer.
+
+// Hi-Z pyramid (r4_sslr_hiz, Stachowiak 2015 / IX-Ray develop 454d9ecd): R32F, full mip
+// chain at scene resolution, one UAV per mip for the reduce passes, all mips readable by the
+// trace as s_hiz. About 1.33 x 4 bytes per scene pixel (~6 MB at 1720x720, ~44 MB at 4K).
+void CRenderTarget::create_sslr_hiz(u32 w, u32 h)
+{
+	destroy_sslr_hiz();
+
+	u32 mips = 1;
+	while ((_max(w, h) >> mips) > 0 && mips < SSLR_HIZ_MAX_MIPS)
+		++mips;
+
+	D3D11_TEXTURE2D_DESC td = {};
+	td.Width = w;
+	td.Height = h;
+	td.MipLevels = mips;
+	td.ArraySize = 1;
+	td.Format = DXGI_FORMAT_R32_FLOAT;
+	td.SampleDesc.Count = 1;
+	td.Usage = D3D11_USAGE_DEFAULT;
+	td.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
+	if (FAILED(HW.pDevice->CreateTexture2D(&td, nullptr, &t_sslr_hiz_surf)))
+	{
+		Msg("! IX-Ray SSLR: cannot create the Hi-Z pyramid, linear march instead");
+		destroy_sslr_hiz();
+		return;
+	}
+	sslr_hiz_mips = mips;
+	for (u32 m = 0; m < mips; ++m)
+	{
+		D3D11_UNORDERED_ACCESS_VIEW_DESC uv = {};
+		uv.Format = DXGI_FORMAT_R32_FLOAT;
+		uv.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
+		uv.Texture2D.MipSlice = m;
+		if (FAILED(HW.pDevice->CreateUnorderedAccessView(t_sslr_hiz_surf, &uv, &sslr_hiz_uav[m])))
+		{
+			Msg("! IX-Ray SSLR: cannot create a Hi-Z pyramid view, linear march instead");
+			destroy_sslr_hiz();
+			return;
+		}
+	}
+	// CTexture::surface_set creates the shader view over every mip (dx10SH_Texture.cpp)
+	t_sslr_hiz.create(r2_RT_sslr_hiz);
+	t_sslr_hiz->surface_set(t_sslr_hiz_surf);
+	Msg("- IX-Ray SSLR: Hi-Z pyramid %ux%u, %u mips", w, h, mips);
+}
+
+void CRenderTarget::destroy_sslr_hiz()
+{
+	if (t_sslr_hiz)
+		t_sslr_hiz->surface_set(nullptr);
+	t_sslr_hiz.destroy();
+	for (auto& uav : sslr_hiz_uav)
+		_RELEASE(uav);
+	sslr_hiz_mips = 0;
+	_RELEASE(t_sslr_hiz_surf);
+}
 
 static void sslr_bind_pass(ShaderElement* S)
 {
@@ -88,6 +147,30 @@ void CRenderTarget::phase_sslr()
 		// unbind would make RCache skip them (R_Backend.h, unbind_CS_textures)
 		RCache.unbind_CS_textures();
 	};
+
+	// Hi-Z pyramid of this frame's depth, before the trace reads it: level 0 from s_position,
+	// then each level the min of the 2x2 below (sslr_hiz_copy.cs, sslr_hiz_reduce.cs)
+	if (RImplementation.o.sslr_hiz && t_sslr_hiz_surf && s_sslr->E[3] && s_sslr->E[4])
+	{
+		PIX_EVENT(sslr_hiz);
+		PROF_EVENT("phase_sslr_hiz");
+		{
+			ID3D11UnorderedAccessView* uav[1] = { sslr_hiz_uav[0] };
+			dispatch(3, uav, 1);
+		}
+		D3D11_TEXTURE2D_DESC hd;
+		t_sslr_hiz_surf->GetDesc(&hd);	// the pyramid's own size (it was made at scene resolution)
+		sslr_bind_pass(&*(s_sslr->E[4]));
+		for (u32 m = 1; m < sslr_hiz_mips; ++m)
+		{
+			const u32 mw = _max(hd.Width >> m, 1u), mh = _max(hd.Height >> m, 1u);
+			ID3D11UnorderedAccessView* uav[2] = { sslr_hiz_uav[m - 1], sslr_hiz_uav[m] };
+			HW.pContext->CSSetUnorderedAccessViews(0, 2, uav, counts);
+			RCache.Compute((mw + 7u) / 8u, (mh + 7u) / 8u, 1);
+		}
+		HW.pContext->CSSetUnorderedAccessViews(0, 2, nulluav, counts);
+		RCache.unbind_CS_textures();
+	}
 
 	{
 		PIX_EVENT(sslr_render);

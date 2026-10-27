@@ -259,6 +259,15 @@ private:
 	ref_rt rt_sslr_pos_old; // last main-view frame's G-buffer positions
 	ref_shader s_sslr;
 	u32 sslr_history_frame = u32(-1); // frame the SSLR history was last written, -1 = invalid
+	// Hi-Z pyramid (r4_sslr_hiz): created by hand, one UAV per mip, the SRV (all mips) through
+	// t_sslr_hiz like the VSLR panorama
+	ID3D11Texture2D* t_sslr_hiz_surf = nullptr;
+	static const u32 SSLR_HIZ_MAX_MIPS = 16;	// up to 32768 pixels
+	ID3D11UnorderedAccessView* sslr_hiz_uav[SSLR_HIZ_MAX_MIPS] = {};
+	u32 sslr_hiz_mips = 0;
+	ref_texture t_sslr_hiz;
+	void create_sslr_hiz(u32 w, u32 h);
+	void destroy_sslr_hiz();
 
 	// Skin subsurface scattering (see r4_rendertarget_phase_skin_sss.cpp)
 	ref_rt rt_skin_sss_tmp;

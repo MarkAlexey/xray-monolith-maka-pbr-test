@@ -28,6 +28,8 @@ void CBlender_sslr::Compile(CBlender_Compile& C)
 		C.r_dx10Texture("s_image", r2_RT_sslr_color);
 		C.r_dx10Texture("s_position_prev", r2_RT_sslr_pos_old); // was the hit visible there last frame
 		C.r_dx10Texture("s_tonemap", r2_RT_luminance_cur); // exposure, to undo combine_1's tonemap
+		if (RImplementation.o.sslr_hiz)
+			C.r_dx10Texture("s_hiz", r2_RT_sslr_hiz); // min-depth pyramid (Hi-Z trace)
 		C.r_End();
 		break;
 
@@ -46,6 +48,21 @@ void CBlender_sslr::Compile(CBlender_Compile& C)
 		C.r_dx10Texture("s_refl", r2_RT_sslr_old);
 		C.r_dx10Texture("s_hit", r2_RT_sslr_data); // hit distance, for mirror reprojection
 		C.r_dx10Texture("s_position_prev", r2_RT_sslr_pos_old); // disocclusion test
+		C.r_End();
+		break;
+
+	case 3: // Hi-Z pyramid level 0: s_position -> -1 / view depth (only with r4_sslr_hiz)
+		if (!RImplementation.o.sslr_hiz)
+			break;
+		C.r_ComputePass("sslr_hiz_copy");
+		sslr_gbuffer(C);
+		C.r_End();
+		break;
+
+	case 4: // Hi-Z pyramid level n from level n - 1 (UAVs only)
+		if (!RImplementation.o.sslr_hiz)
+			break;
+		C.r_ComputePass("sslr_hiz_reduce");
 		C.r_End();
 		break;
 	}
