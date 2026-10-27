@@ -51,28 +51,79 @@ void CTextureDescrMngr::ReadShaderOptions(CInifile& ini, texture_spec& spec)
 	}
 }
 
+// THM loading reads tens of thousands of small files from the archives. Opening and
+// decompressing them is what takes the time, so that part runs on worker threads (IX-Ray
+// develop de8be597 parallelises the whole loop). Parsing and filling the maps stay on this
+// thread, in the original order, because shared_str reference counts are not atomic in this
+// engine (str_value: CounterPolicy::NonAtomic): creating or copying the same string (a shared
+// detail texture name) on two threads at once could corrupt its count. The result is
+// identical to the serial loop.
+// Command line -thm_st: read the files on this thread only (to compare timings).
+struct thm_raw_file
+{
+	xr_vector<u8> data;	// whole .thm file
+	bool has_ltx = false;	// "<texture>.ltx" next to it ([shaders_options])
+	bool opened = false;
+};
+
 void CTextureDescrMngr::LoadTHM(LPCSTR initial, map_TD& s_texture_details, map_CS& s_detail_scalers)
 {
 	PROF_EVENT();
+	CTimer timer;
+	timer.Start();
 
 	FS_FileSet flist;
 	FS.file_list(flist, initial, FS_ListFiles, "*.thm");
 
+	xr_vector<const FS_File*> files;
+	files.reserve(flist.size());
+	for (const FS_File& fs_iter : flist)
+		files.push_back(&fs_iter);
+	xr_vector<thm_raw_file> raw(files.size());
+
+	// 1. File reads (worker threads): no shared_str is created or copied here
+	auto read_one = [&](size_t i)
+	{
+		string_path path, name, ltx_name;
+		FS.update_path(path, initial, files[i]->name.c_str());
+		IReader* R = FS.r_open(path);
+		if (!R)
+			return;
+		raw[i].data.assign((u8*)R->pointer(), (u8*)R->pointer() + R->length());
+		FS.r_close(R);
+		raw[i].opened = true;
+
+		xr_strcpy(name, files[i]->name.c_str());
+		fix_texture_thm_name(name);
+		raw[i].has_ltx = !!FS.exist(ltx_name, initial, name, ".ltx");
+	};
+	const bool single_thread = Core.Params && strstr(Core.Params, "-thm_st");
+	if (single_thread)
+	{
+		for (size_t i = 0; i < files.size(); ++i)
+			read_one(i);
+	}
+	else
+		xr_parallel_for(size_t(0), files.size(), read_one);
+	const u32 read_ms = timer.GetElapsed_ms();
+
+	// 2. Parse and register (this thread, original order)
 	STextureParams tp;
 	string_path fn;
 
-	for (const FS_File& fs_iter : flist)
+	for (size_t i = 0; i < files.size(); ++i)
 	{
-		FS.update_path(fn, initial, fs_iter.name.c_str());
-		IReader* F = FS.r_open(fn);
+		const FS_File& fs_iter = *files[i];
+		R_ASSERT3(raw[i].opened, "Can't open THM", fs_iter.name.c_str());
+		IReader thm(raw[i].data.data(), int(raw[i].data.size()));
+		IReader* F = &thm;
 		xr_strcpy(fn, fs_iter.name.c_str());
 		fix_texture_thm_name(fn);
 
-		R_ASSERT(F->find_chunk(THM_CHUNK_TYPE));
+		R_ASSERT3(F->find_chunk(THM_CHUNK_TYPE), "THM without its type chunk", fs_iter.name.c_str());
 		F->r_u32();
 		tp.Clear();
 		tp.Load(*F);
-		FS.r_close(F);
 		if (STextureParams::ttImage == tp.type || STextureParams::ttTerrain == tp.type || STextureParams::ttNormalMap ==
 			tp.type)
 		{
@@ -115,7 +166,7 @@ void CTextureDescrMngr::LoadTHM(LPCSTR initial, map_TD& s_texture_details, map_C
 			// IX-Ray: optional "<texture>.ltx" next to the THM, section [shaders_options], one
 			// define per line (for example USE_DX_NORMAL_MAP = 1). A value of 0 leaves it out.
 			string_path ltx_name;
-			if (FS.exist(ltx_name, initial, fn, ".ltx"))
+			if (raw[i].has_ltx && FS.exist(ltx_name, initial, fn, ".ltx"))
 			{
 				CInifile ini(ltx_name, TRUE, TRUE, FALSE);
 				ReadShaderOptions(ini, *desc.m_spec);
@@ -132,6 +183,9 @@ void CTextureDescrMngr::LoadTHM(LPCSTR initial, map_TD& s_texture_details, map_C
 			}
 		}
 	}
+
+	Msg("* THM: %u files from '%s' in %u ms (reads %u ms, %s)", u32(files.size()), initial, timer.GetElapsed_ms(),
+		read_ms, single_thread ? "one thread, -thm_st" : "parallel");
 }
 
 void CTextureDescrMngr::LoadLTX(LPCSTR initial, map_TD& s_texture_details)

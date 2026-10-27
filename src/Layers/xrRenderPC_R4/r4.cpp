@@ -1622,7 +1622,12 @@ HRESULT CRender::shader_compile(
 
 	u32 len = xr_strlen(sh_name);
 	// options
-	const int m_skinning = Engine.External.GetSkinningMode();
+	// Only vertex shaders read SKIN_0..4 (skin.h). Other stages used to be compiled and cached
+	// once per skinning mode, the same code up to five times; they now get one variant
+	// (SKIN_NONE). IX-Ray develop 1ec78a8c. A pixel shader that tested SKIN_* would now always
+	// see SKIN_NONE (none in vanilla, SSS, ES, Atmospherics, GAMMA or Beef's NVGs does; ES's
+	// one check in deffer_base_bump/flat.ps is commented out).
+	const int m_skinning = (pTarget && pTarget[0] == 'v') ? Engine.External.GetSkinningMode() : -1;
 	{
 		xr_sprintf(c_smapsize, "%04d", u32(o.smapsize));
 		defines[def_it].Name = "SMAP_size";
