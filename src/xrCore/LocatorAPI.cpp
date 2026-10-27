@@ -328,8 +328,8 @@ struct CLocatorAPI::scan_dedupe
 // so the result is identical (archives found, registration order, overrides).
 // Each listing holds what the serial loop would have kept: names filtered by ignore_name(),
 // sorted, and whether the folder has an .xrignore. Hidden folders are not entered (ProcessOne()
-// skips them). -fs_serial_list turns this off; so does flNeedCheck (its per-file CreateFile check
-// stays in the serial loop).
+// skips them). Off unless -fs_parallel_list (see _initialize); flNeedCheck keeps it off (its
+// per-file CreateFile check stays in the serial loop).
 struct CLocatorAPI::scan_prefetch
 {
 	struct listing
@@ -768,6 +768,90 @@ void CLocatorAPI::ProcessOne(LPCSTR path, const _finddata_t& entry)
 	}
 }
 
+// Monolith: folder listing through FindFirstFileExA(FindExInfoBasic, FIND_FIRST_EX_LARGE_FETCH)
+// instead of the CRT's _findfirst / _findnext.
+//
+// _findfirst asks Windows for FindExInfoStandard: every entry with its 8.3 short name, which the
+// file system (and under MO2 its virtual file system, per entry of every mod folder it merges)
+// has to produce, plus one small buffer per call. FindExInfoBasic leaves the short name out and
+// LARGE_FETCH fetches in bigger batches; it is what std::filesystem::directory_iterator uses, and
+// what IX-Ray's fast LocatorAPI init (mnelenpridumivat, v2v3v4; also in AOEngine) lists with.
+// The entries come out as the same _finddata_t the CRT fills: attrib (FILE_ATTRIBUTE_NORMAL -> 0),
+// the time_t values converted the way the UCRT does (UTC -> local time -> time_t, so file ages and
+// the caches that compare them see the same numbers), size = low 32 bits, name in the ANSI code
+// page (the A function converts like the CRT does without a UTF-8 locale).
+// -fs_crt_list goes back to _findfirst (A/B timing). Falls back by itself when Windows rejects
+// LARGE_FETCH (before Windows 7).
+static bool fs_list_crt = false;
+
+static __time64_t fs_list_time(const FILETIME& ft)
+{
+	if (!ft.dwLowDateTime && !ft.dwHighDateTime)
+		return -1;
+	SYSTEMTIME utc, local;
+	if (!FileTimeToSystemTime(&ft, &utc) || !SystemTimeToTzSpecificLocalTime(nullptr, &utc, &local))
+		return -1;
+	tm t{};
+	t.tm_year = local.wYear - 1900;
+	t.tm_mon = local.wMonth - 1;
+	t.tm_mday = local.wDay;
+	t.tm_hour = local.wHour;
+	t.tm_min = local.wMinute;
+	t.tm_sec = local.wSecond;
+	t.tm_isdst = -1;	// like the UCRT's loctotime_t(..., -1)
+	return _mktime64(&t);
+}
+
+struct fs_find
+{
+	HANDLE win = INVALID_HANDLE_VALUE;
+	intptr_t crt = -1;
+
+	static void convert(const WIN32_FIND_DATAA& w, _finddata_t& out)
+	{
+		out.attrib = w.dwFileAttributes == FILE_ATTRIBUTE_NORMAL ? 0 : w.dwFileAttributes;
+		out.time_create = decltype(out.time_create)(fs_list_time(w.ftCreationTime));
+		out.time_access = decltype(out.time_access)(fs_list_time(w.ftLastAccessTime));
+		out.time_write = decltype(out.time_write)(fs_list_time(w.ftLastWriteTime));
+		out.size = decltype(out.size)(w.nFileSizeLow);
+		xr_strcpy(out.name, sizeof(out.name), w.cFileName);
+	}
+
+	bool first(const char* pattern, _finddata_t& out)
+	{
+		if (fs_list_crt)
+		{
+			crt = _findfirst(pattern, &out);
+			return crt != -1;
+		}
+		WIN32_FIND_DATAA w;
+		win = FindFirstFileExA(pattern, FindExInfoBasic, &w, FindExSearchNameMatch, nullptr, FIND_FIRST_EX_LARGE_FETCH);
+		if (win == INVALID_HANDLE_VALUE && GetLastError() == ERROR_INVALID_PARAMETER)
+			win = FindFirstFileExA(pattern, FindExInfoBasic, &w, FindExSearchNameMatch, nullptr, 0);
+		if (win == INVALID_HANDLE_VALUE)
+			return false;
+		convert(w, out);
+		return true;
+	}
+
+	bool next(_finddata_t& out)
+	{
+		if (fs_list_crt)
+			return crt != -1 && _findnext(crt, &out) == 0;
+		WIN32_FIND_DATAA w;
+		if (win == INVALID_HANDLE_VALUE || !FindNextFileA(win, &w))
+			return false;
+		convert(w, out);
+		return true;
+	}
+
+	~fs_find()
+	{
+		if (crt != -1) _findclose(crt);
+		if (win != INVALID_HANDLE_VALUE) FindClose(win);
+	}
+};
+
 IC bool pred_str_ff(const _finddata_t& x, const _finddata_t& y)
 {
 	return xr_strcmp(x.name, y.name) < 0;
@@ -824,12 +908,12 @@ void CLocatorAPI::PrefetchListings(LPCSTR root)
 		scan_prefetch::listing result;
 		const std::string pattern = folder + "*.*";
 		_finddata_t data;
-		const intptr_t handle = _findfirst(pattern.c_str(), &data);
-		if (handle != -1)
+		fs_find finder;
+		if (finder.first(pattern.c_str(), data))
 		{
 			result.found = true;
-			intptr_t done = handle;
-			while (done != -1)
+			bool more = true;
+			while (more)
 			{
 				if (0 == stricmp(data.name, ".xrignore"))
 				{
@@ -838,9 +922,8 @@ void CLocatorAPI::PrefetchListings(LPCSTR root)
 				}
 				if (!ignore_name(data.name))
 					result.entries.push_back(data);
-				done = _findnext(handle, &data);
+				more = finder.next(data);
 			}
-			_findclose(handle);
 			if (result.xrignore)
 				result.entries.clear();
 			else
@@ -926,11 +1009,11 @@ bool CLocatorAPI::Recurse(const char* path)
 		xr_strcat(scanPath, "*.*");
 		const double list_start = fs_profile.active ? fs_profile_now_ms() : 0.0;
 		_finddata_t findData;
-		intptr_t handle = _findfirst(scanPath, &findData);
-		if (handle == -1)
+		fs_find finder;
+		if (!finder.first(scanPath, findData))
 			return false;
-		intptr_t done = handle;
-		while (done != -1)
+		bool more = true;
+		while (more)
 		{
 			if (0 == stricmp(findData.name, ".xrignore"))
 			{
@@ -951,9 +1034,8 @@ bool CLocatorAPI::Recurse(const char* path)
 			}
 			if (!ignore)
 				rec_files.push_back(findData);
-			done = _findnext(handle, &findData);
+			more = finder.next(findData);
 		}
-		_findclose(handle);
 		if (fs_profile.active)
 		{
 			fs_profile.list_ms += fs_profile_now_ms() - list_start;
@@ -1103,9 +1185,13 @@ void CLocatorAPI::_initialize(u32 flags, LPCSTR target_folder, LPCSTR fs_name)
 	fs_profile.per_archive = fsScanLog;
 	if (!(Core.Params && strstr(Core.Params, "-fs_no_dedupe")))
 		m_scan_dedupe = xr_new<scan_dedupe>();
-	// folder listings fetched in parallel (scan_prefetch); -fs_serial_list lists one by one
-	if (!(Core.Params && strstr(Core.Params, "-fs_serial_list")) && !m_Flags.test(flNeedCheck))
+	// Folder listings fetched in parallel (scan_prefetch): opt-in with -fs_parallel_list. Under MO2
+	// it did not help (21 s vs 17 s serial in a GAMMA install): its virtual file system serializes
+	// the calls, and they then also compete with each other.
+	if (Core.Params && strstr(Core.Params, "-fs_parallel_list") && !m_Flags.test(flNeedCheck))
 		m_scan_prefetch = xr_new<scan_prefetch>();
+	// FindExInfoBasic listing (fs_find); -fs_crt_list for the CRT's _findfirst
+	fs_list_crt = Core.Params && strstr(Core.Params, "-fs_crt_list");
 
 	// scan root directory
 	bNoRecurse = TRUE;
@@ -1223,14 +1309,15 @@ void CLocatorAPI::_initialize(u32 flags, LPCSTR target_folder, LPCSTR fs_name)
 
 	if (m_scan_prefetch)
 	{
-		Msg("FS: %u folder listings fetched in parallel, %u used (-fs_serial_list to list one by one)",
+		Msg("FS: %u folder listings fetched in parallel (-fs_parallel_list), %u used",
 		    m_scan_prefetch->fetched, m_scan_prefetch->used);
 		xr_delete(m_scan_prefetch);
 	}
 	{
 		const double total_ms = t.GetElapsed_sec() * 1000.0;
-		Msg("FS: %.0f ms listing %u folders, %.0f ms reading %u archives, %.0f ms the rest (registering, sorting)%s",
-		    fs_profile.list_ms, fs_profile.lists, fs_profile.archive_ms, fs_profile.archives,
+		Msg("FS: %.0f ms listing %u folders (%s), %.0f ms reading %u archives, %.0f ms the rest (registering, sorting)%s",
+		    fs_profile.list_ms, fs_profile.lists, fs_list_crt ? "CRT _findfirst, -fs_crt_list" : "FindExInfoBasic",
+		    fs_profile.archive_ms, fs_profile.archives,
 		    total_ms - fs_profile.list_ms - fs_profile.archive_ms, fsScanLog ? "" : " (-fs_scan_log: per archive)");
 		fs_profile.active = false;
 	}
