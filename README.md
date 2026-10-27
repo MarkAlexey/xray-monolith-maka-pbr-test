@@ -49,6 +49,7 @@ Personal thank you from the author of this project :
 
 **SDKs**
 - NVIDIA DLSS, AMD FidelityFX FSR 3, Intel oneTBB
+## Personal Note from Author :
 
 I thank each and every author that code/program was used in my project.
 The entire project was built from an idea : "What if Anomaly had PBR? And i wouldn't need to re-do every PBR texture to Pseudo PBR Pipeline?"
