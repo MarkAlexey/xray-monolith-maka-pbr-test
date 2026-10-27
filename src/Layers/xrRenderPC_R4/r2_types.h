@@ -90,6 +90,10 @@
 #define		r2_RT_sslr_hiz			"$user$sslr_hiz"	// R32F, all mips: min pyramid of -1 / view depth (Hi-Z trace, sslr_hiz_*.cs)
 #define		r2_RT_sslr_pos_old		"$user$sslr_pos_old"	// G-buffer positions of the last main-view frame (history validation)
 
+// Monolith: reactive mask for DLSS / FSR 3 (r4_rendertarget_phase_reactive.cpp)
+#define		r2_RT_upscaler_opaque	"$user$upscaler_opaque"		// RGBA8: rt_Generic_0 before rain and forward rendering
+#define		r2_RT_upscaler_reactive	"$user$upscaler_reactive"	// R8: what those passes changed (DLSS bias mask, FSR reactive)
+
 // Monolith: skin subsurface scattering (r4_rendertarget_phase_skin_sss.cpp, skin_sss.h)
 #define		r2_RT_skin_sss_tmp		"$user$skin_sss_tmp"	// RGBA16F: horizontally blurred skin irradiance, a = view depth (0 = not skin)
 #define		r2_RT_skin_sss			"$user$skin_sss"		// R11G11B10F: blurred skin irradiance, read by combine_1 as s_skin_sss

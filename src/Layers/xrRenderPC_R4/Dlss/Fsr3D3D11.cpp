@@ -231,7 +231,16 @@ try
     dispatch.viewSpaceToMetersFactor = 1.0f;
     dispatch.reset = m_history.Begin(frame.frame, frame.cameraCut);
     // Same post-upscale CAS as DLSS; do not apply RCAS a second time.
-    // Reactive/composition masks are optional, currently absent as in OGSR.
+    // Reactive mask (r4_rendertarget_phase_reactive.cpp), optional; a mask of another size is
+    // left out. No transparency/composition mask.
+    if (frame.reactive)
+    {
+        D3D11_TEXTURE2D_DESC rd;
+        frame.reactive->GetDesc(&rd);
+        if (rd.Width == m_render.width && rd.Height == m_render.height && rd.SampleDesc.Count == 1 &&
+            (rd.BindFlags & D3D11_BIND_SHADER_RESOURCE))
+            dispatch.reactive = Resource(frame.reactive, L"FSR3 reactive");
+    }
     ContextScope state(m_context.Get(), m_state.Get());
     ID3D11SamplerState* samplers[] = {m_samplers[0].Get(), m_samplers[1].Get()};
     m_context->CSSetSamplers(0, 2, samplers);

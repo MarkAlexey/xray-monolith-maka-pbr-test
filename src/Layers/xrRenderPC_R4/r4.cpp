@@ -202,6 +202,15 @@ static class cl_sslr_params : public R_constant_setup
 	}
 } binder_sslr_params;
 
+// Reactive mask for DLSS / FSR 3 (upscaler_reactive.ps): x = scale, y = cutoff, z = max
+static class cl_upscaler_reactive : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_r__upscaler_reactive_scale, ps_r__upscaler_reactive_cutoff, ps_r__upscaler_reactive_max, 0.f);
+	}
+} binder_upscaler_reactive;
+
 // Skin subsurface scattering (skin_sss.h): x = scatter width (view-space metres), y = strength,
 // z unused, w = debug view
 static class cl_skin_sss_params : public R_constant_setup
@@ -647,6 +656,7 @@ void CRender::create()
 	RM->RegisterConstantSetup("sslr_params", &binder_sslr_params);
 	RM->RegisterConstantSetup("vslr_params", &binder_vslr_params);
 	RM->RegisterConstantSetup("skin_sss_params", &binder_skin_sss_params);
+	RM->RegisterConstantSetup("upscaler_reactive", &binder_upscaler_reactive);
 	RM->RegisterConstantSetup("skin_sss_proj", &binder_skin_sss_proj);
 	RM->RegisterConstantSetup("vslr_center", &binder_vslr_center);
 	RM->RegisterConstantSetup("sun_shafts_intensity", &binder_sun_shafts_intensity);

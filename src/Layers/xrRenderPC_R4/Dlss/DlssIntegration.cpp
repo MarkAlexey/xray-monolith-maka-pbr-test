@@ -233,7 +233,7 @@ void EndScene(bool invalidateHistory)
     if (invalidateHistory) { ResetHistory(); jitterIndex = 0; haveCamera = false; previousJitter = {}; }
 }
 
-bool Evaluate(ID3D11Texture2D* color, ID3D11Texture2D* motion)
+bool Evaluate(ID3D11Texture2D* color, ID3D11Texture2D* motion, ID3D11Texture2D* reactive)
 {
     if (!Active()) return false;
     PROF_EVENT_DYNAMIC(useFsr ? "Render.Upscaler.Evaluate.FSR3" : "Render.Upscaler.Evaluate.DLSS");
@@ -241,6 +241,7 @@ bool Evaluate(ID3D11Texture2D* color, ID3D11Texture2D* motion)
     frame.color = color;
     frame.depth = sceneDepth.Get();
     frame.motion = motion;
+    frame.reactive = reactive;
     frame.jitter = rasterJitter;
     frame.deltaMilliseconds = Device.fTimeDelta * 1000.0f;
     frame.frame = Device.dwFrame;

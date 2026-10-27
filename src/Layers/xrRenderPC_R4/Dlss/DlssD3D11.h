@@ -31,6 +31,7 @@ public:
         ID3D11Texture2D* color = nullptr;
         ID3D11Texture2D* depth = nullptr; // Normalized hardware depth, NOT view-space Z.
         ID3D11Texture2D* motion = nullptr; // SSS 23 non-jittered UV displacement.
+        ID3D11Texture2D* reactive = nullptr; // Optional R8 mask, 1 = follow this frame (ignored if mismatched).
         Offset jitter;
         float deltaMilliseconds = 0;
         std::uint64_t frame = 0;

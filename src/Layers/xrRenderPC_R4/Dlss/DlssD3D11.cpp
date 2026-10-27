@@ -213,6 +213,16 @@ bool D3D11Backend::Evaluate(const Frame& frame)
     eval.Feature.pInOutput = m_output.Get();
     eval.pInDepth = frame.depth;
     eval.pInMotionVectors = frame.motion;
+    // Reactive mask (r4_rendertarget_phase_reactive.cpp): DLSS's "bias current colour" input.
+    // Optional; a mask of another size is left out rather than failing the evaluation.
+    if (frame.reactive)
+    {
+        D3D11_TEXTURE2D_DESC rd;
+        frame.reactive->GetDesc(&rd);
+        if (rd.Width == m_render.width && rd.Height == m_render.height && rd.SampleDesc.Count == 1 &&
+            (rd.BindFlags & D3D11_BIND_SHADER_RESOURCE))
+            eval.pInBiasCurrentColorMask = frame.reactive;
+    }
     eval.InJitterOffsetX = frame.jitter.x;
     eval.InJitterOffsetY = frame.jitter.y;
     const Offset motionScale = MotionScale(m_render);

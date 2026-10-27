@@ -1,0 +1,11 @@
+// Monolith: reactive mask debug view (r__upscaler_reactive_debug 1): the mask drawn over the
+// scene in magenta, blended by its value (r4_rendertarget_phase_reactive.cpp)
+#include "common.h"
+
+Texture2D s_reactive;	// rt_upscaler_reactive
+
+float4 main( p_screen I ) : SV_Target
+{
+	float r = s_reactive.Load( int3( I.hpos.xy, 0 ) ).x;
+	return float4( 1.0, 0.0, 1.0, saturate( r ) * 0.75 );
+}

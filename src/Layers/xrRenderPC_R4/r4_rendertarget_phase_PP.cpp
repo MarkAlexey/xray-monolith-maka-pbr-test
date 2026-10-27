@@ -131,7 +131,7 @@ void CRenderTarget::phase_dlss_postprocess()
     }
     PROF_EVENT("Render.Upscaler.ResolveAndOverlays");
 	const auto sceneJitter = dlss::RasterJitter();
-	const bool dlssOutput = dlss::Evaluate(rt_Color->pSurface, rt_ssfx_motion_vectors->pSurface);
+	const bool dlssOutput = dlss::Evaluate(rt_Color->pSurface, rt_ssfx_motion_vectors->pSurface, reactive_texture());
 	dlss::EndScene();
 	if (!dlss::Configured()) return;
 

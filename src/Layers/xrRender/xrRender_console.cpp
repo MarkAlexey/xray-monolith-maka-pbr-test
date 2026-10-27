@@ -278,6 +278,13 @@ float ps_r4_vslr_far = 0.4f; // r4_vslr_far, capture distance as a fraction of t
 float ps_r4_vslr_intensity = 1.0f; // r4_vslr_intensity, how strongly the capture replaces the sky reflection
 int ps_r4_vslr_localize = 2; // LEWD r4_vslr_localize: 0 = direction lookup (IX-Ray), 1..4 = distance-impostor refinement steps
 
+// Reactive mask for DLSS / FSR 3 (r4_rendertarget_phase_reactive.cpp), no restart needed
+int ps_r__upscaler_reactive = 1; // r__upscaler_reactive, 0 = no mask
+float ps_r__upscaler_reactive_scale = 1.0f; // r__upscaler_reactive_scale, colour difference -> mask
+float ps_r__upscaler_reactive_cutoff = 0.02f; // r__upscaler_reactive_cutoff, smaller values are 0
+float ps_r__upscaler_reactive_max = 0.9f; // r__upscaler_reactive_max, cap of the mask
+int ps_r__upscaler_reactive_debug = 0; // r__upscaler_reactive_debug, 1 = mask in magenta
+
 // Skin subsurface scattering (r4_rendertarget_phase_skin_sss.cpp, shaders r3\skin_sss*.h)
 int ps_r4_skin_sss = 1; // r4_skin_sss, needs a game restart (read in CRender::create)
 float ps_r4_skin_sss_width = 0.012f; // r4_skin_sss_width, scatter width in metres (view space) at subsurface 1
@@ -1462,6 +1469,13 @@ void xrRender_initconsole()
 	CMD4(CCC_Float, "r4_vslr_far", &ps_r4_vslr_far, 0.05f, 1.f);
 	CMD4(CCC_Float, "r4_vslr_intensity", &ps_r4_vslr_intensity, 0.f, 1.f);
 	CMD4(CCC_Integer, "r4_vslr_localize", &ps_r4_vslr_localize, 0, 4);
+
+	// Reactive mask for DLSS / FSR 3
+	CMD4(CCC_Integer, "r__upscaler_reactive", &ps_r__upscaler_reactive, 0, 1);
+	CMD4(CCC_Float, "r__upscaler_reactive_scale", &ps_r__upscaler_reactive_scale, 0.f, 8.f);
+	CMD4(CCC_Float, "r__upscaler_reactive_cutoff", &ps_r__upscaler_reactive_cutoff, 0.f, 1.f);
+	CMD4(CCC_Float, "r__upscaler_reactive_max", &ps_r__upscaler_reactive_max, 0.f, 1.f);
+	CMD4(CCC_Integer, "r__upscaler_reactive_debug", &ps_r__upscaler_reactive_debug, 0, 1);
 
 	// Skin subsurface scattering
 	CMD4(CCC_Integer, "r4_skin_sss", &ps_r4_skin_sss, 0, 1);

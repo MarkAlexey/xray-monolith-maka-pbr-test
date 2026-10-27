@@ -396,6 +396,10 @@ void CRenderTarget::phase_combine()
 	// Final water rendering ( All the code above can be omitted if the Water module isn't installed )
 	RCache.set_xform_world(Fidentity);
 	RImplementation.GMBase.r_dsgraph_render_water();
+
+	// Reactive mask for DLSS / FSR 3: the scene before rain and forward rendering
+	// (r4_rendertarget_phase_reactive.cpp; the render targets set above stay bound)
+	phase_reactive_snapshot();
 	
 	{
 		if (RImplementation.o.ssfx_rain)
@@ -441,6 +445,9 @@ void CRenderTarget::phase_combine()
 		//g_pGamePersistent->Environment().RenderClouds	();
 		RImplementation.render_forward();
 		if (g_pGamePersistent) g_pGamePersistent->OnRenderPPUI_main(); // PP-UI
+
+		// Reactive mask: what rain and forward rendering changed (restores the targets above)
+		phase_reactive_mask();
 	}
 
 	//	Igor: for volumetric lights

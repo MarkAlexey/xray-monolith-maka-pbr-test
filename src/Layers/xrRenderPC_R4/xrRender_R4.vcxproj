@@ -558,6 +558,7 @@
     <ClInclude Include="dx11HDAOCSBlender.h" />
     <ClInclude Include="blender_sslr.h" />
     <ClInclude Include="blender_skin_sss.h" />
+    <ClInclude Include="blender_upscaler_reactive.h" />
     <ClInclude Include="blender_accum_csm.h" />
     <ClInclude Include="dx11MinMaxSMBlender.h" />
     <ClInclude Include="..\xrRender\light.h" />
@@ -765,6 +766,7 @@
     <ClCompile Include="dx11HDAOCSBlender.cpp" />
     <ClCompile Include="blender_sslr.cpp" />
     <ClCompile Include="blender_skin_sss.cpp" />
+    <ClCompile Include="blender_upscaler_reactive.cpp" />
     <ClCompile Include="blender_accum_csm.cpp" />
     <ClCompile Include="dx11MinMaxSMBlender.cpp" />
     <ClCompile Include="light_GI.cpp" />
@@ -790,6 +792,7 @@
     <ClCompile Include="r4_rendertarget_phase_hdao.cpp" />
     <ClCompile Include="r4_rendertarget_phase_sslr.cpp" />
     <ClCompile Include="r4_rendertarget_phase_skin_sss.cpp" />
+    <ClCompile Include="r4_rendertarget_phase_reactive.cpp" />
     <ClCompile Include="r4_rendertarget_phase_vslr.cpp" />
     <ClCompile Include="r4_rendertarget_accum_csm.cpp" />
     <ClCompile Include="r4_rendertarget_phase_luminance.cpp" />

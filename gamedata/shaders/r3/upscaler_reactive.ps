@@ -1,0 +1,28 @@
+//////////////////////////////////////////////////////////////////////////////////////////
+// Monolith: reactive mask for DLSS / FSR 3 (r4_rendertarget_phase_reactive.cpp)
+//
+// Marks pixels whose colour was changed by rain and the see-through forward pass (particles,
+// glass, decals drawn without depth or motion) this frame. DLSS gets it as its "bias current
+// colour" mask, FSR 3 as its reactive mask: marked pixels lean on this frame's colour instead of
+// the history, which is what keeps smoke, sparks and rain from smearing.
+// Like FSR 3's own reactive-mask generator: the largest per-channel difference between the
+// scene before (s_opaque) and after (s_image) those passes, scaled, cut off below a threshold
+// and capped (r__upscaler_reactive_scale / _cutoff / _max). Both are 8-bit LDR here, so no
+// tonemapping is needed first.
+//////////////////////////////////////////////////////////////////////////////////////////
+
+#include "common.h"
+
+Texture2D	s_opaque;				// rt_Generic_0 before rain and forward rendering
+uniform float4	upscaler_reactive;	// x = scale, y = cutoff, z = max, w unused
+
+float4 main( p_screen I ) : SV_Target
+{
+	int3 px		= int3( I.hpos.xy, 0 );
+	float3 c	= s_image.Load( px ).rgb;
+	float3 o	= s_opaque.Load( px ).rgb;
+	float3 dd	= abs( c - o );
+	float r		= max( dd.r, max( dd.g, dd.b ) ) * upscaler_reactive.x;
+	r			= r < upscaler_reactive.y ? 0.0 : min( r, upscaler_reactive.z );
+	return r;
+}

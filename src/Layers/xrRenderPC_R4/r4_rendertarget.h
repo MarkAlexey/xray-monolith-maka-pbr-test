@@ -72,6 +72,7 @@ public:
 	IBlender* b_sslr = nullptr; // IX-Ray SSLR
 	IBlender* b_vslr = nullptr; // IX-Ray VSLR panorama
 	IBlender* b_skin_sss = nullptr; // skin subsurface scattering blur
+	IBlender* b_upscaler_reactive = nullptr; // reactive mask for DLSS / FSR 3
 	IBlender* b_hdao_msaa_cs;
 
 	// [SSS Stuff]
@@ -268,6 +269,13 @@ private:
 	ref_texture t_sslr_hiz;
 	void create_sslr_hiz(u32 w, u32 h);
 	void destroy_sslr_hiz();
+
+	// Reactive mask for DLSS / FSR 3 (see r4_rendertarget_phase_reactive.cpp)
+	ref_rt rt_upscaler_opaque;
+	ref_rt rt_upscaler_reactive;
+	ref_shader s_upscaler_reactive;
+	u32 reactive_snapshot_frame = u32(-1); // frame the snapshot was taken
+	u32 reactive_valid_frame = u32(-1); // frame the mask was written
 
 	// Skin subsurface scattering (see r4_rendertarget_phase_skin_sss.cpp)
 	ref_rt rt_skin_sss_tmp;
@@ -496,6 +504,10 @@ public:
 	void phase_hdao();
 	void phase_sslr(); // IX-Ray SSLR
 	void phase_skin_sss(); // skin subsurface scattering blur, before combine_1
+	bool reactive_active() const; // reactive mask for DLSS / FSR 3 (r4_rendertarget_phase_reactive.cpp)
+	void phase_reactive_snapshot();
+	void phase_reactive_mask();
+	ID3D11Texture2D* reactive_texture() const; // this frame's mask, or nullptr
 	void release_skin_sss_timer();
 	// IX-Ray VSLR (r4_rendertarget_phase_vslr.cpp)
 	void create_vslr(u32 size);
