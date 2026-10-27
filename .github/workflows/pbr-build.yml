@@ -24,6 +24,9 @@
 #     "pbr-test-lass-<version>" and STALKER-Anomaly-PBR-Test-lass_*.zip, so it never replaces
 #     the main branch's release. Any other branch gets "pbr-test-<branch>-...".
 #
+# oneTBB (branches with sdk/binaries/tbb12.dll): bin/ gets tbb12.dll, the task scheduler the
+# exes link against (oneTBB 2023.0.0). The exes do not start without it.
+#
 # DLSS / FSR3 branches (name ends in "-dlss", e.g. pbr-test-s3ds-mt-sss-lass-dlss)
 #   - bin/ also gets NVIDIA's DLSS runtime, nvngx_dlss.dll, downloaded from NVIDIA's own
 #     repository and checked against DLSS_DLL_SHA256 (the build fails if it does not match).
@@ -343,6 +346,8 @@ jobs:
           mkdir -p pkg/bin pkg/db/mods
           cp artifacts/gamedata/*.db0 pkg/db/mods/
           for d in artifacts/bin-*; do cp "$d"/*.exe pkg/bin/; done
+          # oneTBB runtime: the exes' task scheduler (_thread_types.h) loads it at startup
+          if [ -f sdk/binaries/tbb12.dll ]; then cp sdk/binaries/tbb12.dll pkg/bin/; fi
           if [[ "$GITHUB_REF_NAME" == *-dlss ]]; then
             # NVIDIA's DLSS runtime next to the exes (pinned version and checksum)
             curl -sSL --fail -o pkg/bin/nvngx_dlss.dll "$DLSS_DLL_URL"
