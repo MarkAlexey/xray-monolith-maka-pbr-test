@@ -768,6 +768,48 @@ ENGINE_API BOOL r2_advanced_pp = FALSE; // advanced post process and effects
 
 u32 renderer_value = 3;
 
+// The flags that follow from the renderer: render path (rsR2 / rsR3 / rsR4), static sun (R1 and
+// R2a light the world without a dynamic sun) and advanced post-processing. Set by the "renderer"
+// command and, before any config runs, for the default renderer (renderer_apply_default).
+static void renderer_apply(LPCSTR renderer_name)
+{
+	bool isR2 = strcmp("renderer_r2a", renderer_name) == 0;
+	isR2 |= strcmp("renderer_r2", renderer_name) == 0;
+	isR2 |= strcmp("renderer_r2.5", renderer_name) == 0;
+	psDeviceFlags.set(rsR2, isR2);
+	psDeviceFlags.set(rsR3, strcmp("renderer_r3", renderer_name) == 0);
+	psDeviceFlags.set(rsR4, strcmp("renderer_r4", renderer_name) == 0);
+
+	r2_sun_static = strcmp("renderer_r1", renderer_name) == 0;
+	r2_sun_static |= strcmp("renderer_r2a", renderer_name) == 0;
+
+	r2_advanced_pp = strcmp("renderer_r2.5", renderer_name) == 0;
+	r2_advanced_pp |= strcmp("renderer_r3", renderer_name) == 0;
+	r2_advanced_pp |= strcmp("renderer_r4", renderer_name) == 0;
+}
+
+// Monolith: called by CEngineAPI::CreateRendererList once vid_quality_token exists. Without it
+// these flags kept their static defaults until a config ran "renderer ..."; with appdata/user.ltx
+// missing or unreadable (a fresh install, a broken MO2 profile) that never happened, and the
+// DX11 exe ran with r2_sun_static TRUE: no dynamic sun, every shader compiled with
+// USE_R2_STATIC_SUN (p_flat's TEXCOORD0 becomes float4, which broke a laser-dot mod's
+// models_lfo_light_dot_weapons.ps with X3536). Now the default renderer (renderer_value, the
+// first listed one: renderer_r4 in the DX11 exe) applies first; a "renderer" line in user.ltx
+// still overrides it, so an existing config behaves exactly as before.
+void renderer_apply_default()
+{
+	if (!vid_quality_token)
+		return;
+	for (int i = 0; vid_quality_token[i].name; i++)
+		if (vid_quality_token[i].id == int(renderer_value))
+		{
+			renderer_apply(vid_quality_token[i].name);
+			Msg("* renderer default: %s (static sun %s), until a config sets \"renderer\"",
+			    vid_quality_token[i].name, r2_sun_static ? "on" : "off");
+			return;
+		}
+}
+
 //void fill_render_mode_list();
 //void free_render_mode_list();
 
@@ -797,19 +839,7 @@ public:
 			if (i == renderer_value)
 				renderer_name = vid_quality_token[i].name;
 
-		bool isR2 = strcmp("renderer_r2a", renderer_name) == 0;
-		isR2 |= strcmp("renderer_r2", renderer_name) == 0;
-		isR2 |= strcmp("renderer_r2.5", renderer_name) == 0;
-		psDeviceFlags.set(rsR2, isR2);
-		psDeviceFlags.set(rsR3, strcmp("renderer_r3", renderer_name) == 0);
-		psDeviceFlags.set(rsR4, strcmp("renderer_r4", renderer_name) == 0);
-
-		r2_sun_static = strcmp("renderer_r1", renderer_name) == 0;
-		r2_sun_static |= strcmp("renderer_r2a", renderer_name) == 0;
-
-		r2_advanced_pp = strcmp("renderer_r2.5", renderer_name) == 0;
-		r2_advanced_pp |= strcmp("renderer_r3", renderer_name) == 0;
-		r2_advanced_pp |= strcmp("renderer_r4", renderer_name) == 0;
+		renderer_apply(renderer_name);
 	}
 
 	virtual void Status(TStatus& S)

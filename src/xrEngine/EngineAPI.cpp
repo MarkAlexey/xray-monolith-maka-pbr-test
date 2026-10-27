@@ -441,6 +441,10 @@ void CEngineAPI::CreateRendererList()
 		Msg("[%s]", _tmp[i]);
 		//#endif // DEBUG
 	}
+	// The default renderer's flags (static sun etc.) apply now, not only when a config runs
+	// "renderer ..." (xr_ioc_cmd.cpp, renderer_apply_default)
+	extern void renderer_apply_default();
+	renderer_apply_default();
 #endif //#ifndef DEDICATED_SERVER
 }
 
