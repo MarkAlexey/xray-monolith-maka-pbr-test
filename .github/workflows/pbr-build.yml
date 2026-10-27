@@ -78,6 +78,10 @@
 #         Variables: PBR_SOURCES_REPO = owner/name of that repository
 #         Secrets:   PBR_SOURCES_TOKEN = a fine-grained token with read-only "Contents" access
 #                    to that repository only
+#   HUD blood (experiment, tools/hud_blood): with a hud_blood_atlas/ folder in the sources
+#   repository (the output of tools/make_blood_atlas.py: textures/hud_blood/*.dds and
+#   configs/plugins/hud_blood_atlas.ltx), the FOMOD gets a "HUD blood" page with the mod built by
+#   tools/make_hud_blood_overlay.py from the packs' HUD shaders. Without the folder, no blood page.
 #   Without them the job is skipped with a notice and the release has no shader installer. If
 #   the build or the compile check fails, the release still goes out, without it.
 #   The packs follow this branch's tools and shaders; changing only the sources repository
@@ -282,10 +286,26 @@ jobs:
             python $build --sources shader-sources --out shader_packs/dlss --dxc "$dxc" "${top[@]}"
             dlss=(--dlss-overlay shader_packs/dlss/PBR_overlay_GAMMA.zip --dlss-full shader_packs/dlss/PBR_shaders_GAMMA.zip)
           fi
+          # HUD blood (experiment): the blood call added to the packs' HUD shaders, with the atlas
+          # from the sources repository
+          blood=()
+          if [ -d shader-sources/hud_blood_atlas ]; then
+            python tools/make_hud_blood_overlay.py --pack shader_packs/plain/PBR_overlay_GAMMA.zip \
+                --stack shader_packs/plain/PBR_shaders_GAMMA.zip --atlas shader-sources/hud_blood_atlas \
+                --out shader_packs/HUD_blood.zip
+            blood=(--blood shader_packs/HUD_blood.zip)
+          else
+            echo "::notice::no hud_blood_atlas/ in the sources repository: the installer has no HUD blood page"
+          fi
           # One Mod Organizer installer instead of loose zips
-          python tools/make_shader_fomod.py --overlay shader_packs/plain/PBR_overlay_GAMMA.zip \
-              --full shader_packs/plain/PBR_shaders_GAMMA.zip "${dlss[@]}" \
-              --version "$(date -u +'%Y.%-m.%-d')-${GITHUB_SHA::8}" --out shader_packs/PBR_shaders_GAMMA_FOMOD.zip
+          fomod=(python tools/make_shader_fomod.py --overlay shader_packs/plain/PBR_overlay_GAMMA.zip
+              --full shader_packs/plain/PBR_shaders_GAMMA.zip "${dlss[@]}"
+              --version "$(date -u +'%Y.%-m.%-d')-${GITHUB_SHA::8}" --out shader_packs/PBR_shaders_GAMMA_FOMOD.zip)
+          if ! "${fomod[@]}" "${blood[@]}"; then
+            [ ${#blood[@]} -eq 0 ] && exit 1
+            echo "::warning::HUD blood does not fit every variant (see the error above): installer built without it"
+            "${fomod[@]}"
+          fi
 
       - name: Upload
         if: steps.cfg.outputs.on == 'true'
@@ -365,6 +385,9 @@ jobs:
 
           mkdir -p tools_pkg/tools
           cp tools/make_pbr_compat_patch.py tools/make_pbr_overlay.py tools/build_shader_pack.py tools/pack_pbr_textures.py tools/make_shader_fomod.py tools_pkg/tools/
+          # HUD blood (experiment): the mod's files and the tools that build its atlas and shaders
+          cp tools/make_hud_blood_overlay.py tools/make_blood_atlas.py tools_pkg/tools/
+          cp -r tools/hud_blood tools_pkg/tools/
           cp notes.md tools_pkg/README-PBR.md
           (cd tools_pkg && zip -qr "../${{ steps.v.outputs.name }}_tools.zip" .)
 

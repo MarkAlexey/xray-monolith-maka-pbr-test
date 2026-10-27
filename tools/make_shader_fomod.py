@@ -11,11 +11,18 @@ zips is easy; this tool puts them in one FOMOD that asks two questions and insta
 
   Page 1  Install type     Overlay (recommended) | Full pack
   Page 2  DLSS / FSR 3     With DLSS / FSR 3     | Without            (only with --dlss-* zips)
+  Page 3  HUD blood        With (experiment)     | Without            (only with --blood)
+
+HUD blood (--blood, the zip of tools/make_hud_blood_overlay.py) is installed on top of whichever
+variant was picked: its HUD shaders are the variants' own deffer_base_hud_bump.ps /
+deffer_base_hud_aref_bump.ps with the blood call, so the tool stops when the variants do not all
+share the same two files (the blood zip would then fit only some of them).
 
 Layout inside the zip, the same as brodrigz's DLSS / FSR3 compatibility patch zip so the two
 read alike:
   README.txt                       how to install (also docs/README.txt)
   components/<id>/gamedata/...     one folder per variant: overlay, full, overlay_dlss, full_dlss
+                                   (+ hud_blood with --blood)
   docs/README.txt, docs/CREDITS.txt, docs/<id>_<report>   (each variant's own README / PACK_REPORT)
   fomod/info.xml, fomod/ModuleConfig.xml
   selections/<id>.txt              which variant was picked, one line each
@@ -27,7 +34,7 @@ are installed and the instructions stay in the archive.
 Usage
   python make_shader_fomod.py --overlay plain/PBR_overlay_GAMMA.zip --full plain/PBR_shaders_GAMMA.zip \\
       [--dlss-overlay dlss/PBR_overlay_GAMMA.zip --dlss-full dlss/PBR_shaders_GAMMA.zip] \\
-      --out PBR_shaders_GAMMA_FOMOD.zip [--version 2026.10.20] [--dry-run]
+      [--blood "HUD blood.zip"] --out PBR_shaders_GAMMA_FOMOD.zip [--version 2026.10.20] [--dry-run]
   --dry-run lists what would go into the installer and writes nothing.
 
 Caveats
@@ -79,6 +86,14 @@ DLSS_ON_TEXT = ("PBR merged with brodrigz's DLSS / FSR3 compatibility patch 0.5 
                 "mod ABOVE it. The files both change (night_vision.h, deffer_impl_flat.ps, the grass shader) "
                 "are merged here, so the patch's own copies must lose to these.\n\n"
                 "Full pack: the DLSS shaders are already inside; the patch can stay below it or be left out.")
+BLOOD_ON_TEXT = ("Blood on the player's hands and weapons (experiment): grows with hits, bleeding and close kills, "
+                 "dries, flakes off, washes off in the rain and can be wiped off with a cloth (\"Wipe off blood\" "
+                 "on cloths).\n\nNeeds SSS's HUD Raindrops component (GAMMA has it). Tuning: "
+                 "gamedata/configs/plugins/hud_blood.ltx. Installed with this mod, above the PBR shaders.")
+BLOOD_OFF_TEXT = "No HUD blood. The first-person shaders stay exactly as the PBR shaders ship them."
+HUD_SHADERS = ("gamedata/shaders/r3/deffer_base_hud_bump.ps", "gamedata/shaders/r3/deffer_base_hud_aref_bump.ps")
+BLOOD_ID = "hud_blood"
+
 DLSS_OFF_TEXT = ("Plain GAMMA shaders, no DLSS / FSR3 shaders. Upscaling stays off; picking DLSS or FSR 3 "
                  "in the menu shows which shader is missing.")
 
@@ -90,14 +105,14 @@ INSTALL
 1. Install the PBR-Test binaries (bin/ and db/ of the release zip) into the Anomaly folder.
 2. Install this ZIP through MO2:
    - Page 1: Overlay (recommended) or Full pack.
-{dlss_line}3. Overlay: enable this mod at the very bottom of MO2's left pane (highest priority,
+{dlss_line}{blood_line}3. Overlay: enable this mod at the very bottom of MO2's left pane (highest priority,
    above every shader mod). Every file of it must show as winning.
    Full pack: enable it above GAMMA's shader mods; they can stay enabled below it.
 {dlss_steps}4. Clear the shader cache (delete appdata/shaders_cache/r4) and start the game.
 
 UPDATING OR CHANGING OPTIONS
 ---------------------------
-Reinstall this archive when changing the install type or the DLSS / FSR 3 choice.
+Reinstall this archive when changing the install type, the DLSS / FSR 3 or the HUD blood choice.
 Choose REPLACE in MO2 so files from your old selections are removed.
 
 OTHER SHADER STACKS
@@ -187,7 +202,7 @@ def step(name, group, kind, plugins):
             '\n          </plugins>\n        </group>\n      </optionalFileGroups>\n    </installStep>')
 
 
-def module_config(variants, with_dlss, version):
+def module_config(variants, with_dlss, with_blood, version):
     steps = [step("1. Install type", "Pick one", "SelectExactlyOne", [
         plugin("Overlay (recommended)", OVERLAY_TEXT, {"type": "overlay"}, "Recommended"),
         plugin("Full pack", FULL_TEXT, {"type": "full"}, "Optional")])]
@@ -195,6 +210,10 @@ def module_config(variants, with_dlss, version):
         steps.append(step("2. DLSS / FSR 3", "Upscaling shaders", "SelectExactlyOne", [
             plugin("With DLSS / FSR 3 (recommended)", DLSS_ON_TEXT, {"dlss": "on"}, "Recommended"),
             plugin("Without DLSS / FSR 3", DLSS_OFF_TEXT, {"dlss": "off"}, "Optional")]))
+    if with_blood:
+        steps.append(step(f"{len(steps) + 1}. HUD blood", "Blood on hands and weapons", "SelectExactlyOne", [
+            plugin("With HUD blood (experiment)", BLOOD_ON_TEXT, {"blood": "on"}, "Recommended"),
+            plugin("Without HUD blood", BLOOD_OFF_TEXT, {"blood": "off"}, "Optional")]))
     patterns = []
     for vid in variants:
         typ, dlss, _ = VARIANTS[vid]
@@ -207,6 +226,12 @@ def module_config(variants, with_dlss, version):
                       f'destination="{escape(DOCS_DEST)}\\Selected variant.txt" priority="0" />')
         patterns.append(f'\n      <pattern>\n        <dependencies operator="And">{deps}\n        </dependencies>'
                         f'\n        <files>{files}\n        </files>\n      </pattern>')
+    if with_blood:
+        # Above the variant (priority 1): its two HUD shaders replace the variant's
+        patterns.append('\n      <pattern>\n        <dependencies operator="And">'
+                        '\n          <flagDependency flag="blood" value="on" />\n        </dependencies>'
+                        f'\n        <files>\n          <folder source="components\\{BLOOD_ID}\\gamedata" '
+                        'destination="gamedata" priority="1" />\n        </files>\n      </pattern>')
     return ('<?xml version="1.0" encoding="utf-8"?>\n'
             '<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
             'xsi:noNamespaceSchemaLocation="http://qconsulting.ca/fo3/ModConfig5.0.xsd">'
@@ -218,11 +243,12 @@ def module_config(variants, with_dlss, version):
             '\n</config>\n')
 
 
-def info_xml(version):
+def info_xml(version, with_blood):
     return ('<?xml version="1.0" encoding="utf-8"?>\n<fomod>'
             f'\n  <Name>{escape(MOD_NAME)}</Name>\n  <Author>{escape(AUTHOR)}</Author>'
             f'\n  <Version>{escape(version)}</Version>'
-            '\n  <Description>PBR shader files for GAMMA: overlay or full pack, with or without the DLSS / FSR3 shaders.</Description>'
+            '\n  <Description>PBR shader files for GAMMA: overlay or full pack, with or without the DLSS / FSR3 shaders'
+            + (', optional HUD blood (experiment)' if with_blood else '') + '.</Description>'
             f'\n  <Website>{escape(WEBSITE)}</Website>\n</fomod>\n')
 
 
@@ -237,6 +263,7 @@ def main():
     ap.add_argument("--full", required=True)
     ap.add_argument("--dlss-overlay")
     ap.add_argument("--dlss-full")
+    ap.add_argument("--blood", help="HUD blood zip (tools/make_hud_blood_overlay.py): adds the HUD blood page")
     ap.add_argument("--out", required=True)
     ap.add_argument("--version", default=datetime.date.today().strftime("%Y.%m.%d"))
     ap.add_argument("--dry-run", action="store_true")
@@ -257,12 +284,31 @@ def main():
         print(f"{vid:13} {VARIANTS[vid][2]:24} {len(game):4} game files, docs: {', '.join(docs) or '-'}  <- {sources[vid]}")
         reports += [f"  {vid}_{d}" for d in docs]
 
+    blood = None
+    if a.blood:
+        blood, _ = read_pack(a.blood)
+        # The blood zip patches the variants' HUD shaders: they must all be the same two files
+        for key in HUD_SHADERS:
+            seen = {vid: next((d for k, d in files.items() if k.lower() == key), None) for vid, (files, _) in packs.items()}
+            if len(set(seen.values())) != 1 or None in seen.values():
+                sys.exit(f"error: --blood: the variants do not share one {key.split('/')[-1]} "
+                         f"({', '.join(v for v, d in seen.items() if d is None) or 'they differ'}); "
+                         f"the blood zip fits only the variant it was built from")
+            if not any(k.lower() == key for k in blood):
+                sys.exit(f"error: --blood {a.blood} has no {key}: not a make_hud_blood_overlay.py zip")
+        game = [k for k in blood if k.lower().startswith("gamedata/")]
+        docs = [k for k in blood if not k.lower().startswith("gamedata/")]
+        print(f"{BLOOD_ID:13} {'HUD blood (experiment)':24} {len(game):4} game files, docs: {', '.join(docs) or '-'}  <- {a.blood}")
+        reports += [f"  {BLOOD_ID}_{d}" for d in docs]
+
     dlss_line = "   - Page 2: With DLSS / FSR 3 (recommended) or Without.\n" if with_dlss else ""
     dlss_steps = ("   Overlay with DLSS / FSR 3: install brodrigz's DLSS / FSR3 compatibility patch first\n"
                   "   (its Better Beef's NVGs option only if you have that mod) and put this mod ABOVE it.\n"
                   "   The full pack already has the DLSS shaders; the patch is optional there.\n"
                   "   In game: Settings > Video > Basic: MSAA Off, then DLSS or FSR 3, Apply.\n") if with_dlss else ""
-    readme = README.format(version=a.version, website=WEBSITE, dlss_line=dlss_line, dlss_steps=dlss_steps,
+    blood_line = (f"   - Page {3 if with_dlss else 2}: With HUD blood (experiment) or Without.\n") if blood else ""
+    readme = README.format(version=a.version, website=WEBSITE, dlss_line=dlss_line, blood_line=blood_line,
+                           dlss_steps=dlss_steps,
                            reports="\n".join(reports) or "  (none)")
     credits = CREDITS.format(website=WEBSITE)
     if a.dry_run:
@@ -276,14 +322,20 @@ def main():
             for rel, data in files.items():
                 if rel.lower().startswith("gamedata/"):
                     z.writestr(f"components/{vid}/{rel}", data)
+        for rel, data in (blood or {}).items():
+            if rel.lower().startswith("gamedata/"):
+                z.writestr(f"components/{BLOOD_ID}/{rel}", data)
         z.writestr("docs/CREDITS.txt", crlf(credits))
         z.writestr("docs/README.txt", crlf(readme))
         for vid, (files, _) in packs.items():
             for rel, data in files.items():
                 if not rel.lower().startswith("gamedata/"):
                     z.writestr(f"docs/{vid}_{rel}", data)
-        z.writestr("fomod/info.xml", crlf(info_xml(a.version)))
-        z.writestr("fomod/ModuleConfig.xml", crlf(module_config(list(sources), with_dlss, a.version)))
+        for rel, data in (blood or {}).items():
+            if not rel.lower().startswith("gamedata/"):
+                z.writestr(f"docs/{BLOOD_ID}_{rel}", data)
+        z.writestr("fomod/info.xml", crlf(info_xml(a.version, bool(blood))))
+        z.writestr("fomod/ModuleConfig.xml", crlf(module_config(list(sources), with_dlss, bool(blood), a.version)))
         z.writestr("README.txt", crlf(readme))
         for vid in packs:
             z.writestr(f"selections/{vid}.txt", crlf(selection_text(vid, a.version)))
