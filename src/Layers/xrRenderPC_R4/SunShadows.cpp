@@ -44,6 +44,10 @@ struct SunShadows::State
     bool capturing[count]{}, recording[count]{};
     bool early_static[count]{}, static_valid[count]{};
     bool valid[count]{};
+    // Sun shadow cache (r4_sun_shadow_cache, R_sun.cpp): the far cascade renders into a private
+    // map instead of rt_smap_depth, which the local lights overwrite later in the frame.
+    // fresh: the maps were just created, nothing stored in them is valid.
+    bool far_private = false, fresh = false;
 
     bool Initialize()
     {
@@ -60,7 +64,8 @@ struct SunShadows::State
         for (u32 i = 0; i < count; ++i)
         {
             csm[i] = i < slices;
-            const bool map_ready = csm[i] ? maps[i].InitializeDepth(target->rt_smap_csm_dsv[i]) : maps[i].Initialize(i == count - 1);
+            const bool map_ready = csm[i] ? maps[i].InitializeDepth(target->rt_smap_csm_dsv[i])
+                : maps[i].Initialize(i == count - 1 && !far_private);
             if (!workers[i].Start(5 + i, names[i]) || !map_ready)
             {
                 Msg("! Sun shadows: context/atlas creation failed; keeping original renderer");
@@ -68,7 +73,8 @@ struct SunShadows::State
             }
         }
         supported = true;
-        Msg("* Sun shadows: three complete recording backends ready");
+        fresh = true;
+        Msg("* Sun shadows: three complete recording backends ready%s", far_private ? " (far cascade in a private map for the shadow cache)" : "");
         return true;
     }
 
@@ -113,6 +119,11 @@ SunShadows::~SunShadows() { EndFrame(); }
 bool SunShadows::Prepare(CRender& renderer)
 {
     EndFrame();
+    // The shadow cache needs the far cascade in a private map: rebuild the backends when it is
+    // switched on or off
+    const bool far_private = ps_r4_sun_shadow_cache != 0;
+    if (state->initialized && state->far_private != far_private) state = std::make_unique<State>();
+    if (!state->initialized) state->far_private = far_private;
     if (!ps_r4_mt_sun_shadows || renderer.o.Tshadows || renderer.m_sun_cascades.size() != State::count ||
         !state->Initialize()) return false;
     PROF_EVENT("Render.SunShadows.Prepare");
@@ -125,6 +136,13 @@ bool SunShadows::Prepare(CRender& renderer)
     D3DXMatrixInverse((D3DXMATRIX*)&inverse, nullptr, (D3DXMATRIX*)&full);
     for (u32 i = 0; i < State::count; ++i) renderer.prepare_sun_cascade(i, inverse);
     cascades.back().reset_chain = chain;
+    // Sun shadow cache: which cascades reuse their stored depth this frame (R_sun.cpp)
+    if (state->fresh)
+    {
+        renderer.sun_cache_invalidate("shadow maps created");
+        state->fresh = false;
+    }
+    renderer.sun_cache_select(true);
     FTreeVisual::PrepareFrame();
     for (u32 i = 0; i < State::count; ++i)
     {
@@ -148,7 +166,7 @@ void SunShadows::CapturePending(bool details_prepared)
     u32 deferred = 0;
     for (u32 i = State::count; i-- > 0;)
     {
-        if (state->capturing[i]) continue;
+        if (state->capturing[i] || renderer.sun_cache_skip(i)) continue;
         if (!bounds_ready && renderer.sun_cascade_needs_receiver_bounds(i))
         {
             ++deferred;
@@ -175,7 +193,7 @@ void SunShadows::RecordStatic()
 void SunShadows::RecordStatic(u32 index)
 {
     if (!state->prepared || state->early_static[index] || state->recording[index] ||
-        !state->capturing[index] || !state->workers[index].Ready()) return;
+        !state->capturing[index] || state->renderer->sun_cache_skip(index) || !state->workers[index].Ready()) return;
     if (!state->workers[index].Wait())
     {
         state->RestoreOwner();
@@ -237,6 +255,12 @@ void SunShadows::Record()
     // Each completed cascade starts recording before the next one is primed.
     for (u32 i = 0; i < State::count; ++i)
     {
+        // Sun shadow cache: the stored depth is reused, nothing to capture or record
+        if (renderer.sun_cache_skip(i))
+        {
+            state->recording[i] = true;
+            continue;
+        }
         bool success;
         {
             PROF_EVENT("Render.SunShadows.CaptureWait");
@@ -268,7 +292,22 @@ bool SunShadows::Prepared() const { return state->prepared; }
 
 bool SunShadows::Bind(u32 index)
 {
-    if (!state->prepared || index >= State::count) return false;
+    // Sun shadow cache: the map keeps the depth stored on an earlier frame. Nothing to execute;
+    // a private map still has to stand in for rt_smap_depth in the lighting pass. Also when a
+    // failed preparation restored the owner path: the stored depth is still in the map.
+    if (index < State::count && state->initialized && state->renderer && state->renderer->sun_cache_skip(index))
+    {
+        RCache.shadow_texture_source = state->csm[index] ? nullptr : RImplementation.Target->rt_smap_depth->pTexture._get();
+        RCache.shadow_texture_view = state->csm[index] ? nullptr : state->maps[index].View();
+        state->consumed = index == State::count - 1;
+        return false;
+    }
+    if (!state->prepared || index >= State::count)
+    {
+        // The owner renders this cascade into the shared targets: nothing stored stays valid
+        if (state->renderer && index < State::count) state->renderer->sun_cache_rendered(index, false);
+        return false;
+    }
     Record();
     if (!state->prepared) return false;
     bool success;
@@ -300,6 +339,9 @@ bool SunShadows::Bind(u32 index)
         Msg("! Sun shadows: recording failed; restoring owner submission");
         HW.pContext->ClearDepthStencilView(state->maps[index].Depth(), D3D11_CLEAR_DEPTH, 1.f, 0);
     }
+    // Sun shadow cache: this frame's depth (the owner part follows right after, before the map
+    // is read). A failed recording is not stored.
+    state->renderer->sun_cache_rendered(index, success);
     if (state->csm[index])
     {
         RCache.shadow_texture_source = nullptr;

@@ -86,6 +86,8 @@ void CRender::render_sun_cascades()
         RCache.InvalidateAfterCommandList();
         return;
     }
+    // Every cascade is rendered into the shared maps below: nothing stored stays valid
+    sun_cache_invalidate("single-threaded frame");
 #endif
 	bool b_need_to_render_sunshafts = Target->need_to_render_sunshafts();
 	bool last_cascade_chain_mode = m_sun_cascades.back().reset_chain;
@@ -337,9 +339,173 @@ bool CRender::sun_cascade_needs_receiver_bounds(u32 cascade_ind)
 {
     // r4_sun_receiver_bounds 0: no receiver pruning at all (every caster in the cascade frustum)
     if (!ps_r4_sun_receiver_bounds) return false;
+    // A cascade the sun shadow cache reuses must hold every caster in its box: the receivers
+    // visible when it was rendered are not the ones visible on the frames that reuse it
+    if (ps_r4_sun_shadow_cache && sun_cache_period(cascade_ind) > 1) return false;
     return !(cascade_ind == m_sun_cascades.size() - 1 && o.advancedpp &&
         (ps_sunshafts_mode == R2SS_VOLUMETRIC || ps_sunshafts_mode == R2SS_COMBINE_SUNSHAFTS) &&
         Target->need_to_render_sunshafts());
+}
+#endif
+
+#if RENDER == R_R4
+//////////////////////////////////////////////////////////////////////////
+// Monolith: sun shadow cache (r4_sun_shadow_cache 1)
+//
+// Rewrite of IX-Ray's cascade caching (ixray-1.6-stcop c648c67d, "R4 sun shadows cascades
+// caching") for Monolith's multithreaded sun shadows (SunShadows.cpp).
+//
+// A cascade keeps the depth it rendered and is rendered again only every N frames
+// (r4_sun_shadow_cache_period, per cascade, default 1 2 3: near every frame, middle every 2nd,
+// far every 3rd). On the frames in between it captures, records and draws nothing; its
+// transform is put back to the one the stored depth was rendered with, so the lighting passes
+// (CSM pass, legacy cascade passes, sun shafts) read the stored depth where it was written.
+// IX-Ray re-renders one cascade per frame, round-robin; a period per cascade keeps the near
+// cascade (the player's own and close NPCs' shadows) current and saves on the far one, which
+// has the most casters.
+//
+// A cascade is rendered again before its period is up when (the "reason" that
+// r4_sun_shadow_cache_stats prints):
+//   - it has no stored depth, or the previous frame did not prepare the sun (frame gap: indoors,
+//     menu, a single-threaded frame, vid_restart, level change);
+//   - the shadow map size or the cascade size changed (r2_smap_size, ssfx_shadow_cascades);
+//   - the sun direction moved by more than ~0.8 degrees (time skip, weather change);
+//   - the box the camera needs now lies further from the stored one than
+//     r4_sun_shadow_cache_shift of its half-width (turning, running, teleports);
+//   - the second viewport (3D scopes) is active: both cameras would share the cascades.
+//
+// Requirements: r4_mt_sun_shadows 1. Each cascade needs storage of its own (a CSM slice or a
+// private map); the single-threaded path renders every cascade into the shared rt_smap_depth,
+// which the spot lights overwrite later in the frame. With the cache on, the far cascade gets a
+// private map too (one more shadow map in memory: 16 MB at r2_smap_size 2048, 64 MB at 4096),
+// bound in place of rt_smap_depth for its lighting pass.
+//
+// Caveats:
+//   - Shadows of moving objects in a reused cascade lag by up to period - 1 frames. Keep the
+//     near period at 1 for the player's own and close shadows.
+//   - Receiver-bounds pruning (r4_sun_receiver_bounds) is off for cascades with a period above
+//     1, so the frames that do render them draw every caster in the box.
+//   - Not ported: IX-Ray's mode 2, which warps cached coordinates for a changed sun direction.
+//     Over a period of a few frames the sun moves by thousandths of a degree.
+//////////////////////////////////////////////////////////////////////////
+
+u32 CRender::sun_cache_period(u32 cascade_ind) const
+{
+    const float v = cascade_ind == 0 ? ps_r4_sun_shadow_cache_period.x
+        : cascade_ind == 1 ? ps_r4_sun_shadow_cache_period.y : ps_r4_sun_shadow_cache_period.z;
+    return u32(_max(1, iFloor(v + 0.5f)));
+}
+
+bool CRender::sun_cache_skip(u32 cascade_ind) const
+{
+    return cascade_ind < m_sun_cascades.size() && m_sun_cascades[cascade_ind].cache.skip;
+}
+
+void CRender::sun_cache_invalidate(const char* reason)
+{
+    for (auto& cascade : m_sun_cascades)
+    {
+        if (cascade.cache.valid) cascade.cache.reason = reason;
+        cascade.cache.valid = false;
+        cascade.cache.skip = false;
+    }
+}
+
+// How far the centre of the box the camera needs now lies from the centre of the stored box,
+// in the stored transform's NDC (1 = half the cascade width)
+static float sun_cache_shift(const Fmatrix& fresh, const Fmatrix& stored)
+{
+    // the sun transforms are orthographic (affine), so the 4x3 inverse is exact
+    Fmatrix inverse;
+    inverse.invert(fresh);
+    Fvector origin, centre, projected;
+    origin.set(0.f, 0.f, 0.5f);
+    inverse.transform(centre, origin);
+    stored.transform(projected, centre);
+    return _max(_abs(projected.x), _abs(projected.y));
+}
+
+// Once per frame, after every cascade was prepared (placement, culling frustum, transform).
+// allowed: the multithreaded sun shadows prepared this frame
+void CRender::sun_cache_select(bool allowed)
+{
+    const bool gap = sun_cache_frame == u32(-1) || sun_cache_frame + 1 != Device.dwFrame;
+    sun_cache_frame = Device.dwFrame;
+
+    const char* off = !ps_r4_sun_shadow_cache ? "cache off" : !allowed ? "single-threaded frame"
+        : Device.m_SecondViewport.IsSVPActive() ? "second viewport active" : nullptr;
+    if (off)
+    {
+        sun_cache_invalidate(off);
+        return;
+    }
+
+    light* sun = (light*)Lights.sun_adapted._get();
+    Fvector direction = sun->direction;
+    direction.normalize_safe();
+    for (u32 i = 0; i < m_sun_cascades.size(); ++i)
+    {
+        auto& cascade = m_sun_cascades[i];
+        auto& cache = cascade.cache;
+        cache.skip = false;
+
+        const char* reason = nullptr;
+        if (!cache.valid) reason = "no stored depth";
+        else if (gap) reason = "frame gap";
+        else if (cache.smap != o.smapsize) reason = "shadow map size";
+        else if (cache.size != cascade.size) reason = "cascade size";
+        else if (cache.direction.dotproduct(direction) < 0.9999f) reason = "sun direction";
+        else if (sun_cache_shift(cascade.cull_xform, cache.xform) > ps_r4_sun_shadow_cache_shift) reason = "cascade moved";
+        else if (Device.dwFrame - cache.frame >= sun_cache_period(i)) reason = "period";
+
+        if (reason)
+        {
+            cache.reason = reason;
+            continue;
+        }
+
+        // Reuse. Everything downstream sees the transform the stored depth was rendered with:
+        // the capture is skipped, lighting reads cull_xform (X.D.combine) and xform
+        cache.skip = true;
+        cascade.cull_xform = cache.xform;
+        cascade.xform = cache.xform;
+        ++cache.reused;
+    }
+}
+
+// The cascade was rendered this frame. complete: its map now holds every caster of the frame
+void CRender::sun_cache_rendered(u32 cascade_ind, bool complete)
+{
+    if (cascade_ind >= m_sun_cascades.size()) return;
+    auto& cascade = m_sun_cascades[cascade_ind];
+    auto& cache = cascade.cache;
+    cache.skip = false;
+    cache.valid = complete && ps_r4_sun_shadow_cache != 0;
+    if (!cache.valid) return;
+    light* sun = (light*)Lights.sun_adapted._get();
+    cache.xform = cascade.cull_xform;
+    cache.direction = sun->direction;
+    cache.direction.normalize_safe();
+    cache.size = cascade.size;
+    cache.smap = o.smapsize;
+    cache.frame = Device.dwFrame;
+    ++cache.rendered;
+}
+
+void CRender::sun_cache_stats()
+{
+    Msg("* sun shadow cache: %s, periods %u %u %u, shift limit %.3f, r4_mt_sun_shadows %d, csm %s",
+        ps_r4_sun_shadow_cache ? "on" : "off", sun_cache_period(0), sun_cache_period(1), sun_cache_period(2),
+        ps_r4_sun_shadow_cache_shift, ps_r4_mt_sun_shadows, o.sun_csm ? "on" : "off");
+    for (u32 i = 0; i < m_sun_cascades.size(); ++i)
+    {
+        auto& cache = m_sun_cascades[i].cache;
+        const u32 total = cache.rendered + cache.reused;
+        Msg("* cascade %u (%.0f m): rendered %u, reused %u (%.0f%%), stored depth %s, age %u frames, last render: %s",
+            i, m_sun_cascades[i].size, cache.rendered, cache.reused, total ? 100.f * float(cache.reused) / float(total) : 0.f,
+            cache.valid ? "valid" : "none", cache.valid ? Device.dwFrame - cache.frame : 0u, cache.reason);
+        cache.rendered = cache.reused = 0;
+    }
 }
 #endif
 

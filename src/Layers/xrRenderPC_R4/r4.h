@@ -249,6 +249,15 @@ public:
     void render_sun_cascade(u32 cascade_ind, const xr_vector<ISpatialShared>* prepared = nullptr, u64 revision = 0);
     void capture_sun_cascade(u32 cascade_ind, const xr_vector<ISpatialShared>* prepared, u64 revision, bool static_only = false);
     bool sun_cascade_needs_receiver_bounds(u32 cascade_ind);
+	// Monolith sun shadow cache (r4_sun_shadow_cache, R_sun.cpp)
+	u32 sun_cache_period(u32 cascade_ind) const;
+	void sun_cache_select(bool allowed);
+	bool sun_cache_skip(u32 cascade_ind) const;
+	void sun_cache_rendered(u32 cascade_ind, bool complete);
+	void sun_cache_invalidate(const char* reason);
+	void sun_cache_stats();
+	void spot_shadow_cache_stats(); // LocalLightShadows.cpp
+	u32 sun_cache_frame = u32(-1);
 	void init_cacades();
 	void render_sun_cascades();
 

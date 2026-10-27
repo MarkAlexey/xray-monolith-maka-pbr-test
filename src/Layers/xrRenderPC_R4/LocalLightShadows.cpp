@@ -38,6 +38,153 @@ struct ShadowDraw
     u32 pass, base_vertex, vertices, first_index, index_count;
 };
 
+//////////////////////////////////////////////////////////////////////////////////////////////
+// Monolith: spot shadow cache (r4_spot_shadow_cache 1)
+//
+// Rewrite of IX-Ray's spot light shadow cache (ixray-1.6-stcop 6eb13153, "Spotlight Shadow
+// cashe") for Monolith's recorded local shadows.
+//
+// A still light (its static caster graph frozen: m_moving_frames >= 32, not decorative, not HUD)
+// keeps the depth of its immutable static casters in a texture of its own, the size of its atlas
+// tile. Every frame the stored depth is copied into the light's tile (a full-tile draw writing
+// SV_Depth, since D3D11 cannot copy into part of a depth texture) and only the other casters are
+// drawn on top: alpha-tested and tree statics, dynamic objects, and anything the owner draws
+// (fallback packets, grass, translucent casters).
+//
+// Which casters are stored: the packets PrepareCache marks local_shadow_eligible (immutable level
+// geometry, MT_NORMAL, a pure depth pass: the vertex shader reads only m_WVP, no textures) that
+// record on the lanes (parallel_shadow). The same split smapvis already uses
+// (shadow_static_subset 1 / 2), so stored and per-frame casters never overlap.
+//
+// The stored depth is rebuilt when the light's transform or tile size changes (moving lights, the
+// tile size following the camera distance), after the two have been unchanged for two frames,
+// and whenever the ShadowCache itself is rebuilt (static graph or shadow shaders changed).
+// Textures are kept under r4_spot_shadow_cache_mb, least recently used first.
+//
+// Differences from IX-Ray:
+//   - Only depth-only casters are stored (IX-Ray also stored alpha-tested ones and tracked texture
+//     streaming for them); alpha-tested statics stay per-frame.
+//   - The classification is Monolith's existing one (shader reflection, immutable geometry), no
+//     shader-name matching; no separate dsgraph build pass.
+//   - The occlusion queries of smapvis are off for a light while its depth is stored (its stored
+//     casters are not drawn, so there is nothing to test).
+//
+// Requirements / caveats:
+//   - Only on the recorded path (r4_mt_local_shadows 1 or r4_smapvis 1); the owner path in
+//     lights_render.cpp renders as before.
+//   - Memory: size^2 x 4 bytes per light (4 MB for a 1024 tile).
+//   - A level object the engine treats as immutable geometry but that changes anyway would keep
+//     its old shadow until the light's cache is rebuilt.
+//////////////////////////////////////////////////////////////////////////////////////////////
+enum : u8 { depth_none = 0, depth_build, depth_restore };
+
+struct StoredDepth
+{
+    ComPtr<ID3D11Texture2D> texture;
+    ComPtr<ID3D11DepthStencilView> depth;
+    ComPtr<ID3D11ShaderResourceView> view;
+    Fmatrix transform{};
+    u32 size = 0;           // tile size the texture was made for
+    u32 stable = 0;         // frames transform and size have been unchanged without stored depth
+    u32 used = 0;           // last frame it was selected
+    u64 bytes = 0;
+    bool valid = false;     // the texture holds the stored casters for transform / size
+    bool active = false;    // the light currently uses the cache (smapvis is off for it)
+
+    void Release()
+    {
+        if (texture) HW.stats_manager.decrement_stats_rtarget(texture.Get());
+        texture.Reset(); depth.Reset(); view.Reset();
+        bytes = 0;
+        valid = false;
+    }
+    ~StoredDepth() { Release(); }
+};
+
+// Copies a stored depth texture into a tile: full-tile triangle, SV_Depth from Load, depth test
+// ALWAYS. Raw D3D11 on the recording context; the caller resets the backend bindings after.
+struct DepthCopy
+{
+    ComPtr<ID3D11VertexShader> vs;
+    ComPtr<ID3D11PixelShader> ps;
+    ComPtr<ID3D11DepthStencilState> depth;
+    ComPtr<ID3D11RasterizerState> rasterizer;
+    bool created = false, failed = false;
+
+    bool Ready()
+    {
+        if (created || failed) return created;
+        static const char source[] =
+            "Texture2D<float> s_stored : register(t0);\n"
+            "struct v2p { float4 hpos : SV_Position; float2 tc : TEXCOORD0; };\n"
+            "v2p vs_main(uint id : SV_VertexID)\n"
+            "{\n"
+            "    v2p o;\n"
+            "    o.tc = float2((id << 1) & 2, id & 2);\n"
+            "    o.hpos = float4(o.tc * float2(2.0, -2.0) + float2(-1.0, 1.0), 0.0, 1.0);\n"
+            "    return o;\n"
+            "}\n"
+            "float ps_main(v2p i) : SV_Depth\n"
+            "{\n"
+            "    uint w, h;\n"
+            "    s_stored.GetDimensions(w, h);\n"
+            "    return s_stored.Load(int3(int2(i.tc * float2(w, h)), 0));\n"
+            "}\n";
+        failed = true;
+        ComPtr<ID3DBlob> vs_code, ps_code, errors;
+        if (FAILED(D3DCompile(source, sizeof(source) - 1, "spot_shadow_cache_copy", nullptr, nullptr, "vs_main", "vs_5_0",
+                D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, vs_code.GetAddressOf(), errors.ReleaseAndGetAddressOf())) ||
+            FAILED(D3DCompile(source, sizeof(source) - 1, "spot_shadow_cache_copy", nullptr, nullptr, "ps_main", "ps_5_0",
+                D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, ps_code.GetAddressOf(), errors.ReleaseAndGetAddressOf())))
+        {
+            Msg("! Spot shadow cache: copy shader failed to compile: %s",
+                errors ? (const char*)errors->GetBufferPointer() : "no message");
+            return false;
+        }
+        D3D11_DEPTH_STENCIL_DESC depth_desc{};
+        depth_desc.DepthEnable = TRUE;
+        depth_desc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+        depth_desc.DepthFunc = D3D11_COMPARISON_ALWAYS;
+        D3D11_RASTERIZER_DESC raster_desc{};
+        raster_desc.FillMode = D3D11_FILL_SOLID;
+        raster_desc.CullMode = D3D11_CULL_NONE;
+        raster_desc.DepthClipEnable = TRUE;
+        if (FAILED(HW.pDevice->CreateVertexShader(vs_code->GetBufferPointer(), vs_code->GetBufferSize(), nullptr, vs.GetAddressOf())) ||
+            FAILED(HW.pDevice->CreatePixelShader(ps_code->GetBufferPointer(), ps_code->GetBufferSize(), nullptr, ps.GetAddressOf())) ||
+            FAILED(HW.pDevice->CreateDepthStencilState(&depth_desc, depth.GetAddressOf())) ||
+            FAILED(HW.pDevice->CreateRasterizerState(&raster_desc, rasterizer.GetAddressOf())))
+        {
+            Msg("! Spot shadow cache: copy pipeline creation failed");
+            return false;
+        }
+        failed = false;
+        created = true;
+        return true;
+    }
+
+    void Draw(ID3D11DeviceContext* context, ID3D11DepthStencilView* target, ID3D11ShaderResourceView* stored,
+        const D3D11_VIEWPORT& tile) const
+    {
+        // Binding the tile's map as the only output also unbinds the stored texture's DSV
+        context->OMSetRenderTargets(0, nullptr, target);
+        context->OMSetDepthStencilState(depth.Get(), 0);
+        context->OMSetBlendState(nullptr, nullptr, 0xffffffff);
+        context->RSSetState(rasterizer.Get());
+        context->RSSetViewports(1, &tile);
+        context->IASetInputLayout(nullptr);
+        context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        context->VSSetShader(vs.Get(), nullptr, 0);
+        context->GSSetShader(nullptr, nullptr, 0);
+        context->HSSetShader(nullptr, nullptr, 0);
+        context->DSSetShader(nullptr, nullptr, 0);
+        context->PSSetShader(ps.Get(), nullptr, 0);
+        context->PSSetShaderResources(0, 1, &stored);
+        context->Draw(3, 0);
+        ID3D11ShaderResourceView* none = nullptr;
+        context->PSSetShaderResources(0, 1, &none);
+    }
+};
+
 struct ShadowCache
 {
     struct PassStamp
@@ -54,6 +201,7 @@ struct ShadowCache
     D3D11_VIEWPORT viewport{};
     u32 selected = no_index, generation = 0, queue_revision = 0;
     bool recorded = false;
+    StoredDepth stored; // spot shadow cache
 
     void ResetVisibility()
     {
@@ -212,6 +360,7 @@ struct LightShadowJob
     ShadowFallback fallback;
     RecordedLight illumination;
     bool decorative = false, deferred = false, forward = false, grass = false, accumulate = false;
+    u8 depth = depth_none; // spot shadow cache: build / restore the stored static depth
 };
 
 struct ShadowAtlasJob
@@ -239,12 +388,13 @@ struct UnshadowedLight
 };
 
 
-void SetShadowView(light& source, ID3D11DepthStencilView* depth)
+// origin: the viewport starts at 0,0 (a light's own stored-depth texture) instead of its tile
+void SetShadowView(light& source, ID3D11DepthStencilView* depth, bool origin = false)
 {
     RCache.set_RT(nullptr, 0); RCache.set_RT(nullptr, 1);
     RCache.set_RT(nullptr, 2); RCache.set_RT(nullptr, 3);
     RCache.set_ZB(depth);
-    D3D11_VIEWPORT view{float(source.X.S.posX), float(source.X.S.posY),
+    D3D11_VIEWPORT view{origin ? 0.f : float(source.X.S.posX), origin ? 0.f : float(source.X.S.posY),
         float(source.X.S.size), float(source.X.S.size), 0.f, 1.f};
     RenderDeviceContext()->RSSetViewports(1, &view);
     RCache.set_CullMode(CULL_CCW);
@@ -255,7 +405,7 @@ void SetShadowView(light& source, ID3D11DepthStencilView* depth)
     RCache.set_xform_project(source.X.S.project);
 }
 
-void RecordLight(LightShadowJob& job, ID3D11DepthStencilView* depth)
+void RecordLight(LightShadowJob& job, ID3D11DepthStencilView* depth, const DepthCopy& copy)
 {
     auto& graph = job.source->GMLight;
     struct GraphScope
@@ -264,6 +414,29 @@ void RecordLight(LightShadowJob& job, ID3D11DepthStencilView* depth)
         ~GraphScope() { graph.shadow_execution = graph.shadow_static_subset = 0; }
     } graph_scope{graph};
     graph.shadow_execution = 1;
+    if (job.depth != depth_none && job.cache)
+    {
+        // Spot shadow cache: stored casters come from the light's own texture (built first when
+        // needed), the rest is drawn on top as usual
+        auto& stored = job.cache->stored;
+        if (job.depth == depth_build)
+        {
+            RenderDeviceContext()->ClearDepthStencilView(stored.depth.Get(), D3D11_CLEAR_DEPTH, 1.f, 0);
+            SetShadowView(*job.source, stored.depth.Get(), true);
+            graph.shadow_static_subset = 1;
+            graph.r_dsgraph_render_static(0, false);
+        }
+        const D3D11_VIEWPORT tile{float(job.source->X.S.posX), float(job.source->X.S.posY),
+            float(job.source->X.S.size), float(job.source->X.S.size), 0.f, 1.f};
+        copy.Draw(RenderDeviceContext(), depth, stored.view.Get(), tile);
+        RCache.ResetBindings();
+        SetShadowView(*job.source, depth);
+        graph.shadow_static_subset = 2;
+        graph.r_dsgraph_render_static(0, false);
+        graph.shadow_static_subset = 0;
+        graph.r_dsgraph_render_dynamic(0, false);
+        return;
+    }
     SetShadowView(*job.source, depth);
     // Learn occlusion only against immutable opaque depth. The original graph
     // renderer still selects complete native shadow batches for this subset.
@@ -320,6 +493,117 @@ struct LocalLightShadows::State
     bool initialized = false, supported = false, querying = false, recording = false, ready = false;
     bool visibility = true, parallel = true;
     u32 rejected = 0;
+
+    // Spot shadow cache (see StoredDepth)
+    DepthCopy copy;
+    struct
+    {
+        u32 frames = 0, restores = 0, builds = 0, waiting = 0, over_budget = 0, failures = 0;
+    } stored_stats;
+
+    u64 StoredBytes() const
+    {
+        u64 bytes = 0;
+        for (const auto& cache : caches) bytes += cache.second->stored.bytes;
+        return bytes;
+    }
+
+    u8 SelectDepth(light& item, ShadowCache& cache)
+    {
+        auto& stored = cache.stored;
+        if (!ps_r4_spot_shadow_cache || cache.draws.empty() || !copy.Ready())
+        {
+            stored.Release();
+            stored.stable = 0;
+            return depth_none;
+        }
+        const u32 size = item.X.S.size;
+        if (!size || stored.size != size || memcmp(&stored.transform, &item.X.S.combine, sizeof(Fmatrix)))
+        {
+            // Moved, or the tile size followed the camera distance: wait until both are stable
+            stored.valid = false;
+            stored.stable = 0;
+            stored.size = size;
+            stored.transform = item.X.S.combine;
+            ++stored_stats.waiting;
+            return depth_none;
+        }
+        stored.used = Device.dwFrame;
+        if (stored.valid && stored.texture)
+        {
+            ++stored_stats.restores;
+            return depth_restore;
+        }
+        if (++stored.stable < 2)
+        {
+            ++stored_stats.waiting;
+            return depth_none;
+        }
+        if (!CreateTexture(cache)) return depth_none;
+        ++stored_stats.builds;
+        return depth_build;
+    }
+
+    // Texture for a light's stored depth, inside r4_spot_shadow_cache_mb (the least recently
+    // used textures of other lights are released first)
+    bool CreateTexture(ShadowCache& owner)
+    {
+        auto& stored = owner.stored;
+        const auto& source = RImplementation.Target->rt_smap_depth;
+        D3D11_TEXTURE2D_DESC description{};
+        source->pSurface->GetDesc(&description);
+        if (stored.texture)
+        {
+            D3D11_TEXTURE2D_DESC current{};
+            stored.texture->GetDesc(&current);
+            if (current.Width == stored.size && current.Format == description.Format) return true;
+            stored.Release();
+        }
+        const u32 texel = description.Format == DXGI_FORMAT_R16_TYPELESS || description.Format == DXGI_FORMAT_D16_UNORM ? 2u : 4u;
+        const u64 bytes = u64(stored.size) * stored.size * texel;
+        const u64 budget = u64(ps_r4_spot_shadow_cache_mb) * 1024 * 1024;
+        u64 used = StoredBytes();
+        while (used + bytes > budget)
+        {
+            ShadowCache* oldest = nullptr;
+            for (auto& cache : caches)
+            {
+                auto& other = cache.second->stored;
+                if (cache.second.get() == &owner || !other.bytes || other.used == Device.dwFrame) continue;
+                if (!oldest || other.used < oldest->stored.used) oldest = cache.second.get();
+            }
+            if (!oldest) break;
+            used -= oldest->stored.bytes;
+            oldest->stored.Release();
+        }
+        if (used + bytes > budget)
+        {
+            ++stored_stats.over_budget;
+            return false;
+        }
+        description.Width = description.Height = stored.size;
+        description.MipLevels = description.ArraySize = 1;
+        description.SampleDesc = {1, 0};
+        D3D11_DEPTH_STENCIL_VIEW_DESC depth{};
+        source->pZRT->GetDesc(&depth);
+        D3D11_SHADER_RESOURCE_VIEW_DESC view{};
+        source->pTexture->get_SRView()->GetDesc(&view);
+        if (FAILED(HW.pDevice->CreateTexture2D(&description, nullptr, stored.texture.GetAddressOf())))
+        {
+            ++stored_stats.failures;
+            return false;
+        }
+        HW.stats_manager.increment_stats_rtarget(stored.texture.Get());
+        stored.bytes = bytes;
+        if (FAILED(HW.pDevice->CreateDepthStencilView(stored.texture.Get(), &depth, stored.depth.GetAddressOf())) ||
+            FAILED(HW.pDevice->CreateShaderResourceView(stored.texture.Get(), &view, stored.view.GetAddressOf())))
+        {
+            stored.Release();
+            ++stored_stats.failures;
+            return false;
+        }
+        return true;
+    }
 
     bool Initialize()
     {
@@ -408,7 +692,7 @@ struct LocalLightShadows::State
                 context.DeviceContext()->ClearDepthStencilView(maps[lane].Depth(), D3D11_CLEAR_DEPTH, 1.f, 0);
                 for (auto* job : atlas.lights)
                 {
-                    RecordLight(*job, maps[lane].Depth());
+                    RecordLight(*job, maps[lane].Depth(), copy);
                     if (job->cache)
                     {
                         for (const auto bit : job->cache->visibility.hidden) hidden += bit != 0;
@@ -561,7 +845,12 @@ void LocalLightShadows::BeginFrame(light_Package& package)
                 if (!cache || !cache->Current(item)) cache = PrepareCache(item);
                 cache->UpdateView(item);
                 cache->selected = no_index;
-                if (state->visibility && !cache->draws.empty())
+                // Spot shadow cache. A light using it draws none of its stored casters, so smapvis
+                // has nothing to query: its evidence is reset once and stays empty meanwhile
+                job->depth = state->SelectDepth(item, *cache);
+                if (job->depth != depth_none && !cache->stored.active) cache->ResetVisibility();
+                cache->stored.active = job->depth != depth_none;
+                if (state->visibility && !cache->draws.empty() && job->depth == depth_none)
                 {
                     if (cache->visibility.pending != no_index)
                     {
@@ -782,6 +1071,9 @@ bool LocalLightShadows::RenderShadows(light_Package& package)
                 auto& graph = item.GMLight;
                 if (recorded && job->cache && job->cache->selected != no_index)
                     job->cache->visibility.pending = job->cache->selected;
+                // Spot shadow cache: a build counts once its list ran; without the list the
+                // owner below renders every caster again, and the texture holds nothing usable
+                if (job->depth == depth_build && job->cache) job->cache->stored.valid = recorded;
                 if (recorded && block.accumulate)
                 {
                     graph.RGraph.clear_graph<false>(graph.RGraph.mapDynamicPasses, 0);
@@ -857,6 +1149,7 @@ bool LocalLightShadows::RenderShadows(light_Package& package)
         }
         block.commands.Reset();
     }
+    ++state->stored_stats.frames;
     PROF_TAG("Local shadow atlases", u32(state->atlases.size()));
     PROF_TAG("Local submitted lists", submitted);
     PROF_TAG("Local recorded lights", recorded_lights);
@@ -900,4 +1193,29 @@ void LocalLightShadows::Clear()
 {
     EndFrame();
     state = std::make_unique<State>();
+}
+
+void LocalLightShadows::Stats()
+{
+    u32 lights = 0, stored = 0;
+    for (const auto& cache : state->caches)
+    {
+        ++lights;
+        stored += cache.second->stored.valid ? 1 : 0;
+    }
+    auto& counters = state->stored_stats;
+    const float frames = float(_max(1u, counters.frames));
+    Msg("* spot shadow cache: %s, %u still lights, %u with stored depth, %.1f / %d MB",
+        ps_r4_spot_shadow_cache ? "on" : "off", lights, stored, float(state->StoredBytes()) / (1024.f * 1024.f),
+        ps_r4_spot_shadow_cache_mb);
+    Msg("* over %u frames, per frame: %.1f restored, %.2f built, %.1f waiting for a stable transform; %u over budget, %u failures%s",
+        counters.frames, float(counters.restores) / frames, float(counters.builds) / frames, float(counters.waiting) / frames,
+        counters.over_budget, counters.failures, state->copy.failed ? " (copy shader unavailable)" : "");
+    counters = {};
+}
+
+void CRender::spot_shadow_cache_stats()
+{
+    if (local_light_shadows) local_light_shadows->Stats();
+    else Msg("* spot shadow cache: the recorded local shadows are off (r4_mt_local_shadows 0, r4_smapvis 0)");
 }

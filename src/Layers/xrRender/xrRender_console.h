@@ -276,6 +276,11 @@ extern ECORE_API int ps_r4_smapvis;
 extern ECORE_API int ps_r4_mt_sun_shadows;
 extern ECORE_API int ps_r4_mt_rain_shadows;
 extern ECORE_API int ps_r4_sun_receiver_bounds;
+extern ECORE_API int ps_r4_sun_shadow_cache;
+extern ECORE_API Fvector3 ps_r4_sun_shadow_cache_period;
+extern ECORE_API float ps_r4_sun_shadow_cache_shift;
+extern ECORE_API int ps_r4_spot_shadow_cache;
+extern ECORE_API int ps_r4_spot_shadow_cache_mb;
 extern ECORE_API int ps_r__hom_coarse;
 
 extern ECORE_API float ps_r2_img_exposure; // r2-only

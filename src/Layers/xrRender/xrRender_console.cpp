@@ -381,6 +381,14 @@ int ps_r4_mt_rain_shadows = 1;
 //   r__hom_coarse 0: the occlusion test checks the finest HOM level only, like before b85c040b
 int ps_r4_sun_receiver_bounds = 1;
 int ps_r__hom_coarse = 1;
+// Sun shadow cache (R_sun.cpp, needs r4_mt_sun_shadows 1): cascades re-rendered every N frames
+int ps_r4_sun_shadow_cache = 0;
+Fvector3 ps_r4_sun_shadow_cache_period = {1.f, 2.f, 3.f}; // near, middle, far (frames)
+float ps_r4_sun_shadow_cache_shift = 0.05f; // re-render when the needed box moved this far (fraction of half its width)
+// Spot shadow cache (LocalLightShadows.cpp, needs r4_mt_local_shadows or r4_smapvis): static
+// depth of still lights kept in a texture per light
+int ps_r4_spot_shadow_cache = 0;
+int ps_r4_spot_shadow_cache_mb = 128;
 
 float ps_r2_img_exposure = 1.0f; // r2-only
 float ps_r2_img_gamma = 1.0f; // r2-only
@@ -741,6 +749,24 @@ public:
 		}
 	}
 };
+
+#if RENDER == R_R4
+// r4_sun_shadow_cache_stats: per cascade, how often it was rendered / reused since the last call
+class CCC_SunShadowCacheStats : public IConsole_Command
+{
+public:
+	CCC_SunShadowCacheStats(LPCSTR N) : IConsole_Command(N) { bEmptyArgsHandled = TRUE; }
+	void Execute(LPCSTR) override { RImplementation.sun_cache_stats(); }
+};
+
+// r4_spot_shadow_cache_stats: lights with stored static shadow depth, memory, hits since the last call
+class CCC_SpotShadowCacheStats : public IConsole_Command
+{
+public:
+	CCC_SpotShadowCacheStats(LPCSTR N) : IConsole_Command(N) { bEmptyArgsHandled = TRUE; }
+	void Execute(LPCSTR) override { RImplementation.spot_shadow_cache_stats(); }
+};
+#endif
 
 class CCC_Screenshot : public IConsole_Command
 {
@@ -1566,6 +1592,17 @@ void xrRender_initconsole()
     CMD4(CCC_Integer, "r4_mt_sun_shadows", &ps_r4_mt_sun_shadows, 0, 1);
     CMD4(CCC_Integer, "r4_mt_rain_shadows", &ps_r4_mt_rain_shadows, 0, 1);
     CMD4(CCC_Integer, "r4_sun_receiver_bounds", &ps_r4_sun_receiver_bounds, 0, 1);
+#if RENDER == R_R4
+    CMD4(CCC_Integer, "r4_sun_shadow_cache", &ps_r4_sun_shadow_cache, 0, 1);
+    tw_min.set(1, 1, 1);
+    tw_max.set(8, 8, 8);
+    CMD4(CCC_Vector3, "r4_sun_shadow_cache_period", &ps_r4_sun_shadow_cache_period, tw_min, tw_max);
+    CMD4(CCC_Float, "r4_sun_shadow_cache_shift", &ps_r4_sun_shadow_cache_shift, 0.f, 1.f);
+    CMD1(CCC_SunShadowCacheStats, "r4_sun_shadow_cache_stats");
+    CMD4(CCC_Integer, "r4_spot_shadow_cache", &ps_r4_spot_shadow_cache, 0, 1);
+    CMD4(CCC_Integer, "r4_spot_shadow_cache_mb", &ps_r4_spot_shadow_cache_mb, 8, 2048);
+    CMD1(CCC_SpotShadowCacheStats, "r4_spot_shadow_cache_stats");
+#endif
     CMD4(CCC_Integer, "r__hom_coarse", &ps_r__hom_coarse, 0, 1);
 
 	CMD4(CCC_Float, "r__exposure", &ps_r2_img_exposure, 0.5f, 4.0f);

@@ -46,4 +46,5 @@ public:
     void EndFrame();
     void Forget(light* source);
     void Clear();
+    void Stats(); // r4_spot_shadow_cache_stats
 };
