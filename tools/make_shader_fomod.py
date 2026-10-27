@@ -12,14 +12,17 @@ zips is easy; this tool puts them in one FOMOD that asks two questions and insta
   Page 1  Install type     Overlay (recommended) | Full pack
   Page 2  DLSS / FSR 3     With DLSS / FSR 3     | Without            (only with --dlss-* zips)
 
-Layout inside the zip (what Mod Organizer sees):
+Layout inside the zip, the same as brodrigz's DLSS / FSR3 compatibility patch zip so the two
+read alike:
+  README.txt                       how to install (also docs/README.txt)
+  components/<id>/gamedata/...     one folder per variant: overlay, full, overlay_dlss, full_dlss
+  docs/README.txt, docs/CREDITS.txt, docs/<id>_<report>   (each variant's own README / PACK_REPORT)
   fomod/info.xml, fomod/ModuleConfig.xml
-  docs/                          only with INSTALL_DOCS: README.txt plus each variant's own
-                                 README / PACK_REPORT
-  variants/<id>/gamedata/...     one folder per variant: overlay, full, overlay_dlss, full_dlss
-The chosen variant's gamedata/ lands in the mod's gamedata/. With INSTALL_DOCS on, docs/ is also
-installed into DOCS_DEST ("PBR shaders - Instructions", no game files there); off (default), the
-installer holds game files only and the instructions live wherever you keep them.
+  selections/<id>.txt              which variant was picked, one line each
+The chosen variant's gamedata/ lands in the mod's gamedata/. With INSTALL_DOCS on, docs/ and the
+picked selections/<id>.txt are also installed into DOCS_DEST ("PBR shaders - Instructions", no game
+files there), like the DLSS patch does with its instructions folder; off (default), only game files
+are installed and the instructions stay in the archive.
 
 Usage
   python make_shader_fomod.py --overlay plain/PBR_overlay_GAMMA.zip --full plain/PBR_shaders_GAMMA.zip \\
@@ -79,24 +82,72 @@ DLSS_ON_TEXT = ("PBR merged with brodrigz's DLSS / FSR3 compatibility patch 0.5 
 DLSS_OFF_TEXT = ("Plain GAMMA shaders, no DLSS / FSR3 shaders. Upscaling stays off; picking DLSS or FSR 3 "
                  "in the menu shows which shader is missing.")
 
-README = """PBR shaders (GAMMA) - installer {version}
+README = """PBR SHADERS (GAMMA) - {version}
 {website}
 
-One installer for the PBR shader files on GAMMA. It asks:
-  1. Install type: Overlay (recommended) or Full pack.
-{dlss_line}
-Then:
-  - Overlay: put this mod at the very bottom of the left pane (highest priority).
-  - Full pack: put it above GAMMA's shader mods.
-  - Delete appdata/shaders_cache/r4 and start the game.
-{dlss_steps}
-Changing your answers: reinstall this archive in Mod Organizer and pick REPLACE.
+INSTALL
+-------
+1. Install the PBR-Test binaries (bin/ and db/ of the release zip) into the Anomaly folder.
+2. Install this ZIP through MO2:
+   - Page 1: Overlay (recommended) or Full pack.
+{dlss_line}3. Overlay: enable this mod at the very bottom of MO2's left pane (highest priority,
+   above every shader mod). Every file of it must show as winning.
+   Full pack: enable it above GAMMA's shader mods; they can stay enabled below it.
+{dlss_steps}4. Clear the shader cache (delete appdata/shaders_cache/r4) and start the game.
 
-Built for GAMMA's shader stack at release time. With other shader mods than GAMMA's, generate
-your own overlay with tools/make_pbr_overlay.py (tools zip of the release).
+UPDATING OR CHANGING OPTIONS
+---------------------------
+Reinstall this archive when changing the install type or the DLSS / FSR 3 choice.
+Choose REPLACE in MO2 so files from your old selections are removed.
 
-The variants' own reports are next to this file:
+OTHER SHADER STACKS
+-------------------
+Built for GAMMA's shader stack as it was at release time. With other shader mods than GAMMA's,
+generate your own overlay with tools/make_pbr_overlay.py (tools zip of the release).
+
+IF IT DOES NOT WORK
+-------------------
+Check the install type, MO2 left-pane priority and that the shader cache was cleared first.
+If it still fails, share your full appdata/logs/xray_<username>.log, enabled modlist and
+installer choices when asking for help.
+
+The variants' own reports are in docs/:
 {reports}
+"""
+
+CREDITS = """PBR SHADERS (GAMMA) CREDITS
+============================
+MarkAlexey (Maka), Zirael and the PBR-Test contributors - PBR pipeline and its GAMMA integration
+{website}
+
+IX-Ray Team - the PBR pipeline it is ported from (LVutner, ForserX, Drombeys, mnelenpridumivat,
+v2v3v4, NewKidHere and the IX-Ray contributors)
+https://github.com/ixray-team/ixray-1.6-stcop
+
+Ascii1457 - Screen Space Shaders
+https://www.moddb.com/addons/screen-space-shaders
+
+KennShade - Enhanced Shaders
+
+Hippobot - Atmospherics
+https://www.moddb.com/mods/stalker-anomaly/addons/hippos-shaders-and-atmospherics
+
+theRealBeef and the contributors credited in night_vision.h - Beef's NVGs
+https://www.moddb.com/addons/beefs-shader-based-nvgs-v10
+
+indiesunpraiser - Better Beef's NVGs
+https://www.moddb.com/mods/stalker-anomaly/addons/better-beefs-nvg-indiesunpraiser/
+
+bepis (brodrigz) - DLSS / FSR3 compatibility patch; OGSR team and xrSimpAI - original DLSS
+implementation
+https://github.com/brodrigz/xray-monolith
+
+GAMMA and its shader overrides, GSC Game World, Anomaly, themrdemonized/xray-monolith and fork
+contributors
+https://github.com/themrdemonized/xray-monolith
+
+Original author comments and ownership remain with their respective authors; their credits are
+retained in the files.
 """
 
 # ------------------------------------------------------------------------------------------
@@ -119,52 +170,65 @@ def read_pack(path):
     return out, top
 
 
-def plugin(name, text, flags, kind):
-    fl = "".join(f'<flag name="{escape(k)}">{escape(v)}</flag>' for k, v in flags.items())
-    return (f'<plugin name="{escape(name)}"><description>{escape(text)}</description>'
-            f'<conditionFlags>{fl}</conditionFlags><typeDescriptor><type name="{kind}"/></typeDescriptor></plugin>')
+def plugin(name, text, flags, kind, files=""):
+    fl = "".join(f'\n                <flag name="{escape(k)}">{escape(v)}</flag>' for k, v in flags.items())
+    return (f'\n            <plugin name="{escape(name)}">'
+            f'\n              <description>{escape(text)}</description>'
+            + (f'\n              <files>{files}\n              </files>' if files else '') +
+            f'\n              <conditionFlags>{fl}\n              </conditionFlags>'
+            f'\n              <typeDescriptor>\n                <type name="{kind}" />\n              </typeDescriptor>'
+            f'\n            </plugin>')
 
 
-def module_config(variants, with_dlss):
-    steps = [
-        '<installStep name="1. Install type"><optionalFileGroups order="Explicit">'
-        '<group name="Pick one" type="SelectExactlyOne"><plugins order="Explicit">'
-        + plugin("Overlay (recommended)", OVERLAY_TEXT, {"type": "overlay"}, "Recommended")
-        + plugin("Full pack", FULL_TEXT, {"type": "full"}, "Optional")
-        + "</plugins></group></optionalFileGroups></installStep>"]
+def step(name, group, kind, plugins):
+    return (f'\n    <installStep name="{escape(name)}">\n      <optionalFileGroups order="Explicit">'
+            f'\n        <group name="{escape(group)}" type="{kind}">\n          <plugins order="Explicit">'
+            + "".join(plugins) +
+            '\n          </plugins>\n        </group>\n      </optionalFileGroups>\n    </installStep>')
+
+
+def module_config(variants, with_dlss, version):
+    steps = [step("1. Install type", "Pick one", "SelectExactlyOne", [
+        plugin("Overlay (recommended)", OVERLAY_TEXT, {"type": "overlay"}, "Recommended"),
+        plugin("Full pack", FULL_TEXT, {"type": "full"}, "Optional")])]
     if with_dlss:
-        steps.append(
-            '<installStep name="2. DLSS / FSR 3"><optionalFileGroups order="Explicit">'
-            '<group name="Upscaling shaders" type="SelectExactlyOne"><plugins order="Explicit">'
-            + plugin("With DLSS / FSR 3 (recommended)", DLSS_ON_TEXT, {"dlss": "on"}, "Recommended")
-            + plugin("Without DLSS / FSR 3", DLSS_OFF_TEXT, {"dlss": "off"}, "Optional")
-            + "</plugins></group></optionalFileGroups></installStep>")
+        steps.append(step("2. DLSS / FSR 3", "Upscaling shaders", "SelectExactlyOne", [
+            plugin("With DLSS / FSR 3 (recommended)", DLSS_ON_TEXT, {"dlss": "on"}, "Recommended"),
+            plugin("Without DLSS / FSR 3", DLSS_OFF_TEXT, {"dlss": "off"}, "Optional")]))
     patterns = []
     for vid in variants:
         typ, dlss, _ = VARIANTS[vid]
-        deps = f'<flagDependency flag="type" value="{typ}"/>'
+        deps = f'\n          <flagDependency flag="type" value="{typ}" />'
         if with_dlss:
-            deps += f'<flagDependency flag="dlss" value="{dlss}"/>'
-        patterns.append(f'<pattern><dependencies operator="And">{deps}</dependencies><files>'
-                        f'<folder source="variants\\{vid}\\gamedata" destination="gamedata" priority="0"/>'
-                        f'</files></pattern>')
+            deps += f'\n          <flagDependency flag="dlss" value="{dlss}" />'
+        files = f'\n          <folder source="components\\{vid}\\gamedata" destination="gamedata" priority="0" />'
+        if INSTALL_DOCS:
+            files += (f'\n          <file source="selections\\{vid}.txt" '
+                      f'destination="{escape(DOCS_DEST)}\\Selected variant.txt" priority="0" />')
+        patterns.append(f'\n      <pattern>\n        <dependencies operator="And">{deps}\n        </dependencies>'
+                        f'\n        <files>{files}\n        </files>\n      </pattern>')
     return ('<?xml version="1.0" encoding="utf-8"?>\n'
             '<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
             'xsi:noNamespaceSchemaLocation="http://qconsulting.ca/fo3/ModConfig5.0.xsd">'
-            f'<moduleName>{escape(MOD_NAME)}</moduleName>'
-            + (f'<requiredInstallFiles><folder source="docs" destination="{escape(DOCS_DEST)}" priority="0"/></requiredInstallFiles>'
-               if INSTALL_DOCS else '') +
-            f'<installSteps order="Explicit">{"".join(steps)}</installSteps>'
-            f'<conditionalFileInstalls><patterns>{"".join(patterns)}</patterns></conditionalFileInstalls>'
-            '</config>\n')
+            f'\n  <moduleName>{escape(MOD_NAME)} - {escape(version)}</moduleName>'
+            + (f'\n  <requiredInstallFiles>\n    <folder source="docs" destination="{escape(DOCS_DEST)}" priority="0" />'
+               '\n  </requiredInstallFiles>' if INSTALL_DOCS else '') +
+            f'\n  <installSteps order="Explicit">{"".join(steps)}\n  </installSteps>'
+            f'\n  <conditionalFileInstalls>\n    <patterns>{"".join(patterns)}\n    </patterns>\n  </conditionalFileInstalls>'
+            '\n</config>\n')
 
 
 def info_xml(version):
     return ('<?xml version="1.0" encoding="utf-8"?>\n<fomod>'
-            f'<Name>{escape(MOD_NAME)}</Name><Author>{escape(AUTHOR)}</Author>'
-            f'<Version>{escape(version)}</Version><Website>{escape(WEBSITE)}</Website>'
-            '<Description>PBR shader files for GAMMA: overlay or full pack, with or without the DLSS / FSR3 shaders.</Description>'
-            '</fomod>\n')
+            f'\n  <Name>{escape(MOD_NAME)}</Name>\n  <Author>{escape(AUTHOR)}</Author>'
+            f'\n  <Version>{escape(version)}</Version>'
+            '\n  <Description>PBR shader files for GAMMA: overlay or full pack, with or without the DLSS / FSR3 shaders.</Description>'
+            f'\n  <Website>{escape(WEBSITE)}</Website>\n</fomod>\n')
+
+
+def selection_text(vid, version):
+    _, _, label = VARIANTS[vid]
+    return f"Selected: {label}.\nBuilt: {version}\n"
 
 
 def main():
@@ -193,28 +257,36 @@ def main():
         print(f"{vid:13} {VARIANTS[vid][2]:24} {len(game):4} game files, docs: {', '.join(docs) or '-'}  <- {sources[vid]}")
         reports += [f"  {vid}_{d}" for d in docs]
 
-    dlss_line = "  2. DLSS / FSR 3: with or without the upscaling shaders.\n" if with_dlss else ""
-    dlss_steps = ("  - Overlay with DLSS / FSR 3: install brodrigz's DLSS patch first (its Better Beef's\n"
-                  "    NVGs option only if you have that mod), then this mod ABOVE it. The full pack does not need the patch.\n"
-                  "  - In game: MSAA Off, then DLSS or FSR 3 in Settings > Video > Basic.\n") if with_dlss else ""
+    dlss_line = "   - Page 2: With DLSS / FSR 3 (recommended) or Without.\n" if with_dlss else ""
+    dlss_steps = ("   Overlay with DLSS / FSR 3: install brodrigz's DLSS / FSR3 compatibility patch first\n"
+                  "   (its Better Beef's NVGs option only if you have that mod) and put this mod ABOVE it.\n"
+                  "   The full pack already has the DLSS shaders; the patch is optional there.\n"
+                  "   In game: Settings > Video > Basic: MSAA Off, then DLSS or FSR 3, Apply.\n") if with_dlss else ""
     readme = README.format(version=a.version, website=WEBSITE, dlss_line=dlss_line, dlss_steps=dlss_steps,
                            reports="\n".join(reports) or "  (none)")
+    credits = CREDITS.format(website=WEBSITE)
     if a.dry_run:
         print("[dry-run] would write", a.out)
         return 0
 
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
+    crlf = lambda text: text.replace("\r\n", "\n").replace("\n", "\r\n")
     with zipfile.ZipFile(a.out, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr("fomod/info.xml", info_xml(a.version))
-        z.writestr("fomod/ModuleConfig.xml", module_config(list(sources), with_dlss))
-        if INSTALL_DOCS:
-            z.writestr("docs/README.txt", readme.replace("\n", "\r\n"))
         for vid, (files, _) in packs.items():
             for rel, data in files.items():
                 if rel.lower().startswith("gamedata/"):
-                    z.writestr(f"variants/{vid}/{rel}", data)
-                elif INSTALL_DOCS:
+                    z.writestr(f"components/{vid}/{rel}", data)
+        z.writestr("docs/CREDITS.txt", crlf(credits))
+        z.writestr("docs/README.txt", crlf(readme))
+        for vid, (files, _) in packs.items():
+            for rel, data in files.items():
+                if not rel.lower().startswith("gamedata/"):
                     z.writestr(f"docs/{vid}_{rel}", data)
+        z.writestr("fomod/info.xml", crlf(info_xml(a.version)))
+        z.writestr("fomod/ModuleConfig.xml", crlf(module_config(list(sources), with_dlss, a.version)))
+        z.writestr("README.txt", crlf(readme))
+        for vid in packs:
+            z.writestr(f"selections/{vid}.txt", crlf(selection_text(vid, a.version)))
     print(f"wrote {a.out}")
     return 0
 
