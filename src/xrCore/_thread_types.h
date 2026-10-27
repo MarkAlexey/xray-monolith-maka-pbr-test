@@ -4,6 +4,7 @@
 #include <tbb/concurrent_unordered_map.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/parallel_for.h>
+#include <tbb/blocked_range.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_sort.h>
 #include <tbb/task_arena.h>
@@ -142,10 +143,22 @@ using xr_concurrent_unordered_map = tbb::concurrent_unordered_map<T, U>;
 template <typename T, typename allocator = xalloc<T>>
 using xr_concurrent_vector = tbb::concurrent_vector<T, allocator>;
 
-template<typename BlockRangeType, typename Body>
-inline void xr_parallel_for(BlockRangeType Begin, BlockRangeType End, Body Functor)
+// Over an explicit blocked_range instead of oneTBB's (first, last, f) overload: MSVC fails to
+// resolve that overload for some call sites ("'xr_parallel_for': no matching overloaded function
+// found"). The bounds may also differ in type (0u and a size_t, say); both go to their common type.
+template<typename BeginType, typename EndType, typename Body>
+inline void xr_parallel_for(BeginType Begin, EndType End, Body Functor)
 {
-    tbb::parallel_for(Begin, End, Functor);
+    using Index = std::common_type_t<BeginType, EndType>;
+    static_assert(std::is_integral_v<Index>, "xr_parallel_for: integral bounds expected");
+    if (!(Index(Begin) < Index(End)))
+        return;
+    tbb::parallel_for(tbb::blocked_range<Index>(Index(Begin), Index(End)),
+        [&Functor](const tbb::blocked_range<Index>& Range)
+        {
+            for (Index i = Range.begin(); i != Range.end(); ++i)
+                Functor(i);
+        });
 }
 
 template<typename Index, typename Body>
