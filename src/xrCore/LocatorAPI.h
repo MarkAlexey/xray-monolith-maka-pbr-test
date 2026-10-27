@@ -73,6 +73,11 @@ private:
 	files_set m_files;
 	BOOL bNoRecurse;
 
+	// Monolith: folders already listed while _initialize() runs (LocatorAPI.cpp, scan_dedupe);
+	// null outside _initialize() and with -fs_no_dedupe
+	struct scan_dedupe;
+	scan_dedupe* m_scan_dedupe = nullptr;
+
 	xrCriticalSection m_auth_lock;
 	u64 m_auth_code;
 

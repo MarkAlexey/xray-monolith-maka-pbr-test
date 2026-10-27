@@ -220,6 +220,40 @@ CLocatorAPI::~CLocatorAPI()
 	_dump_open_files(1);
 }
 
+// Monolith: duplicate-free file system scan.
+//
+// fsgame.ltx lists folders that lie inside each other: $game_textures$ and $textures$ are both
+// gamedata\textures\, $game_dm$ is gamedata\meshes\ again, $game_weathers$ sits in the configs\
+// folder $game_config$ has already listed with its subfolders. The stock _initialize() lists every
+// one of them from disk again and registers every file in it a second time, which is most of
+// "Init FileSystem" (worst under MO2, where every folder listing goes through its virtual file system).
+//
+// While _initialize() runs, Recurse() remembers each folder it has listed and skips a folder that is
+// listed again: one listed with its subfolders covers any later listing of itself (every subfolder
+// it went through is remembered too), one listed without subfolders covers a later listing without
+// subfolders. The file table comes out the same as the stock scan's:
+//  - a skipped folder still gets the "insert self" registration Recurse() ends with, so folder
+//    entries keep the values the stock order leaves in them;
+//  - listing a folder again only registers the same files with the same values again, unless an
+//    archive was loaded in between: its entries override loose files of the same name, and listing
+//    the folder again would put the loose files back. Loading an archive therefore forgets every
+//    folder listed so far, and a folder whose listing loaded an archive is not remembered.
+// Register() also stops walking up the parent folders of a new entry at the first one already
+// registered: a registered folder always has its parents registered (Register() puts them in, and
+// nothing is erased while _initialize() runs).
+//
+// Command line: -fs_no_dedupe turns both off (stock scan, for A/B timing of "Init FileSystem");
+// -fs_scan_log logs the time and new entries of every fsgame.ltx line.
+// Not covered: rescans after _initialize() (rescan_path, append_path later on) work as before.
+struct CLocatorAPI::scan_dedupe
+{
+	xr_set<xr_string> recursive;	// folders listed with their subfolders (lower case, trailing '\')
+	xr_set<xr_string> flat;			// folders listed without their subfolders
+	u32 resets = 0;					// archives loaded (each one forgets the sets)
+	u32 listed = 0;					// folders listed from disk
+	u32 skipped = 0;				// folder listings skipped
+};
+
 void CLocatorAPI::Register(LPCSTR name, u32 vfs, u32 crc, u32 ptr, u32 size_real, u32 size_compressed, u32 modif)
 {
 	//Msg("Register[%d] [%s]",vfs,name);
@@ -280,6 +314,12 @@ void CLocatorAPI::Register(LPCSTR name, u32 vfs, u32 crc, u32 ptr, u32 size_real
 
 			R_ASSERT(I.second);
 		}
+		else if (m_scan_dedupe && 0 != xr_strcmp(path, temp_file_name))
+		{
+			// its parents are registered as well (scan_dedupe). The first step of a folder name is
+			// the folder itself, which was inserted above, so that one does not count.
+			break;
+		}
 		xr_strcpy(temp, sizeof(temp), path);
 		if (xr_strlen(temp)) temp[xr_strlen(temp) - 1] = 0;
 		vfs_id = 0xffffffff;
@@ -337,6 +377,14 @@ IReader* open_chunk(void* ptr, u32 ID)
 
 void CLocatorAPI::LoadArchive(archive& A, LPCSTR entrypoint)
 {
+	// its entries can override loose files already listed: list those folders again (scan_dedupe)
+	if (m_scan_dedupe)
+	{
+		m_scan_dedupe->recursive.clear();
+		m_scan_dedupe->flat.clear();
+		++m_scan_dedupe->resets;
+	}
+
 	// Create base path
 	string_path fs_entry_point;
 	fs_entry_point[0] = 0;
@@ -597,6 +645,24 @@ bool ignore_path(const char* _path)
 
 bool CLocatorAPI::Recurse(const char* path)
 {
+	// already listed while _initialize() runs (scan_dedupe)
+	string_path dedupeKey;
+	dedupeKey[0] = 0;
+	u32 dedupeResets = 0;
+	if (m_scan_dedupe && path && path[0])
+	{
+		xr_strcpy(dedupeKey, sizeof(dedupeKey), path);
+		xr_strlwr(dedupeKey);
+		const xr_string key = dedupeKey;
+		if (m_scan_dedupe->recursive.count(key) || (bNoRecurse && m_scan_dedupe->flat.count(key)))
+		{
+			++m_scan_dedupe->skipped;
+			Register(path, 0xffffffff, 0, 0, 0, 0, 0);	// what the listing ends with, see below
+			return true;
+		}
+		dedupeResets = m_scan_dedupe->resets;
+	}
+
 	string_path scanPath;
 	xr_strcpy(scanPath, sizeof(scanPath), path);
 	xr_strcat(scanPath, ".xrignore");
@@ -638,6 +704,13 @@ bool CLocatorAPI::Recurse(const char* path)
 		for (size_t i = oldSize; i < newSize; i++)
 			ProcessOne(path, rec_files[i]);
 		rec_files.erase(rec_files.begin() + oldSize, rec_files.end());
+	}
+	// remember the listing, unless it loaded an archive (scan_dedupe)
+	if (m_scan_dedupe && dedupeKey[0])
+	{
+		++m_scan_dedupe->listed;
+		if (dedupeResets == m_scan_dedupe->resets)
+			(bNoRecurse ? m_scan_dedupe->flat : m_scan_dedupe->recursive).insert(xr_string(dedupeKey));
 	}
 	// insert self
 	if (path && path[0] != 0)
@@ -755,6 +828,11 @@ void CLocatorAPI::_initialize(u32 flags, LPCSTR target_folder, LPCSTR fs_name)
 
 	m_Flags.set(flags, TRUE);
 
+	// list every folder once (scan_dedupe); -fs_no_dedupe for the stock scan
+	const bool fsScanLog = Core.Params && strstr(Core.Params, "-fs_scan_log");
+	if (!(Core.Params && strstr(Core.Params, "-fs_no_dedupe")))
+		m_scan_dedupe = xr_new<scan_dedupe>();
+
 	// scan root directory
 	bNoRecurse = TRUE;
 	string4096 buf;
@@ -828,7 +906,22 @@ void CLocatorAPI::_initialize(u32 flags, LPCSTR target_folder, LPCSTR fs_name)
 
 			FS_Path* P = new FS_Path((p_it != pathes.end()) ? p_it->second->m_Path : root, lp_add, lp_def, lp_capt, fl);
 			bNoRecurse = !(fl & FS_Path::flRecurse);
-			Recurse(P->m_Path);
+			if (fsScanLog)
+			{
+				CTimer lineTimer;
+				lineTimer.Start();
+				const size_t filesBefore = m_files.size();
+				const u32 skippedBefore = m_scan_dedupe ? m_scan_dedupe->skipped : 0;
+				const u32 listedBefore = m_scan_dedupe ? m_scan_dedupe->listed : 0;
+				Recurse(P->m_Path);
+				const bool lineSkipped = m_scan_dedupe && m_scan_dedupe->skipped != skippedBefore &&
+					m_scan_dedupe->listed == listedBefore;
+				Msg("* FS scan %-26s %s %9.3f ms %7d new entries%s  %s", id, bNoRecurse ? "flat     " : "recursive",
+				    lineTimer.GetElapsed_sec() * 1000.f, int(m_files.size() - filesBefore),
+				    lineSkipped ? "  (already listed, skipped)" : "", P->m_Path);
+			}
+			else
+				Recurse(P->m_Path);
 			auto I = pathes.insert(std::make_pair(xr_strdup(id), P));
 #ifndef DEBUG
 			m_Flags.set(flCacheFiles, FALSE);
@@ -840,6 +933,15 @@ void CLocatorAPI::_initialize(u32 flags, LPCSTR target_folder, LPCSTR fs_name)
 		R_ASSERT(path_exist("$app_data_root$"));
 	};
 
+
+	if (m_scan_dedupe)
+	{
+		Msg("FS: %u folders listed, %u listings of already listed folders skipped, %u archives loaded (-fs_no_dedupe for the stock scan)",
+		    m_scan_dedupe->listed, m_scan_dedupe->skipped, m_scan_dedupe->resets);
+		xr_delete(m_scan_dedupe);
+	}
+	else
+		Msg("FS: duplicate-free scan off (-fs_no_dedupe)");
 
 	Msg("File System Ready...");
 	size_t M2 = Memory.mem_usage();
