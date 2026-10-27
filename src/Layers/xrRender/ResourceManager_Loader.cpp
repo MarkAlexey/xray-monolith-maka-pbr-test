@@ -4,7 +4,7 @@
 #include "ResourceManager.h"
 #include "blenders\blender.h"
 
-extern xr_task_group textures_load_tasks;
+extern xr_background_task_group textures_load_tasks;
 
 
 void CResourceManager::OnDeviceDestroy(BOOL)

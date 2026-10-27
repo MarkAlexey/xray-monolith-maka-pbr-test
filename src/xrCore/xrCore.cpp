@@ -38,6 +38,52 @@ extern xr_string get_modded_exes_version_string();
 extern LPCSTR get_modded_exes_name();
 extern xr_string timeInDMYHMSMMM();
 
+#include <tbb/global_control.h>
+#include <tbb/version.h>
+
+// Monolith: oneTBB arenas (_thread_types.h)
+static int tbb_param(const char* name, int low, int high)
+{
+	const char* found = Core.Params ? strstr(Core.Params, name) : nullptr;
+	if (!found) return 0;
+	int value = 0;
+	if (sscanf(found + xr_strlen(name), " %d", &value) != 1) return 0;
+	return value < low ? low : value > high ? high : value;
+}
+
+tbb::task_arena& xr_background_arena()
+{
+	// Created on first use and never destroyed: global background groups (textures_load_tasks)
+	// wait in their destructors at DLL unload, after function-local statics are gone
+	static tbb::task_arena* arena = []()
+	{
+		int workers = tbb_param("-bg_threads", 1, 16);
+		if (!workers)
+		{
+			const int hardware = tbb::this_task_arena::max_concurrency();
+			workers = hardware / 4 < 1 ? 1 : hardware / 4 > 4 ? 4 : hardware / 4;
+		}
+		// One more slot, reserved for a thread that waits on a group (wait_for joins the arena);
+		// enqueue() never needs a slot
+		auto* created = new tbb::task_arena(workers + 1, 1, tbb::task_arena::priority::low);
+		created->initialize();
+		Msg("* TBB: background loading arena, %d worker(s), low priority (-bg_threads N to change)", workers);
+		return created;
+	}();
+	return *arena;
+}
+
+void xr_tbb_initialize()
+{
+	static tbb::global_control* limit = nullptr;
+	const int threads = tbb_param("-tbb_threads", 2, 256);
+	if (threads && !limit)
+		limit = new tbb::global_control(tbb::global_control::max_allowed_parallelism, size_t(threads));
+	Msg("* TBB %d.%d (interface %d): %d threads%s", TBB_VERSION_MAJOR, TBB_VERSION_MINOR, TBB_INTERFACE_VERSION,
+	    int(tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism)),
+	    threads ? " (-tbb_threads)" : "");
+}
+
 void xrCore::_initialize(LPCSTR _ApplicationName, xrLogger::LogCallback cb, BOOL init_fs, LPCSTR fs_fname)
 {
 	PROF_EVENT("xrCore::_initialize");
@@ -143,6 +189,7 @@ void xrCore::_initialize(LPCSTR _ApplicationName, xrLogger::LogCallback cb, BOOL
 		// demonized: Print modded exes version
 		Msg("%s version %s\n", get_modded_exes_name(), get_modded_exes_version_string().c_str());
 		Msg("Game started: %s\n", timeInDMYHMSMMM().c_str());
+		xr_tbb_initialize(); // -tbb_threads, before anything starts TBB work
 		EFS._initialize();
 #ifdef DEBUG
 #ifndef _EDITOR

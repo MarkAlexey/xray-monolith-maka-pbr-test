@@ -620,7 +620,7 @@ void CResourceManager::DeleteGeom(const SGeometry* Geom)
 }
 
 //--------------------------------------------------------------------------------------------------------------
-xr_task_group textures_load_tasks;
+xr_background_task_group textures_load_tasks;
 ref_texture CResourceManager::_CreateTexture(LPCSTR _Name)
 {
 	PROF_EVENT("_CreateTexture");

@@ -24,7 +24,7 @@
 // dispatches brand-new textures' initial Load() through it whenever the device is
 // ready. apply_load() below reuses the same queue for evicted textures instead of
 // calling Load() inline.
-extern xr_task_group textures_load_tasks;
+extern xr_background_task_group textures_load_tasks;
 
 void resptrcode_texture::create(LPCSTR _name)
 {

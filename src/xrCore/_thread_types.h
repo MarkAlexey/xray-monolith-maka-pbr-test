@@ -6,6 +6,7 @@
 #include <tbb/parallel_for.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_sort.h>
+#include <tbb/task_arena.h>
 #include <atomic>
 #include <exception>
 #include <functional>
@@ -74,6 +75,66 @@ public:
 private:
     tbb::task_group m_group;
 };
+
+// Monolith: background loading off the frame's threads (oneTBB task arenas).
+//
+// Every xr_task_group shares the default arena, and a thread waiting on one (the main thread in
+// Device's end-of-frame secondary_tasks.wait(), every frame) may run ANY queued task of that
+// arena in the meantime, including a texture load queued by the streaming code (DDS decode and
+// texture creation, several milliseconds for a large one). That is a frame spike.
+//
+// xr_background_task_group runs its tasks in a separate, low-priority arena with a few workers of
+// its own (xr_background_arena, xrCore.cpp). Threads of the default arena never take tasks from
+// another arena, so frame work can no longer pick up a load; the loads still use spare cores,
+// and the low priority makes TBB hand idle workers to frame work first.
+//   - run(): enqueues; never joins the arena, never blocks (safe from the render thread)
+//   - wait(): joins the background arena and helps until the group is done (load screens,
+//     device destroy), which is what waiting on loads should do anyway
+// Workers: -bg_threads N on the command line (1-16), default a quarter of the hardware threads,
+// at least 1 and at most 4 (xrCore.cpp).
+// Caveat: a task that itself runs xr_parallel_for inside the background arena gets only that
+// arena's workers. The texture loads do not.
+XRCORE_API tbb::task_arena& xr_background_arena();
+
+class xr_background_task_group
+{
+public:
+    xr_background_task_group() = default;
+    xr_background_task_group(const xr_background_task_group&) = delete;
+    xr_background_task_group& operator=(const xr_background_task_group&) = delete;
+
+    ~xr_background_task_group() noexcept
+    {
+        try
+        {
+            wait();
+        }
+        catch (...)
+        {
+            Msg("! xr_background_task_group: exception escaped wait() during destruction");
+        }
+    }
+
+    template <typename F>
+    void run(F&& Functor)
+    {
+        xr_background_arena().enqueue(std::forward<F>(Functor), m_group);
+    }
+
+    void wait()
+    {
+        xr_background_arena().wait_for(m_group);
+    }
+
+private:
+    tbb::task_group m_group;
+};
+
+// -tbb_threads N: caps how many threads TBB uses in total (main thread included), to leave cores
+// to the renderer's own recording threads (sun cascades, local shadow lanes, rain). Default: TBB's
+// own choice (all hardware threads). Called once from xrCore::_initialize, after the file system
+// (it logs).
+XRCORE_API void xr_tbb_initialize();
 
 template <typename T, typename U>
 using xr_concurrent_unordered_map = tbb::concurrent_unordered_map<T, U>;
