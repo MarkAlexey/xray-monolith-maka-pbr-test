@@ -6,6 +6,63 @@
 
 Here is list of exe files for Anomaly 1.5.3 that contains all engine patches by community required for some advanced mods to work.
 
+Personal thank you from the author of this project :
+
+## Credits
+
+**Base**
+- **themrdemonized** and the Modded Exes contributors: X-Ray Monolith, the base of this fork
+- **The Anomaly developers**
+
+**PBR pipeline**
+- **Zirael (Zira3l137)**: co-author of the PBR pipeline; jiggle bones, alpha-ref, first-person body and skeleton fixes
+- **IX-Ray Team** ([ixray-1.6-stcop](https://github.com/ixray-team/ixray-1.6-stcop)): the PBR pipeline this is ported from
+  - **LVutner**: PBR / BRDF shaders, SSLR, VSLR, cascaded sun shadows, the skin `sss()` approximation, and plenty of advice along the way
+  - **ForserX**: Stochastic SSR / Hi-Z (after Tomasz Stachowiak), skin transmission, the bush glow fix, static fullscreen geometry
+  - **Drombeys**: reactive mask for translucent effects; compiling non-vertex shaders without the skinning mode
+  - **mnelenpridumivat**: multithreaded THM loading; fast LocatorAPI init (with v2v3v4)
+  - **v2v3v4**: fast LocatorAPI init (file system), wallmark optimisation
+  - **NewKidHere**: sun cascade and spot light shadow caching (rewritten here)
+- **L4U6H1N6-LUN4T1C**: VSLR localized lookup
+- **Zentient**: Procedural Preintegrated SSS
+
+**Performance**
+- **qkff99/v2v3v4** (AOEngine): multithreaded shadow recording, HOM, sun cascade, tree, skinning and scheduler optimisations, and the DLSS / FSR3 port
+- **brodrigz**: DLSS and FSR3 super resolution, and the DLSS / FSR3 shader compatibility patch
+- **TheLostInPlace**: grass rework (instancing, resident rows, occlusion culling, merge, thinning)
+- **Abhishek Mallepalli** ([noisethanks/xray-monolith](https://github.com/noisethanks/xray-monolith)): the oneTBB scheduler port, file index thread safety, and memory / Lua / network fixes
+
+**Shader mods this fork integrates with**
+- **Ascii1457**: Screen Space Shaders
+- **KennShade**: Enhanced Shaders
+- **Hippobot**: Atmospherics
+- **theRealBeef**: Beef's Shader-Based NVGs
+- **indiesunpraiser**: Better Beef's NVGs
+- **Redotix99**: 3D shader-based scopes
+
+**Research it builds on**
+- Jorge Jimenez et al.: *Separable Subsurface Scattering* (2015), used for skin SSS
+- Eugene d'Eon and David Luebke: skin diffusion profile (GPU Gems 3)
+- Tomasz Stachowiak: *Stochastic Screen-Space Reflections* (2015)
+- Colin Barré-Brisebois and Marc Bouchard, and Simon Green: real-time translucency / subsurface approximations
+- László Szirmay-Kalos et al.: distance impostors (2005)
+
+**SDKs**
+- NVIDIA DLSS, AMD FidelityFX FSR 3, Intel oneTBB
+
+I thank each and every author that code/program was used in my project.
+The entire project was built from an idea : "What if Anomaly had PBR? And i wouldn't need to re-do every PBR texture to Pseudo PBR Pipeline?"
+In the end it turned into a passion project that made the Anomaly work better in every aspect. It couldn't be possible with possible who shared their project online and multiple amount of code that was adapted to this engine.
+
+Most of my respect goes to :
+Ascii1457 - Screen Space Shaders is a great mod that pushes Stalker Anomaly to its limits and makes it beautiful.
+Hippobot - Atmospherics is a great weather mod that fixes a lot of stuff about weather/Pseudo-PBR aspect of game which i disliked.
+LVunter - Shader magician. I cannot thank him enough for showing ways to make the game more efficient in PBR pipeline.
+v2v3v4 - **The** person. AOEngine is a great engine which sadly doesn't show any life currently due to problems. Otherwise he's the person who made multithreading possible in first place.
+Zireal - Amazing friend. He does a lot of cool stuff, you should check his github sometimes! And LASS engine was made by his hands, i love him lol.
+
+# Thank you everyone for testing my exes! I love each and every one of you!
+
 # Versions
 The Modded Exes come with standard and MT versions (currently in test phase designated as MT-TEST).
 
