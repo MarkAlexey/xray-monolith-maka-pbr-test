@@ -3,6 +3,7 @@
 //////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
+#include <chrono>
 #pragma hdrstop
 
 #pragma warning(disable:4995)
@@ -280,6 +281,23 @@ struct CLocatorAPI::scan_dedupe
 	u32 skipped = 0;				// folder listings skipped
 };
 
+// Monolith: where "Init FileSystem" goes, logged once at the end of _initialize(): time spent in
+// the folder listing calls (_findfirst / _findnext, slow under MO2's virtual file system), time
+// spent reading archives (header, file table, registering their entries), and the rest
+// (registering loose files, sorting, the fsgame.ltx lines themselves). -fs_scan_log also logs
+// every archive. Only active while _initialize() runs.
+static struct
+{
+	bool active = false, per_archive = false;
+	double list_ms = 0.0, archive_ms = 0.0;
+	u32 lists = 0, archives = 0;
+} fs_profile;
+
+static double fs_profile_now_ms()
+{
+	return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
 void CLocatorAPI::Register(LPCSTR name, u32 vfs, u32 crc, u32 ptr, u32 size_real, u32 size_compressed, u32 modif)
 {
 	//Msg("Register[%d] [%s]",vfs,name);
@@ -554,6 +572,25 @@ void CLocatorAPI::ProcessArchive(LPCSTR _path)
 	A.vfs_idx = m_archives.size() - 1;
 	A.path = path;
 
+	// fs_profile: the time from here to the end of the function
+	struct archive_timer
+	{
+		const archive& A;
+		CLocatorAPI& fs;
+		const double start = fs_profile.active ? fs_profile_now_ms() : 0.0;
+		const size_t files = fs.m_files.size();
+		~archive_timer()
+		{
+			if (!fs_profile.active) return;
+			const double ms = fs_profile_now_ms() - start;
+			fs_profile.archive_ms += ms;
+			++fs_profile.archives;
+			if (fs_profile.per_archive)
+				Msg("* FS archive %8.2f ms %7d new entries%s  %s", ms, int(fs.m_files.size() - files),
+				    A.hSrcFile ? "" : " (not auto-loaded)", A.path.c_str());
+		}
+	} timer{A, *this};
+
 	A.open();
 
 	// Read header
@@ -703,14 +740,13 @@ bool CLocatorAPI::Recurse(const char* path)
 		dedupeResets = m_scan_dedupe->resets;
 	}
 
+	// An ".xrignore" file in the folder skips it. Monolith: found in the folder's own listing
+	// below instead of a stat() per folder first (one more file system call for each of the
+	// thousands of folders, and under MO2 every one goes through its virtual file system)
 	string_path scanPath;
 	xr_strcpy(scanPath, sizeof(scanPath), path);
-	xr_strcat(scanPath, ".xrignore");
-	struct stat buffer;
-	if (!stat(scanPath, &buffer))
-		return true;
-	xr_strcpy(scanPath, sizeof(scanPath), path);
 	xr_strcat(scanPath, "*.*");
+	const double list_start = fs_profile.active ? fs_profile_now_ms() : 0.0;
 	_finddata_t findData;
 	intptr_t handle = _findfirst(scanPath, &findData);
 	if (handle == -1)
@@ -718,8 +754,14 @@ bool CLocatorAPI::Recurse(const char* path)
 	rec_files.reserve(256);
 	size_t oldSize = rec_files.size();
 	intptr_t done = handle;
+	bool xrignore = false;
 	while (done != -1)
 	{
+		if (0 == stricmp(findData.name, ".xrignore"))
+		{
+			xrignore = true;
+			break;
+		}
 		string1024 fullPath;
 		bool ignore = false;
 		if (m_Flags.test(flNeedCheck))
@@ -737,6 +779,16 @@ bool CLocatorAPI::Recurse(const char* path)
 		done = _findnext(handle, &findData);
 	}
 	_findclose(handle);
+	if (fs_profile.active)
+	{
+		fs_profile.list_ms += fs_profile_now_ms() - list_start;
+		++fs_profile.lists;
+	}
+	if (xrignore)
+	{
+		rec_files.erase(rec_files.begin() + oldSize, rec_files.end());
+		return true;
+	}
 	size_t newSize = rec_files.size();
 	if (newSize > oldSize)
 	{
@@ -870,6 +922,9 @@ void CLocatorAPI::_initialize(u32 flags, LPCSTR target_folder, LPCSTR fs_name)
 
 	// list every folder once (scan_dedupe); -fs_no_dedupe for the stock scan
 	const bool fsScanLog = Core.Params && strstr(Core.Params, "-fs_scan_log");
+	fs_profile = {};
+	fs_profile.active = true;
+	fs_profile.per_archive = fsScanLog;
 	if (!(Core.Params && strstr(Core.Params, "-fs_no_dedupe")))
 		m_scan_dedupe = xr_new<scan_dedupe>();
 
@@ -982,6 +1037,14 @@ void CLocatorAPI::_initialize(u32 flags, LPCSTR target_folder, LPCSTR fs_name)
 	}
 	else
 		Msg("FS: duplicate-free scan off (-fs_no_dedupe)");
+
+	{
+		const double total_ms = t.GetElapsed_sec() * 1000.0;
+		Msg("FS: %.0f ms listing %u folders, %.0f ms reading %u archives, %.0f ms the rest (registering, sorting)%s",
+		    fs_profile.list_ms, fs_profile.lists, fs_profile.archive_ms, fs_profile.archives,
+		    total_ms - fs_profile.list_ms - fs_profile.archive_ms, fsScanLog ? "" : " (-fs_scan_log: per archive)");
+		fs_profile.active = false;
+	}
 
 	Msg("File System Ready...");
 	size_t M2 = Memory.mem_usage();
