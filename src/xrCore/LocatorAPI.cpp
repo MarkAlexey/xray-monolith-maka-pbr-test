@@ -4,6 +4,11 @@
 
 #include "stdafx.h"
 #include <chrono>
+#include <functional>
+#include <string>
+#include <unordered_set>
+#include <unordered_map>
+#include <mutex>
 #pragma hdrstop
 
 #pragma warning(disable:4995)
@@ -276,9 +281,78 @@ struct CLocatorAPI::scan_dedupe
 {
 	xr_set<xr_string> recursive;	// folders listed with their subfolders (lower case, trailing '\')
 	xr_set<xr_string> flat;			// folders listed without their subfolders
-	u32 resets = 0;					// archives loaded (each one forgets the sets)
+	u32 resets = 0;					// archives loaded (the generation below)
 	u32 listed = 0;					// folders listed from disk
 	u32 skipped = 0;				// folder listings skipped
+	// Folders an archive registered entries under, and every parent folder of them, with the
+	// generation (resets) of the last archive that did. Loading an archive forgets only those
+	// folders: a folder elsewhere keeps its listing, the archive overrode nothing in it. A
+	// folder whose listing was still running when such an archive loaded is not remembered.
+	std::unordered_map<std::string, u32> touched;
+
+	// The archive just loaded registered entries in these folders (lower case, trailing '\')
+	void ArchiveLoaded(const std::unordered_set<std::string>& folders)
+	{
+		++resets;
+		for (const std::string& folder : folders)
+		{
+			std::string a = folder;
+			while (!a.empty() && a.back() == '\\')
+			{
+				u32& generation = touched[a];
+				if (generation == resets)
+					break;	// this folder and its parents are done for this archive
+				generation = resets;
+				recursive.erase(xr_string(a.c_str()));
+				flat.erase(xr_string(a.c_str()));
+				a.pop_back();
+				const size_t slash = a.find_last_of('\\');
+				a.resize(slash == std::string::npos ? 0 : slash + 1);
+			}
+		}
+	}
+
+	// May the listing of `key`, started at generation `started`, be remembered?
+	bool Untouched(const char* key, u32 started) const
+	{
+		const auto found = touched.find(key);
+		return found == touched.end() || found->second <= started;
+	}
+};
+
+// Monolith: folder listings fetched in parallel before a recursive fsgame.ltx scan (_initialize).
+// Listing a folder is a file system call that mostly waits (on the disk, and under MO2 on its
+// virtual file system); the thousands of folders of gamedata\ listed one after the other are most
+// of "Init FileSystem". The listings are fetched on TBB's threads first, then Recurse() takes each
+// one from here instead of calling _findfirst itself and processes it in the same order as before,
+// so the result is identical (archives found, registration order, overrides).
+// Each listing holds what the serial loop would have kept: names filtered by ignore_name(),
+// sorted, and whether the folder has an .xrignore. Hidden folders are not entered (ProcessOne()
+// skips them). -fs_serial_list turns this off; so does flNeedCheck (its per-file CreateFile check
+// stays in the serial loop).
+struct CLocatorAPI::scan_prefetch
+{
+	struct listing
+	{
+		xr_vector<_finddata_t> entries;
+		bool found = false;		// _findfirst succeeded
+		bool xrignore = false;
+	};
+	std::mutex lock;
+	std::unordered_map<std::string, listing> listings;
+	u32 fetched = 0, used = 0;
+
+	bool Take(const char* key, listing& out)
+	{
+		std::lock_guard<std::mutex> guard(lock);
+		auto found = listings.find(key);
+		if (found == listings.end())
+			return false;
+		out = std::move(found->second);
+		listings.erase(found);
+		++used;
+		return true;
+	}
 };
 
 // Monolith: where "Init FileSystem" goes, logged once at the end of _initialize(): time spent in
@@ -429,13 +503,9 @@ IReader* open_chunk(void* ptr, u32 ID)
 
 void CLocatorAPI::LoadArchive(archive& A, LPCSTR entrypoint)
 {
-	// its entries can override loose files already listed: list those folders again (scan_dedupe)
-	if (m_scan_dedupe)
-	{
-		m_scan_dedupe->recursive.clear();
-		m_scan_dedupe->flat.clear();
-		++m_scan_dedupe->resets;
-	}
+	// Its entries can override loose files already listed: the folders they are in are listed
+	// again (scan_dedupe::ArchiveLoaded, after the entries are registered)
+	std::unordered_set<std::string> archive_folders;
 
 	// Create base path
 	string_path fs_entry_point;
@@ -529,8 +599,20 @@ void CLocatorAPI::LoadArchive(archive& A, LPCSTR entrypoint)
 		strconcat(sizeof(full), full, fs_entry_point, name);
 
 		Register(full, A.vfs_idx, crc, ptr, size_real, size_compr, 0);
+		if (m_scan_dedupe)
+		{
+			xr_strlwr(full);
+			char* slash = strrchr(full, '\\');
+			if (slash)
+			{
+				slash[1] = 0;
+				archive_folders.emplace(full);
+			}
+		}
 	}
 	hdr->close();
+	if (m_scan_dedupe)
+		m_scan_dedupe->ArchiveLoaded(archive_folders);
 
 	// if(g_temporary_stuff_subst)
 	// g_temporary_stuff = g_temporary_stuff_subst;
@@ -720,6 +802,79 @@ bool ignore_path(const char* _path)
 		return true;
 }
 
+// scan_prefetch: list `root` and every folder below it on TBB's threads. Only for a recursive scan
+// of a folder not listed yet; each listing is taken by the Recurse() call for that folder.
+void CLocatorAPI::PrefetchListings(LPCSTR root)
+{
+	if (!m_scan_prefetch || bNoRecurse || !root || !root[0])
+		return;
+	string_path rootKey;
+	xr_strcpy(rootKey, sizeof(rootKey), root);
+	xr_strlwr(rootKey);
+	if (m_scan_dedupe && m_scan_dedupe->recursive.count(xr_string(rootKey)))
+		return;	// Recurse() skips it anyway
+
+	scan_prefetch& store = *m_scan_prefetch;
+	const double start = fs_profile_now_ms();
+	const u32 before = store.fetched;
+	xr_task_group group;
+	std::function<void(const std::string&)> list;
+	list = [&](const std::string& folder)	// lower case, trailing '\\'
+	{
+		scan_prefetch::listing result;
+		const std::string pattern = folder + "*.*";
+		_finddata_t data;
+		const intptr_t handle = _findfirst(pattern.c_str(), &data);
+		if (handle != -1)
+		{
+			result.found = true;
+			intptr_t done = handle;
+			while (done != -1)
+			{
+				if (0 == stricmp(data.name, ".xrignore"))
+				{
+					result.xrignore = true;
+					break;
+				}
+				if (!ignore_name(data.name))
+					result.entries.push_back(data);
+				done = _findnext(handle, &data);
+			}
+			_findclose(handle);
+			if (result.xrignore)
+				result.entries.clear();
+			else
+			{
+				std::sort(result.entries.begin(), result.entries.end(), pred_str_ff);
+				// Subfolders the serial scan enters (ProcessOne: not hidden, not . or ..)
+				for (const _finddata_t& entry : result.entries)
+				{
+					if (!(entry.attrib & _A_SUBDIR) || (entry.attrib & _A_HIDDEN) ||
+						!xr_strcmp(entry.name, ".") || !xr_strcmp(entry.name, ".."))
+						continue;
+					string_path child;
+					xr_strcpy(child, sizeof(child), folder.c_str());
+					xr_strcat(child, sizeof(child), entry.name);
+					xr_strlwr(child);
+					xr_strcat(child, sizeof(child), "\\");
+					std::string next = child;
+					group.run([&list, next]() { list(next); });
+				}
+			}
+		}
+		std::lock_guard<std::mutex> guard(store.lock);
+		++store.fetched;
+		store.listings[folder] = std::move(result);
+	};
+	list(std::string(rootKey));
+	group.wait();
+	if (fs_profile.active)
+	{
+		fs_profile.list_ms += fs_profile_now_ms() - start;
+		fs_profile.lists += store.fetched - before;
+	}
+}
+
 bool CLocatorAPI::Recurse(const char* path)
 {
 	// already listed while _initialize() runs (scan_dedupe)
@@ -743,46 +898,67 @@ bool CLocatorAPI::Recurse(const char* path)
 	// An ".xrignore" file in the folder skips it. Monolith: found in the folder's own listing
 	// below instead of a stat() per folder first (one more file system call for each of the
 	// thousands of folders, and under MO2 every one goes through its virtual file system)
-	string_path scanPath;
-	xr_strcpy(scanPath, sizeof(scanPath), path);
-	xr_strcat(scanPath, "*.*");
-	const double list_start = fs_profile.active ? fs_profile_now_ms() : 0.0;
-	_finddata_t findData;
-	intptr_t handle = _findfirst(scanPath, &findData);
-	if (handle == -1)
-		return false;
 	rec_files.reserve(256);
 	size_t oldSize = rec_files.size();
-	intptr_t done = handle;
 	bool xrignore = false;
-	while (done != -1)
+
+	// Fetched in parallel before this scan (scan_prefetch), or listed here
+	scan_prefetch::listing fetched;
+	bool prefetched = false;
+	if (m_scan_prefetch && path && path[0])
 	{
-		if (0 == stricmp(findData.name, ".xrignore"))
-		{
-			xrignore = true;
-			break;
-		}
-		string1024 fullPath;
-		bool ignore = false;
-		if (m_Flags.test(flNeedCheck))
-		{
-			xr_strcpy(fullPath, sizeof(fullPath), path);
-			xr_strcat(fullPath, findData.name);
-			ignore = ignore_name(findData.name) || ignore_path(fullPath);
-		}
-		else
-		{
-			ignore = ignore_name(findData.name);
-		}
-		if (!ignore)
-			rec_files.push_back(findData);
-		done = _findnext(handle, &findData);
+		string_path key;
+		xr_strcpy(key, sizeof(key), path);
+		xr_strlwr(key);
+		prefetched = m_scan_prefetch->Take(key, fetched);
 	}
-	_findclose(handle);
-	if (fs_profile.active)
+	if (prefetched)
 	{
-		fs_profile.list_ms += fs_profile_now_ms() - list_start;
-		++fs_profile.lists;
+		if (!fetched.found)
+			return false;
+		xrignore = fetched.xrignore;
+		rec_files.insert(rec_files.end(), fetched.entries.begin(), fetched.entries.end());
+	}
+	else
+	{
+		string_path scanPath;
+		xr_strcpy(scanPath, sizeof(scanPath), path);
+		xr_strcat(scanPath, "*.*");
+		const double list_start = fs_profile.active ? fs_profile_now_ms() : 0.0;
+		_finddata_t findData;
+		intptr_t handle = _findfirst(scanPath, &findData);
+		if (handle == -1)
+			return false;
+		intptr_t done = handle;
+		while (done != -1)
+		{
+			if (0 == stricmp(findData.name, ".xrignore"))
+			{
+				xrignore = true;
+				break;
+			}
+			string1024 fullPath;
+			bool ignore = false;
+			if (m_Flags.test(flNeedCheck))
+			{
+				xr_strcpy(fullPath, sizeof(fullPath), path);
+				xr_strcat(fullPath, findData.name);
+				ignore = ignore_name(findData.name) || ignore_path(fullPath);
+			}
+			else
+			{
+				ignore = ignore_name(findData.name);
+			}
+			if (!ignore)
+				rec_files.push_back(findData);
+			done = _findnext(handle, &findData);
+		}
+		_findclose(handle);
+		if (fs_profile.active)
+		{
+			fs_profile.list_ms += fs_profile_now_ms() - list_start;
+			++fs_profile.lists;
+		}
 	}
 	if (xrignore)
 	{
@@ -797,11 +973,11 @@ bool CLocatorAPI::Recurse(const char* path)
 			ProcessOne(path, rec_files[i]);
 		rec_files.erase(rec_files.begin() + oldSize, rec_files.end());
 	}
-	// remember the listing, unless it loaded an archive (scan_dedupe)
+	// remember the listing, unless an archive loaded meanwhile registered entries under it
 	if (m_scan_dedupe && dedupeKey[0])
 	{
 		++m_scan_dedupe->listed;
-		if (dedupeResets == m_scan_dedupe->resets)
+		if (m_scan_dedupe->Untouched(dedupeKey, dedupeResets))
 			(bNoRecurse ? m_scan_dedupe->flat : m_scan_dedupe->recursive).insert(xr_string(dedupeKey));
 	}
 	// insert self
@@ -927,6 +1103,9 @@ void CLocatorAPI::_initialize(u32 flags, LPCSTR target_folder, LPCSTR fs_name)
 	fs_profile.per_archive = fsScanLog;
 	if (!(Core.Params && strstr(Core.Params, "-fs_no_dedupe")))
 		m_scan_dedupe = xr_new<scan_dedupe>();
+	// folder listings fetched in parallel (scan_prefetch); -fs_serial_list lists one by one
+	if (!(Core.Params && strstr(Core.Params, "-fs_serial_list")) && !m_Flags.test(flNeedCheck))
+		m_scan_prefetch = xr_new<scan_prefetch>();
 
 	// scan root directory
 	bNoRecurse = TRUE;
@@ -1008,6 +1187,7 @@ void CLocatorAPI::_initialize(u32 flags, LPCSTR target_folder, LPCSTR fs_name)
 				const size_t filesBefore = m_files.size();
 				const u32 skippedBefore = m_scan_dedupe ? m_scan_dedupe->skipped : 0;
 				const u32 listedBefore = m_scan_dedupe ? m_scan_dedupe->listed : 0;
+				PrefetchListings(P->m_Path);
 				Recurse(P->m_Path);
 				const bool lineSkipped = m_scan_dedupe && m_scan_dedupe->skipped != skippedBefore &&
 					m_scan_dedupe->listed == listedBefore;
@@ -1016,7 +1196,10 @@ void CLocatorAPI::_initialize(u32 flags, LPCSTR target_folder, LPCSTR fs_name)
 				    lineSkipped ? "  (already listed, skipped)" : "", P->m_Path);
 			}
 			else
+			{
+				PrefetchListings(P->m_Path);
 				Recurse(P->m_Path);
+			}
 			auto I = pathes.insert(std::make_pair(xr_strdup(id), P));
 #ifndef DEBUG
 			m_Flags.set(flCacheFiles, FALSE);
@@ -1038,6 +1221,12 @@ void CLocatorAPI::_initialize(u32 flags, LPCSTR target_folder, LPCSTR fs_name)
 	else
 		Msg("FS: duplicate-free scan off (-fs_no_dedupe)");
 
+	if (m_scan_prefetch)
+	{
+		Msg("FS: %u folder listings fetched in parallel, %u used (-fs_serial_list to list one by one)",
+		    m_scan_prefetch->fetched, m_scan_prefetch->used);
+		xr_delete(m_scan_prefetch);
+	}
 	{
 		const double total_ms = t.GetElapsed_sec() * 1000.0;
 		Msg("FS: %.0f ms listing %u folders, %.0f ms reading %u archives, %.0f ms the rest (registering, sorting)%s",

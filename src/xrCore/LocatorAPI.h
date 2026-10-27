@@ -90,6 +90,10 @@ private:
 	// null outside _initialize() and with -fs_no_dedupe
 	struct scan_dedupe;
 	scan_dedupe* m_scan_dedupe = nullptr;
+	// folder listings fetched in parallel while _initialize() runs (LocatorAPI.cpp, scan_prefetch)
+	struct scan_prefetch;
+	scan_prefetch* m_scan_prefetch = nullptr;
+	void PrefetchListings(LPCSTR root);
 
 	xrCriticalSection m_auth_lock;
 	u64 m_auth_code;
