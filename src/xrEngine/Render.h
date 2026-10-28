@@ -440,6 +440,9 @@ public:
 	virtual u32 memory_usage() { return 0; }
 	virtual u32 active_phase() = 0; //Swartz: actor shadow
 	virtual void RenderToTarget(RRT target) = 0;
+	// Monolith frame generation (R4, r4_framegen): called right before the UI is drawn, so the
+	// renderer can keep the frame without it
+	virtual void FrameGenCaptureHudless() {}
 	// Constructor/destructor
 	virtual ~IRender_interface();
 protected:

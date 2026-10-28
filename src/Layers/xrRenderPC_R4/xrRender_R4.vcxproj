@@ -856,6 +856,13 @@
     <ClInclude Include="Dlss\DlssD3D11.h" />
     <ClInclude Include="Dlss\UpscalerDiagnostics.h" />
     <ClInclude Include="Dlss\DlssTemporal.h" />
+    <ClCompile Include="FrameGen\FrameGenIntegration.cpp" />
+    <ClCompile Include="FrameGen\FrameGenD3D12.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PreprocessorDefinitions>NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClInclude Include="FrameGen\FrameGenIntegration.h" />
+    <ClInclude Include="FrameGen\FrameGenD3D12.h" />
     <ClInclude Include="..\xrRender\RenderDimensions.h" />
   </ItemGroup>
   <ItemDefinitionGroup>

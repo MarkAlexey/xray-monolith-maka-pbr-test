@@ -486,6 +486,7 @@ public:
 	virtual void rmNormal();
     virtual u32 active_phase() { return RCache.RenderPhase(phase); }; //Swartz: actor shadow
 	void RenderToTarget(RRT target) override;
+	void FrameGenCaptureHudless() override;
 	// Constructor/destructor/loader
 	CRender();
 	virtual ~CRender();

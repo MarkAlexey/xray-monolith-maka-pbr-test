@@ -5,6 +5,12 @@
 
 void CGammaControl::Update()
 {
+#if defined(USE_DX11)
+	// Frame generation: the D3D11 swapchain sits on a hidden window, and the gamma ramp needs
+	// exclusive fullscreen, which frame generation replaces with a borderless window
+	if (framegen::Attached())
+		return;
+#endif
 	if (HW.pDevice)
 	{
 		DXGI_GAMMA_CONTROL_CAPABILITIES GC;

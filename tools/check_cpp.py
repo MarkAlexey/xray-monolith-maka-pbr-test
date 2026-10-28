@@ -144,8 +144,16 @@ def fold_tree(src, dst):
             # other files (binaries, resources) are not needed for syntax checks
 
 
+# Exported from each commit: the sources, the SDK headers, and the vendored SDKs the renderer
+# includes by relative path (sdk/DLSS, sdk/FSR3, sdk/FidelityFX-API). Paths a commit does not
+# have yet are skipped.
+EXPORT_PATHS = ["src", "sdk/include", "sdk/DLSS", "sdk/FSR3", "sdk/FidelityFX-API"]
+
+
 def export_commit(repo, rev, dst, paths):
     os.makedirs(dst, exist_ok=True)
+    paths = [p for p in paths if subprocess.run(["git", "-C", repo, "cat-file", "-e", f"{rev}:{p}"],
+                                                capture_output=True).returncode == 0]
     a = subprocess.run(["git", "-C", repo, "archive", rev, "--"] + paths, capture_output=True, check=True)
     subprocess.run(["tar", "-x", "-C", dst], input=a.stdout, check=True)
 
@@ -229,12 +237,13 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         raw = {k: os.path.join(tmp, "raw_" + k) for k in ("base", "head")}
         fold = {k: os.path.join(tmp, "fold_" + k) for k in ("base", "head")}
-        export_commit(repo, a.base, raw["base"], ["src", "sdk/include"])
+        export_commit(repo, a.base, raw["base"], EXPORT_PATHS)
         if a.head == "WORKTREE":
-            shutil.copytree(os.path.join(repo, "src"), os.path.join(raw["head"], "src"))
-            shutil.copytree(os.path.join(repo, "sdk", "include"), os.path.join(raw["head"], "sdk", "include"))
+            for path in EXPORT_PATHS:
+                if os.path.isdir(os.path.join(repo, path)):
+                    shutil.copytree(os.path.join(repo, path), os.path.join(raw["head"], path))
         else:
-            export_commit(repo, a.head, raw["head"], ["src", "sdk/include"])
+            export_commit(repo, a.head, raw["head"], EXPORT_PATHS)
         # git archive leaves submodules empty; both trees get the working copy's checkout
         # (run `git submodule update --init` first). They are dependencies, not what is compared.
         # -z: "key\nvalue\0" records. Keys and paths can contain spaces ("src/3rd party/...").

@@ -482,6 +482,10 @@ void dxRenderDeviceRender::End()
 # endif
 
 	if (!Device.m_SecondViewport.IsSVPFrame() && !Device.m_SecondViewport.isCamReady) {
+# if defined(USE_DX11)
+		// Frame generation (r4_framegen) presents through its D3D12 swapchain on the game window
+		if (!framegen::Present(use_vsync, is_windowed && !use_vsync && HW.m_SupportsVRR))
+# endif
 		HW.m_pSwapChain->Present(present_interval, present_flags);
 	}
 #else //!USE_DX10 || USE_DX11

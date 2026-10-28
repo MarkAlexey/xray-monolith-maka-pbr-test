@@ -389,6 +389,10 @@ float ps_r4_sun_shadow_cache_shift = 0.05f; // re-render when the needed box mov
 // depth of still lights kept in a texture per light
 int ps_r4_spot_shadow_cache = 0;
 int ps_r4_spot_shadow_cache_mb = 128;
+// Frame generation (FrameGen/FrameGenIntegration.cpp): AMD FSR 3.1 through a D3D12 presentation
+// bridge. 1 = on (game restart to switch the bridge on / off; 0 while running pauses it)
+int ps_r4_framegen = 0;
+int ps_r4_framegen_debug = 0;	// 1 = FSR's tear / reset / pacing markers, 2 = its debug view
 
 float ps_r2_img_exposure = 1.0f; // r2-only
 float ps_r2_img_gamma = 1.0f; // r2-only
@@ -1602,6 +1606,8 @@ void xrRender_initconsole()
     CMD4(CCC_Integer, "r4_spot_shadow_cache", &ps_r4_spot_shadow_cache, 0, 1);
     CMD4(CCC_Integer, "r4_spot_shadow_cache_mb", &ps_r4_spot_shadow_cache_mb, 8, 2048);
     CMD1(CCC_SpotShadowCacheStats, "r4_spot_shadow_cache_stats");
+    CMD4(CCC_Integer, "r4_framegen", &ps_r4_framegen, 0, 1);
+    CMD4(CCC_Integer, "r4_framegen_debug", &ps_r4_framegen_debug, 0, 2);
 #endif
     CMD4(CCC_Integer, "r__hom_coarse", &ps_r__hom_coarse, 0, 1);
 

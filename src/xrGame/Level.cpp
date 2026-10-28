@@ -1313,6 +1313,9 @@ void CLevel::OnRender()
 	if (use_reshade)
 		render_reshade_effects();
 
+	// Frame generation (r4_framegen): the frame as it is before the UI, for FSR 3.1's UI detection
+	Render->FrameGenCaptureHudless();
+
 	HUD().RenderUI();
 
 	ScriptDebugRender();

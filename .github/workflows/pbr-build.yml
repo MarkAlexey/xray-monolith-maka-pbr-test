@@ -40,6 +40,12 @@
 #     components on top of it (DLSS_PATCH_COMPONENTS); the FOMOD's second page picks between
 #     them. Overlay + DLSS: DLSS patch first, then the PBR overlay above it.
 #
+# Frame generation add-on (branches with src/Layers/xrRenderPC_R4/FrameGen)
+#   <package>_framegen.zip: bin/amd_fidelityfx_dx12.dll, AMD's signed FSR 3.1 runtime from the
+#   FidelityFX SDK v1.1.4 release (FRAMEGEN_DLL_URL, checked against FRAMEGEN_DLL_SHA256), its
+#   MIT license and a README. Kept out of the main zip: only r4_framegen 1 loads it, and without
+#   it that setting logs why and the game presents through D3D11 as before.
+#
 # Profiled build (ProfiledDX11)
 #   Upstream's ProfiledDX11 configuration defines XRCORE_PROFILER, so every PROF_EVENT /
 #   PROF_TAG / PROF_FRAME in the engine (about 500 markers, the qkff99 shadow / HOM / grass
@@ -127,6 +133,9 @@ env:
   DLSS_DLL_URL: https://raw.githubusercontent.com/NVIDIA/DLSS/v310.9.1/lib/Windows_x86_64/rel/nvngx_dlss.dll
   DLSS_DLL_SHA256: 3975567b8943c53acce397f2b72380092f84f162d00b0d2c7d08a1025c563983
   DLSS_PATCH_ZIP: .github/pbr-release/dlss/dlss-binaries-GAMMA-compatibility-patch-0.5.zip
+  # AMD FidelityFX SDK v1.1.4 signed DX12 runtime (FSR 3.1.4 frame generation), r4_framegen
+  FRAMEGEN_DLL_URL: https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK/v1.1.4/PrebuiltSignedDLL/amd_fidelityfx_dx12.dll
+  FRAMEGEN_DLL_SHA256: 12a5081257ec95b0b53ad51b4a87fb3c03f97fe0bbb59f9496968f8d50ef93a6
   # Patch components stacked on top of the GAMMA shader sources, lowest first. "base" is the
   # SSS 23.5 part; then the Atmospherics components matching the sources repository's
   # atmospherics/. The packs target the October 2026 Atmospherics update only (it is faster;
@@ -413,6 +422,38 @@ jobs:
             (cd prof_pkg && zip -qr "../${{ steps.v.outputs.name }}_profiled.zip" .)
           else
             echo "::notice::no profiled exe in this release (ProfiledDX11 skipped or failed)"
+          fi
+
+          # Frame generation add-on (r4_framegen): AMD's runtime, pinned version and checksum
+          if [ -d src/Layers/xrRenderPC_R4/FrameGen ]; then
+            mkdir -p fg_pkg/bin fg_pkg/licenses
+            curl -sSL --fail -o fg_pkg/bin/amd_fidelityfx_dx12.dll "$FRAMEGEN_DLL_URL"
+            echo "$FRAMEGEN_DLL_SHA256  fg_pkg/bin/amd_fidelityfx_dx12.dll" | sha256sum -c -
+            cp sdk/FidelityFX-API/LICENSE.txt fg_pkg/licenses/AMD-FidelityFX-SDK-LICENSE.txt
+            cat > fg_pkg/README-FRAMEGEN.txt <<'TXT'
+          Frame generation add-on (AMD FSR 3.1), same commit as the main zip.
+
+          INSTALL: copy bin/amd_fidelityfx_dx12.dll into the game's bin/ next to AnomalyDX11.exe,
+          then in the console: r4_framegen 1, and restart the game.
+
+          NEEDS: Windows 10 or newer, a GPU with Direct3D 12 (any vendor), Screen Space Shaders'
+          motion vectors. MSAA off. Exclusive fullscreen becomes a borderless window.
+
+          IN GAME: one generated frame between every two rendered ones; the HUD stays sharp.
+          r4_framegen 0 pauses it (a restart switches it off completely). It pauses itself in menus,
+          while paused and while a 3D scope is up. A frame limiter caps the RENDERED frames: for
+          about 140 fps on screen, limit to 70. Expect a little more input latency.
+          r4_framegen_debug 1 / 2: FSR's on-screen markers / debug view.
+
+          IS IT WORKING? The log (appdata/logs) has "[FrameGen] ON" and "generation running";
+          "[FrameGen] OFF: ..." says why not.
+
+          UNINSTALL: r4_framegen 0, restart, delete bin/amd_fidelityfx_dx12.dll.
+
+          amd_fidelityfx_dx12.dll is AMD's signed runtime from the FidelityFX SDK v1.1.4 release
+          (MIT license, licenses/).
+          TXT
+            (cd fg_pkg && zip -qr "../${{ steps.v.outputs.name }}_framegen.zip" .)
           fi
 
           # GAMMA shader installer (job shader_packs), when it ran and succeeded

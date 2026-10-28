@@ -1423,3 +1423,56 @@ Checked: DXC compiles all new shaders on the vanilla stack and on SSS + ES + Oct
 Atmospherics with the generated overlay (no new errors); `tools/check_cpp.py` no new errors, and
 the DLSS / FSR 3 backends (outside the checker's SDK paths) compiled separately with the DLSS and
 FidelityFX headers, no errors before or after. Untested in game.
+
+## Frame generation: AMD FSR 3.1 through a D3D12 presentation bridge (`r4_framegen`, experiment)
+
+One generated frame between every two rendered ones, on any GPU with Direct3D 12 (NVIDIA, AMD,
+Intel) and Windows 10 1703+. Off by default; nothing changes unless `r4_framegen 1`.
+
+Why a bridge: FSR 3 frame generation (and DLSS-G) only exist for Direct3D 12 / Vulkan. The game
+keeps rendering in D3D11; only presentation moves to D3D12
+(`src/Layers/xrRenderPC_R4/FrameGen/`):
+
+- `CHW::CreateDevice`: with `r4_framegen 1` the bridge creates a D3D12 device on the D3D11
+  device's adapter (LUID), a queue and two shared fences, and the D3D11 swapchain is created on a
+  hidden window. The engine keeps using that swapchain's back buffer, resizes and device-state
+  checks, untouched.
+- `CHW::Reset` (startup, resize, `vid_restart`): AMD's frame-generation swapchain
+  (`ffxCreateContextDescFrameGenerationSwapChainForHwndDX12`) takes the game window, plus the
+  FSR 3.1 frame-generation context. If that fails the D3D11 swapchain goes back on the game window
+  (`CHW::FrameGenFallback`) and the game runs as before.
+- `Level::OnRender`, just before `HUD().RenderUI()`: `Render->FrameGenCaptureHudless()` copies
+  the back buffer (scene + post + ReShade, no UI), SSS's motion vectors and the scene depth
+  (D24S8 -> R32F with a tiny shader: depth-stencil textures cannot be shared) into textures shared
+  with D3D12.
+- `dxRenderDeviceRender::End`: the finished frame (with UI) is copied to a shared texture; D3D12
+  waits on the fence, copies the inputs into private textures, records FSR's prepare pass
+  (depth, motion vectors, the upscaler's jitter and motion scale, camera), copies the frame into
+  AMD's swapchain and presents. AMD's swapchain presents the generated frame, paced, then ours.
+  FSR finds the UI by comparing the hudless copy with the final frame, so the HUD stays sharp.
+- Next frame, D3D11 GPU-waits on D3D12's fence before writing the shared textures again.
+
+Libraries are loaded at run time: `d3d12.dll` and AMD's signed `amd_fidelityfx_dx12.dll`
+(FidelityFX SDK v1.1.4, FSR 3.1.4; headers in `sdk/FidelityFX-API`, MIT). The DLL ships in the
+separate `*_framegen.zip` release asset, not in the main zip. Without it `r4_framegen 1` logs
+`[FrameGen] OFF: amd_fidelityfx_dx12.dll not found ...` and nothing else changes.
+
+Console:
+- `r4_framegen 0/1`: the bridge is chosen when the device is created (game restart). `0` while
+  running pauses generation (the bridge keeps presenting).
+- `r4_framegen_debug 0/1/2`: FSR's tear / reset / pacing markers, its debug view.
+
+Generation pauses itself (logged once per change, `[FrameGen] generation paused: <why>`) in menus,
+while the game is paused, with MSAA, without SSS motion vectors, and while a 3D scope (second
+viewport) is up: the engine then renders the scope view every other frame and the main view's
+motion vectors are not trustworthy yet. A camera cut (teleport, more than 5 m, about 45 degrees or
+5 degrees of FOV between two frames, or a paused frame before) resets interpolation for a frame.
+
+Caveats:
+- Exclusive fullscreen becomes a borderless window (AMD's swapchain is windowed); `rs_screenmode`
+  is switched accordingly.
+- About one rendered frame more input latency. A frame limiter caps the rendered frames.
+- The display gamma ramp (exclusive fullscreen only) is not applied.
+- ReShade hooks the D3D11 swapchain, which no longer reaches the screen: untested.
+- Not tested on hardware here: only clang syntax checks (`tools/check_cpp.py`, which now also
+  exports `sdk/DLSS`, `sdk/FSR3` and `sdk/FidelityFX-API`) and the CI's MSVC build.

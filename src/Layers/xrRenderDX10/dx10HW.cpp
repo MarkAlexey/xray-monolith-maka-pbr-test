@@ -300,12 +300,28 @@ void CHW::DestroyD3D()
 
 extern u32 g_screenmode;
 
+#if defined(USE_DX11)
+// Monolith frame generation (r4_framegen, FrameGen/FrameGenIntegration.h): AMD's frame-generation
+// swapchain is windowed, so exclusive fullscreen becomes a borderless window while it is on
+static void FrameGenWindowedOnly()
+{
+    if ((framegen::Requested() || framegen::Initialized()) && g_screenmode == 2)
+    {
+        g_screenmode = 1;
+        Msg("* [FrameGen] exclusive fullscreen is not available with frame generation: borderless window");
+    }
+}
+#endif
+
 void CHW::CreateDevice(HWND hwnd, bool move_window)
 {
 #if defined(USE_DX10) || defined(USE_DX11)
     m_hWnd = hwnd;
 #endif
     m_move_window = move_window;
+#if defined(USE_DX11)
+    FrameGenWindowedOnly();
+#endif
     CreateD3D();
 
     /* Partially implemented dynamic load
@@ -588,14 +604,13 @@ void CHW::CreateDevice(HWND hwnd, bool move_window)
     _RELEASE(device);
     _RELEASE(context);
 
-    // create swapchain
-    R_CHK(m_pFactory->CreateSwapChainForHwnd(pDevice, m_hWnd, &sd, &sd_fullscreen, NULL, &m_pSwapChain));
-
-    // setup colorspace (SDR, sRGB / Rec.709)
-    IDXGISwapChain3* swapchain3;
-    R_CHK(m_pSwapChain->QueryInterface(&swapchain3));
-    R_CHK(swapchain3->SetColorSpace1(DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709));
-    _RELEASE(swapchain3);
+    // create swapchain. With frame generation it goes on a hidden window: the engine keeps
+    // rendering into its back buffer, the frame-generation swapchain owns the game window
+    // (attached in Reset)
+    HWND swapchain_window = m_hWnd;
+    if (HWND hidden = framegen::Initialize(pDevice, m_pFactory))
+        swapchain_window = hidden;
+    CreateSwapChain(swapchain_window);
 
     R_CHK(pContext->QueryInterface(__uuidof(ID3DUserDefinedAnnotation), (void**)&pAnnotation));
 
@@ -699,10 +714,36 @@ void CHW::CreateDevice(HWND hwnd, bool move_window)
     // #endif
 }
 
+#if defined(USE_DX11)
+void CHW::CreateSwapChain(HWND window)
+{
+    R_CHK(m_pFactory->CreateSwapChainForHwnd(pDevice, window, &m_ChainDesc, &m_ChainDescFullscreen, NULL, &m_pSwapChain));
+
+    // setup colorspace (SDR, sRGB / Rec.709)
+    IDXGISwapChain3* swapchain3;
+    R_CHK(m_pSwapChain->QueryInterface(&swapchain3));
+    R_CHK(swapchain3->SetColorSpace1(DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709));
+    _RELEASE(swapchain3);
+}
+
+// Frame generation could not take the game window: drop the bridge and put the D3D11
+// swapchain back on the game window (same size and mode)
+void CHW::FrameGenFallback()
+{
+    framegen::Shutdown();
+    _RELEASE(pBaseZB);
+    _RELEASE(pBaseRT);
+    _RELEASE(m_pSwapChain);
+    CreateSwapChain(m_hWnd);
+    UpdateViews();
+}
+#endif
+
 void CHW::DestroyDevice()
 {
 #ifdef USE_DX11
     dlss::ShutdownDevice();
+    framegen::Shutdown();
 #endif
     //	Destroy state managers
     StateManager.Reset();
@@ -781,6 +822,9 @@ void CHW::Reset(HWND hwnd)
     DXGI_SWAP_CHAIN_DESC& cd = m_ChainDesc;
 #endif
 
+#if defined(USE_DX11)
+    FrameGenWindowedOnly();
+#endif
     BOOL bWindowed = (g_screenmode != 2);
 
 #if defined(USE_DX11)
@@ -868,6 +912,12 @@ void CHW::Reset(HWND hwnd)
 #endif
 
     UpdateViews();
+
+#if defined(USE_DX11)
+    // Frame generation: (re)attach AMD's swapchain to the game window at the new size
+    if (framegen::Initialized() && !framegen::Attach(m_hWnd, cd.Width, cd.Height, cd.Format, m_SupportsVRR))
+        FrameGenFallback();
+#endif
 
     /*
         // Windoze
@@ -1489,6 +1539,17 @@ void CHW::UpdateViews()
 	descDepth.CPUAccessFlags     = 0;
     descDepth.MiscFlags          = 0;
 
+#if defined(USE_DX11)
+    // Frame generation reads the scene depth without an upscaler: typeless + shader resource
+    // (same bits, the view below keeps it a D24S8 depth buffer)
+    const bool readable_depth = framegen::Initialized();
+    if (readable_depth)
+    {
+        descDepth.Format    = DXGI_FORMAT_R24G8_TYPELESS;
+        descDepth.BindFlags = D3D_BIND_DEPTH_STENCIL | D3D11_BIND_SHADER_RESOURCE;
+    }
+#endif
+
 	R = pDevice->CreateTexture2D(
             &descDepth,      // Texture desc
             NULL,            // Initial data
@@ -1497,7 +1558,14 @@ void CHW::UpdateViews()
     R_CHK(R);
 
     //	Create Depth/stencil view
+#if defined(USE_DX11)
+    D3D11_DEPTH_STENCIL_VIEW_DESC dsv = {};
+    dsv.Format        = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    dsv.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
+    R = pDevice->CreateDepthStencilView(pDepthStencil, readable_depth ? &dsv : NULL, &pBaseZB);
+#else
     R = pDevice->CreateDepthStencilView(pDepthStencil, NULL, &pBaseZB);
+#endif
     R_CHK(R);
 
     pDepthStencil->Release();

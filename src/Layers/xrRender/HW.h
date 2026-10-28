@@ -139,6 +139,10 @@ private:
 	void AcquireDefaultOutput();
 #endif
 #if defined(USE_DX11)
+	void CreateSwapChain(HWND window);	// m_ChainDesc / m_ChainDescFullscreen on `window`
+	void FrameGenFallback();			// frame generation failed: D3D11 swapchain back on m_hWnd
+#endif
+#if defined(USE_DX11)
 	void SelectAdapterAndOutput(HMONITOR hTargetMonitor);
 #endif
 	bool m_move_window;

@@ -457,6 +457,11 @@ void CRender::render_Reticle()
 	RImplementation.o.distortion = FALSE;
 }
 
+void CRender::FrameGenCaptureHudless()
+{
+	framegen::CaptureHudless();
+}
+
 void CRender::RenderToTarget(RRT target)
 {
 	ref_rt* RT = nullptr;
