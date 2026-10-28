@@ -139,7 +139,7 @@ bool CRenderTarget::scope_reference_material_current() const
     const int reticleMode = int(ps_s3ds_param_3.y);
     if (reticleMode == 6 || reticleMode == 8) return false;
     return this == RImplementation.TargetMain && p.enabled && p.allowDeferredCapture && Device.true_pip_on
-        && !RImplementation.o.dx10_msaa && !ps_r4_hdr10_on
+        && !RImplementation.o.dx10_msaa // (no HDR10 output on this branch)
         && p.frame == Device.dwFrame && p.session == vp.GetSVPSession()
         && p.opticEpoch == vp.svp_optic_epoch && p.routeEpoch == vp.GetOpticRouteEpoch()
         && p.generation == vp.RenderOpticConfig().generation;

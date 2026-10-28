@@ -67,6 +67,11 @@ JOBS = os.cpu_count() or 4
 # profiler macros only wrap events/tags, so the no-op backend is used for syntax checks.
 PROFILER_DEFINE = "XRCORE_PROFILER=0"
 
+# What is exported from each commit. gamedata/shaders: some engine sources include shader
+# headers to share constants with HLSL (svp_optics.cpp: ../../../gamedata/shaders/r3/
+# scope_defines.h); without them those TUs stopped at that include and checked nothing after it.
+EXPORT_PATHS = ["src", "sdk/include", "gamedata/shaders"]
+
 PROJECTS = {
     "R4": {
         "dir": "src/Layers/xrRenderPC_R4",
@@ -152,6 +157,10 @@ def fold_tree(src, dst):
 
 def export_commit(repo, rev, dst, paths):
     os.makedirs(dst, exist_ok=True)
+    # a path the commit does not have (e.g. gamedata/shaders before it existed) would make
+    # git archive fail, so only the existing ones are archived
+    paths = [p for p in paths if subprocess.run(["git", "-C", repo, "cat-file", "-e", f"{rev}:{p}"],
+                                                capture_output=True).returncode == 0]
     a = subprocess.run(["git", "-C", repo, "archive", rev, "--"] + paths, capture_output=True, check=True)
     subprocess.run(["tar", "-x", "-C", dst], input=a.stdout, check=True)
 
@@ -235,12 +244,14 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         raw = {k: os.path.join(tmp, "raw_" + k) for k in ("base", "head")}
         fold = {k: os.path.join(tmp, "fold_" + k) for k in ("base", "head")}
-        export_commit(repo, a.base, raw["base"], ["src", "sdk/include"])
+        export_commit(repo, a.base, raw["base"], EXPORT_PATHS)
         if a.head == "WORKTREE":
             shutil.copytree(os.path.join(repo, "src"), os.path.join(raw["head"], "src"))
-            shutil.copytree(os.path.join(repo, "sdk", "include"), os.path.join(raw["head"], "sdk", "include"))
+            for extra in EXPORT_PATHS[1:]:
+                if os.path.isdir(os.path.join(repo, extra)):
+                    shutil.copytree(os.path.join(repo, extra), os.path.join(raw["head"], extra))
         else:
-            export_commit(repo, a.head, raw["head"], ["src", "sdk/include"])
+            export_commit(repo, a.head, raw["head"], EXPORT_PATHS)
         # git archive leaves submodules empty; both trees get the working copy's checkout
         # (run `git submodule update --init` first). They are dependencies, not what is compared.
         # -z: "key\nvalue\0" records. Keys and paths can contain spaces ("src/3rd party/...").
