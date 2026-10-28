@@ -97,7 +97,7 @@ name: PBR-Test build
 
 on:
   push:
-    branches: [ "pbr-test-s3ds-mt-sss", "pbr-test-s3ds-mt-sss-lass", "pbr-test-s3ds-mt-sss-lass-dlss", "pbr-test-s3ds-mt-sss-lass-skin-dlss", "pbr-test-s3ds-mt-sss-lass-perf-dlss" ]
+    branches: [ "pbr-test-s3ds-mt-sss", "pbr-test-s3ds-mt-sss-lass", "pbr-test-s3ds-mt-sss-lass-dlss", "pbr-test-s3ds-mt-sss-lass-skin-dlss", "pbr-test-s3ds-mt-sss-lass-perf-dlss", "pbr-test-s3ds-mt-sss-lass-framegen-dlss" ]
     paths:
       - "src/**"
       - "gamedata/**"
