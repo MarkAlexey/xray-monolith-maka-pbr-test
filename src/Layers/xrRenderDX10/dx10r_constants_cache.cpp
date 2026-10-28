@@ -70,12 +70,65 @@ dx10ConstantBuffer& R_constants::GetCBuffer(R_constant* C, BufferType BType)
 	return *ptr;
 }
 
+// maps only the bound slots this stage recorded and only when the buffer says it changed
+static void flush_cb_stage(u32 stage, ref_cbuffer* slots)
+{
+	const u8 count = RCache.m_cb_slot_count[stage];
+	const u8* list = RCache.m_cb_slots[stage];
+	for (u8 n = 0; n < count; ++n)
+	{
+		dx10ConstantBuffer* cb = &*slots[list[n]];
+		if (cb->IsChanged())
+			cb->Flush();
+	}
+}
+
+// reports one slot per frame that the list walk left dirty
+static void verify_cb_stage(const char* stage, ref_cbuffer* slots, u32 i)
+{
+	if (!slots[i] || !slots[i]->IsChanged()) return;
+	static u32 last_frame = u32(-1);
+	if (last_frame == Device.dwFrame) return;
+	last_frame = Device.dwFrame;
+	Msg("! [CBDIRTY] %s slot %u missed by the dirty list", stage, i);
+	VERIFY(!"cb dirty list missed a bound buffer");
+}
+
 void R_constants::flush_cache()
 {
 	PROF_EVENT("R_constants::flush_cache");
-    auto& backend = RCache;
+    auto& backend = RCache;   // one lookup: RCache is the recording context's backend on MT workers
+	extern int ps_r__cb_dirty_list;
+	const int mode = ps_r__cb_dirty_list;
+
+	if (mode)
+	{
+		flush_cb_stage(CBackend::CBStage_Vertex, backend.m_aVertexConstants);
+		flush_cb_stage(CBackend::CBStage_Pixel, backend.m_aPixelConstants);
+		flush_cb_stage(CBackend::CBStage_Geometry, backend.m_aGeometryConstants);
+#ifdef USE_DX11
+		flush_cb_stage(CBackend::CBStage_Hull, backend.m_aHullConstants);
+		flush_cb_stage(CBackend::CBStage_Domain, backend.m_aDomainConstants);
+		flush_cb_stage(CBackend::CBStage_Compute, backend.m_aComputeConstants);
+#endif
+		if (mode < 2)
+			return;
+	}
+
 	for (int i = 0; i < CBackend::MaxCBuffers; ++i)
 	{
+		if (mode)
+		{
+			verify_cb_stage("vs", backend.m_aVertexConstants, i);
+			verify_cb_stage("ps", backend.m_aPixelConstants, i);
+			verify_cb_stage("gs", backend.m_aGeometryConstants, i);
+#ifdef USE_DX11
+			verify_cb_stage("hs", backend.m_aHullConstants, i);
+			verify_cb_stage("ds", backend.m_aDomainConstants, i);
+			verify_cb_stage("cs", backend.m_aComputeConstants, i);
+#endif
+		}
+
 		if (backend.m_aVertexConstants[i])
 			backend.m_aVertexConstants[i]->Flush();
 

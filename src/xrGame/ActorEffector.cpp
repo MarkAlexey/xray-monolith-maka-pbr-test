@@ -2,10 +2,14 @@
 
 #include "ActorEffector.h"
 #include "PostprocessAnimator.h"
+#include "../xrEngine/svp_gameplay_cvars.h"
+#include "../Layers/xrRender/xrRender_console.h"
 #include "../xrEngine/effectorPP.h"
 #include "../xrEngine/ObjectAnimator.h"
 #include "object_broker.h"
 #include "actor.h"
+#include "EffectorBobbing.h"
+#include "player_hud.h"
 
 void AddEffector(CActor* A, int type, const shared_str& sect_name)
 {
@@ -463,10 +467,39 @@ bool similar_cam_info(const SCamEffectorInfo& c1, const SCamEffectorInfo& c2)
 		c1.r.similar(c2.r, EPS_L));
 }
 
+void CActorCameraManager::UpdateReference(const Fmatrix& cameraWorld, float fFOV, float fASPECT, float fFAR)
+{
+	struct RestoreFlag
+	{
+		bool& flag;
+		bool previous;
+		~RestoreFlag() { flag = previous; }
+	} restore{ m_reference_update, m_reference_update };
+	m_reference_update = true;
+	inherited::UpdateReference(cameraWorld, fFOV, fASPECT, fFAR);
+}
+
 void CActorCameraManager::UpdateCamEffectors()
 {
 	m_cam_info_hud = m_cam_info;
+
+	// hud pin freezes the viewmodel anchor while this actor FPCam is live and pinned
+	CActor* pin_actor = Actor();
+	CFPCamEffector* pin_cam = (pin_actor && &pin_actor->Cameras() == this) ? pin_actor->m_FPCam : NULL;
+	const bool hud_pinned = pin_cam && pin_cam->m_hud_pin;
+	if (hud_pinned && !pin_cam->m_hud_pin_captured)
+	{
+		pin_cam->m_hud_pin_pose = m_cam_info_hud;
+		pin_cam->m_hud_pin_captured = true;
+	}
+	// hold the pose by value, the effector can free itself inside the update
+	SCamEffectorInfo hud_pin_pose = hud_pinned ? pin_cam->m_hud_pin_pose : m_cam_info_hud;
+
 	inherited::UpdateCamEffectors();
+
+	// pin wins over hud affect deltas so the frozen anchor holds
+	if (hud_pinned)
+		m_cam_info_hud = hud_pin_pose;
 
 	m_cam_info_hud.d.normalize();
 	m_cam_info_hud.n.normalize();
@@ -494,10 +527,25 @@ bool CActorCameraManager::ProcessCameraEffector(CEffectorCam* eff)
 {
 	SCamEffectorInfo prev = m_cam_info;
 
+	const auto type = eff->GetType();
 	bool res = inherited::ProcessCameraEffector(eff);
+	// Reference already supplies these continuous procedural effects. Tick their
+	// lifetime once, but retain native scripted actions, hits and landing effects.
+	const bool referenceWeapon = g_player_hud && g_player_hud->ReferenceOwnsMotion();
+	if (m_reference_update && (type == eCEBobbing || (referenceWeapon &&
+		(type == eCEShot || type == eCERecoil || type == eCEZoom))))
+	{
+		m_cam_info = prev;
+		return res;
+	}
 	if (res)
 	{
-		if (eff->GetHudAffect())
+		// pip while a true PiP scope is aimed the view and the weapon must rotate together, a
+		// camera-only kick points the scope away from the view and the split magnifies in glass,
+		// hud_affect false was authored for 2d scopes that always drew at screen center
+		const bool unify = g_svp_unify_cam_fx && scope_svp_enabled
+			&& Device.m_SecondViewport.IsSVPActive();
+		if (eff->GetHudAffect() || unify)
 		{
 			SCamEffectorInfo affected = m_cam_info;
 			SCamEffectorInfo diff;

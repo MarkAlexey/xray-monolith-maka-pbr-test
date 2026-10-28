@@ -30,6 +30,12 @@ class CStepManager
 	} m_step_sound;
 
 	u32 m_time_anim_started;
+    u32 m_reference_phase_frame=u32(-1);
+    float m_reference_foot_phase=0, m_reference_leg_phase=0;
+    u8 m_reference_cycle=0, m_reference_contacts=0;
+    bool m_reference_phase_valid=false;
+    // The current leg animation is a looping two-leg cycle.
+    bool has_stride() const;
 
 public:
 	CStepManager();
@@ -43,6 +49,12 @@ public:
 	void on_animation_start(MotionID motion_id, CBlend* blend);
 	// call on updateCL
 	void update(bool b_hud_view);
+    // Drives the leg cycle and the step events from an external foot phase for this frame.
+    bool synchronize_locomotion(float foot_phase);
+    // Current phase of the step-sound schedule: left contact 0, right .5.
+    bool foot_phase(float& phase) const;
+    // Seconds per stride (both feet) of the current leg cycle; 0 if none.
+    float stride_time() const;
 
 	// process event
 	virtual void event_on_step()

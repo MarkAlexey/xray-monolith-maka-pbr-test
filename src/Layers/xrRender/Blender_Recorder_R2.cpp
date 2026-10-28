@@ -12,6 +12,15 @@ void fix_texture_name(LPSTR fn);
 void CBlender_Compile::r_Pass(LPCSTR _vs, LPCSTR _ps, bool bFog, BOOL bZtest, BOOL bZwrite, BOOL bABlend,
                               D3DBLEND abSRC, D3DBLEND abDST, BOOL aTest, u32 aRef)
 {
+	string_path prefixed;
+	if (ps_prefix && 0 != stricmp(_ps, "null"))
+	{
+		string_path file;
+		strconcat(sizeof(prefixed), prefixed, ps_prefix, _ps);
+		strconcat(sizeof(file), file, ::Render->getShaderPath(), prefixed, ".ps");
+		if (FS.exist("$game_shaders$", file))
+			_ps = prefixed;
+	}
 	RS.Invalidate();
 	ctable.clear();
 	passTextures.clear();

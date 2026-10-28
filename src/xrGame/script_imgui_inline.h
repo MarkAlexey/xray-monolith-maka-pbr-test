@@ -195,6 +195,154 @@ IC bool ImGui_DragFloat4(LPCSTR name, Fvector4& vec, float speed = 1.f, float mi
 	return ImGui::DragFloat4(name, (float*)&vec, speed, min, max, format, flags);
 }
 
+IC bool ImGui_MagnificationCurve(LPCSTR label, Fvector4& low, Fvector4& high,
+	float value_min, float value_max, Fvector2 size)
+{
+	static const float magnifications[8] = {1.f, 2.f, 3.f, 4.f, 6.f, 8.f, 12.f, 20.f};
+	float* values[8] = {&low.x, &low.y, &low.z, &low.w, &high.x, &high.y, &high.z, &high.w};
+	const float graph_width = size.x > 0.f ? size.x : 500.f;
+	const float graph_height = size.y > 0.f ? size.y : 190.f;
+	const ImGuiID curve_id = ImGui::GetID(label);
+	static ImGuiID active_curve = 0;
+	static int active_point = -1;
+
+	ImGui::PushID(label);
+	ImGui::InvisibleButton("curve", ImVec2(graph_width, graph_height), ImGuiButtonFlags_MouseButtonLeft);
+	const ImVec2 canvas_min = ImGui::GetItemRectMin();
+	const ImVec2 canvas_max = ImGui::GetItemRectMax();
+	const ImVec2 plot_min(canvas_min.x + 42.f, canvas_min.y + 10.f);
+	const ImVec2 plot_max(canvas_max.x - 10.f, canvas_max.y - 24.f);
+	const float log_max = logf(magnifications[7]);
+	auto point_position = [&](int index)
+	{
+		const float x = logf(magnifications[index]) / log_max;
+		const float y = (*values[index] - value_min) / _max(value_max - value_min, EPS);
+		return ImVec2(plot_min.x + x * (plot_max.x - plot_min.x),
+			plot_max.y - clampr(y, 0.f, 1.f) * (plot_max.y - plot_min.y));
+	};
+
+	if (ImGui::IsItemActivated())
+	{
+		const ImVec2 mouse = ImGui::GetMousePos();
+		float nearest = FLT_MAX;
+		for (int i = 0; i < 8; ++i)
+		{
+			const float distance = _abs(mouse.x - point_position(i).x);
+			if (distance < nearest)
+			{
+				nearest = distance;
+				active_point = i;
+			}
+		}
+		active_curve = curve_id;
+	}
+
+	bool changed = false;
+	if (ImGui::IsItemActive() && active_curve == curve_id && active_point >= 0)
+	{
+		const float normalized = (plot_max.y - ImGui::GetMousePos().y) / _max(plot_max.y - plot_min.y, 1.f);
+		const float value = clampr(value_min + normalized * (value_max - value_min), value_min, value_max);
+		if (_abs(*values[active_point] - value) > EPS)
+		{
+			*values[active_point] = value;
+			changed = true;
+		}
+	}
+	else if (active_curve == curve_id)
+	{
+		active_curve = 0;
+		active_point = -1;
+	}
+
+	ImDrawList* draw = ImGui::GetWindowDrawList();
+	draw->AddRectFilled(canvas_min, canvas_max, ImGui::GetColorU32(ImGuiCol_FrameBg), 3.f);
+	draw->AddRect(canvas_min, canvas_max, ImGui::GetColorU32(ImGuiCol_Border), 3.f);
+	for (int grid = 0; grid <= 4; ++grid)
+	{
+		const float y = plot_min.y + (plot_max.y - plot_min.y) * (float(grid) / 4.f);
+		draw->AddLine(ImVec2(plot_min.x, y), ImVec2(plot_max.x, y), ImGui::GetColorU32(ImGuiCol_Separator), 1.f);
+		char value_text[16];
+		const float grid_value = value_max - (value_max - value_min) * (float(grid) / 4.f);
+		xr_sprintf(value_text, "%.2g", grid_value);
+		draw->AddText(ImVec2(canvas_min.x + 6.f, y - 7.f), ImGui::GetColorU32(ImGuiCol_TextDisabled), value_text);
+	}
+
+	if (value_min <= 1.f && value_max >= 1.f)
+	{
+		const float neutral = (1.f - value_min) / _max(value_max - value_min, EPS);
+		const float neutral_y = plot_max.y - neutral * (plot_max.y - plot_min.y);
+		draw->AddLine(ImVec2(plot_min.x, neutral_y), ImVec2(plot_max.x, neutral_y),
+			ImGui::GetColorU32(ImGuiCol_PlotHistogram), 2.f);
+		draw->AddText(ImVec2(plot_min.x + 5.f, neutral_y - 15.f),
+			ImGui::GetColorU32(ImGuiCol_TextDisabled), "profile baseline");
+	}
+
+	ImVec4 fill_color = ImGui::GetStyleColorVec4(ImGuiCol_PlotLines);
+	fill_color.w = 0.10f;
+	for (int i = 1; i < 8; ++i)
+	{
+		const ImVec2 previous = point_position(i - 1);
+		const ImVec2 current = point_position(i);
+		const ImVec2 area[4] = {
+			previous,
+			current,
+			ImVec2(current.x, plot_max.y),
+			ImVec2(previous.x, plot_max.y),
+		};
+		draw->AddConvexPolyFilled(area, 4, ImGui::GetColorU32(fill_color));
+	}
+
+	int hovered_point = -1;
+	if (ImGui::IsItemHovered())
+	{
+		const float mouse_x = ImGui::GetMousePos().x;
+		float nearest = FLT_MAX;
+		for (int i = 0; i < 8; ++i)
+		{
+			const float distance = _abs(mouse_x - point_position(i).x);
+			if (distance < nearest)
+			{
+				nearest = distance;
+				hovered_point = i;
+			}
+		}
+	}
+
+	for (int i = 0; i < 8; ++i)
+	{
+		const ImVec2 point = point_position(i);
+		draw->AddLine(ImVec2(point.x, plot_min.y), ImVec2(point.x, plot_max.y),
+			ImGui::GetColorU32(hovered_point == i ? ImGuiCol_PlotLinesHovered : ImGuiCol_Separator),
+			hovered_point == i ? 1.5f : 1.f);
+		char text[16];
+		xr_sprintf(text, "%gx", magnifications[i]);
+		const ImVec2 axis_text_size = ImGui::CalcTextSize(text);
+		const float axis_text_x = clampr(point.x - axis_text_size.x * 0.5f,
+			canvas_min.x + 3.f, canvas_max.x - axis_text_size.x - 3.f);
+		draw->AddText(ImVec2(axis_text_x, plot_max.y + 4.f), ImGui::GetColorU32(ImGuiCol_TextDisabled), text);
+		if (i > 0)
+			draw->AddLine(point_position(i - 1), point, ImGui::GetColorU32(ImGuiCol_PlotLines), 2.f);
+		const bool highlighted = (active_curve == curve_id && active_point == i) || hovered_point == i;
+		draw->AddCircleFilled(point, highlighted ? 7.f : 5.f,
+			ImGui::GetColorU32(highlighted ? ImGuiCol_PlotLinesHovered : ImGuiCol_PlotLines));
+		if (hovered_point == i)
+		{
+			char point_text[32];
+			xr_sprintf(point_text, "%gx  %.2f", magnifications[i], *values[i]);
+			const ImVec2 text_size = ImGui::CalcTextSize(point_text);
+			const float text_x = i >= 6 ? point.x - text_size.x - 12.f : point.x + 10.f;
+			const float text_y = _max(plot_min.y + 4.f, point.y - text_size.y - 10.f);
+			const ImVec2 bubble_min(text_x - 5.f, text_y - 3.f);
+			const ImVec2 bubble_max(text_x + text_size.x + 5.f, text_y + text_size.y + 3.f);
+			draw->AddRectFilled(bubble_min, bubble_max, ImGui::GetColorU32(ImGuiCol_PopupBg), 3.f);
+			draw->AddRect(bubble_min, bubble_max, ImGui::GetColorU32(ImGuiCol_Border), 3.f);
+			draw->AddText(ImVec2(text_x, text_y), ImGui::GetColorU32(ImGuiCol_Text), point_text);
+		}
+	}
+	ImGui::PopID();
+	return changed;
+}
+
 IC bool ImGui_ColorPicker3(LPCSTR name, Fcolor& color, ImGuiColorEditFlags flags = 0)
 {
 	return ImGui::ColorPicker3(name, (float*)&color, flags);

@@ -1,0 +1,30 @@
+// The SSFX fog scattering blur. blur_setup.z selects a first full-size pass
+// that converts raw radiance to the display image the kernel filters.
+#include "screenspace_common.h"
+#include "scope_reference_fog_transfer.h"
+float4 scope_reference_transfer;
+float4 blur_setup;
+
+float4 main(p_screen I) : SV_Target
+{
+    if (blur_setup.z > 0.5)
+    {
+        float3 raw = s_image.Sample(smp_nofilter, I.tc0).rgb;
+        return float4(scope_reference_scene_tone(raw, scope_reference_transfer.x, scope_reference_meter()), 1);
+    }
+
+    float2 pixel_size = 1 / blur_setup.xy;
+    float radius = 0.25f;
+    float3 blur = 0;
+    radius *= SSFX_gradient_noise_IGN(I.tc0 * blur_setup.xy) * 6.28f;
+    float2 offset = float2(radius, radius);
+    float r = 0.9f;
+    for (int i = 0; i < 12; i++)
+    {
+        r += 1.0f / r;
+        offset = mul(offset, pp_rotation_matrix);
+        blur += s_image.SampleLevel(smp_rtlinear,
+            I.tc0 + (offset * (r - 1.0f) * pixel_size), 0).rgb;
+    }
+    return float4(blur / 12, 1);
+}

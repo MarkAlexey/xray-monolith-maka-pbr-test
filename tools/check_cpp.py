@@ -61,6 +61,12 @@ JOBS = os.cpu_count() or 4
 # Per renderer project: include dirs (relative to the repository root) and defines, taken from
 # the .vcxproj files (Release). Projects that share a source file get it checked once per
 # project, because USE_DX10 / USE_DX11 change what compiles.
+# The vcxproj files define XRCORE_PROFILER (= 1, Optick), which includes the optick-git
+# submodule. `git archive` never contains submodule files, so every TU stopped at that fatal
+# include and the before/after counts compared nothing past the precompiled header. The
+# profiler macros only wrap events/tags, so the no-op backend is used for syntax checks.
+PROFILER_DEFINE = "XRCORE_PROFILER=0"
+
 PROJECTS = {
     "R4": {
         "dir": "src/Layers/xrRenderPC_R4",
@@ -69,7 +75,7 @@ PROJECTS = {
                      "src/3rd party/luabind", "src/3rd party", "sdk/include/nvapi",
                      "sdk/include/OpenAutomate"],
         "defines": ["USE_DX11", "WIN32", "NDEBUG", "_WINDOWS", "_USRDLL", "XRRENDER_R4_EXPORTS",
-                    "_SECURE_SCL=0", "XRCORE_PROFILER"],
+                    "_SECURE_SCL=0", PROFILER_DEFINE],
     },
     # xrGame (and the xrServerEntities sources it builds): include paths and defines from
     # src/xrGame/xrGame.vcxproj (Release|x64 / ProfiledDX11). Without this, xrGame files were
@@ -81,7 +87,7 @@ PROJECTS = {
                      "src/3rd party/luajit-2/src", "src/3rd party/luabind", "sdk/include",
                      "src/3rd party/CxImage", "src/3rd party", "src/3rd party/imgui"],
         "defines": ["WIN32", "NDEBUG", "_WINDOWS", "_USRDLL", "XRGAME_EXPORTS", "dSINGLE", "MSVC",
-                    "_SECURE_SCL=0", "XRCORE_PROFILER"],
+                    "_SECURE_SCL=0", PROFILER_DEFINE],
     },
     "R3": {
         "dir": "src/Layers/xrRenderPC_R3",
@@ -90,7 +96,7 @@ PROJECTS = {
                      "src/3rd party/luabind", "src/3rd party", "sdk/include/nvapi",
                      "sdk/include/OpenAutomate"],
         "defines": ["USE_DX10", "WIN32", "NDEBUG", "_WINDOWS", "_USRDLL", "XRRENDER_R3_EXPORTS",
-                    "_SECURE_SCL=0", "XRCORE_PROFILER"],
+                    "_SECURE_SCL=0", PROFILER_DEFINE],
     },
 }
 

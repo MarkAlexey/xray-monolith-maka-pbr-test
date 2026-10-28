@@ -37,7 +37,7 @@
 #define XRAY_EXCEPTIONS 1 // XRAY
 #else
 // "release"
-#if defined(_CPPUNWIND) && !defined __BORLANDC__
+#if defined(_CPPUNWIND) && !defined __BORLANDC__ && !defined(XRAY_REFERENCE_CPP_BOUNDARY)
 #error Please disable exceptions...
 #endif
 #define _HAS_EXCEPTIONS 1 // STL

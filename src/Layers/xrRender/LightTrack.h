@@ -62,6 +62,7 @@ public:
 	u32 shadow_recv_frame;
 	int shadow_recv_slot;
 private:
+	float sky_visibility[NUM_FACES] = {}; // Existing sky rays only; no local lights or radiance floor.
 	float hemi_cube [NUM_FACES];
 	float hemi_cube_smooth[NUM_FACES];
 
@@ -107,6 +108,25 @@ public:
 		return sun_smooth;
 	}
 
+	ICF float get_hemi_target()
+	{
+		if (dwFrameSmooth != Device.dwFrame) update_smooth();
+		return hemi_value;
+	}
+
+	ICF float get_sun_target()
+	{
+		if (dwFrameSmooth != Device.dwFrame) update_smooth();
+		return sun_value;
+	}
+
+	const float* get_sky_visibility() const { return sky_visibility; }
+
+	const float* get_hemi_cube_target()
+	{
+		if (dwFrameSmooth != Device.dwFrame) update_smooth();
+		return hemi_cube;
+	}
 	ICF Fvector3& get_approximate()
 	{
 		if (dwFrameSmooth != Device.dwFrame) update_smooth();

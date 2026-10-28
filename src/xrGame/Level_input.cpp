@@ -17,6 +17,7 @@
 
 #include "actor.h"
 #include "huditem.h"
+#include "Weapon.h"
 #include "UIGameCustom.h"
 #include "UI/UIDialogWnd.h"
 #include "../xrEngine/xr_input.h"
@@ -165,6 +166,16 @@ void CLevel::IR_OnKeyboardPress(int key)
 	bool b_ui_exist = (!!CurrentGameUI());
 
 	EGameActions _curr = get_binded_action(key);
+
+    // Script key callbacks run before CWeapon::Action. Some installed bore
+    // cancellation callbacks reset any weapon on RMB, including an admitted
+    // ammo check. Apply the same Reference aim admission before those callbacks.
+    if (_curr==kWPN_ZOOM && !g_bDisableAllInput && g_actor) {
+        auto* actor=smart_cast<CActor*>(g_actor);
+        auto* weapon=actor?smart_cast<CWeapon*>(actor->inventory().ActiveItem()):nullptr;
+        if(weapon && weapon->RejectReferenceActionAimStart())return;
+    }
+
 
     if (_curr == kEDITOR)
     {

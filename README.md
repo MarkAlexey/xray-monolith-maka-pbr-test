@@ -13,6 +13,7 @@ The entire PBR Pipeline was made using Claude and his work. LVunter provided a b
 Also the entire credits goes to :
 [IX-Ray](https://github.com/ixray-team/ixray-1.6-stcop) with [OpenXRay](https://github.com/OpenXRay/xray-16).
 [Modded Exes](https://github.com/themrdemonized/xray-monolith)
+[Bodycam](https://github.com/asuparabekon/xray-monolith-bodycam) by asuparabekon (bodycam layer, true PiP scopes, vector reticles; `-bodycam` branch), built on TheLostInPlace's (m22) PiP scopes and fps-clean grass.
 And many other great people which names i can't remember. Bad memory for names, sorry.
 
 # Versions

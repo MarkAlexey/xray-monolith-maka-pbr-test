@@ -86,6 +86,9 @@ public:
 	virtual void OnLoad();
 	virtual void OnUnload();
 	virtual void RenderSky(CEnvironment& env, bool OnlyMV = false);
+	// pip Reference scope sky capture: the sky box draw, and a call between the sky box and the sun
+	Fmatrix PrepareSkyBox(CEnvironment& env, u32& vertex_offset, u32& index_offset);
+	static void (*after_sky_box)();
 	virtual void RenderClouds(CEnvironment& env);
 	virtual void OnDeviceCreate();
 	virtual void OnDeviceDestroy();
@@ -104,6 +107,7 @@ private:
 
 	ref_texture tonemap;
 	ref_texture tsky0, tsky1;
+	ref_texture tenv0, tenv1;
 };
 
 #endif	//	EnvironmentRender_included

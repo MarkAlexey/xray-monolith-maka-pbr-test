@@ -1,16 +1,45 @@
 #pragma once
+class CActor;
 #include "firedeps.h"
 #include "../xrEngine/ObjectAnimator.h"
 #include "../Include/xrRender/Kinematics.h"
 #include "../Include/xrRender/KinematicsAnimated.h"
 #include "actor_defs.h"
 #include "player_hud_legs.h"
+#include <string>
+#include <vector>
+#include <cstdint>
+#include <optional>
 
 #define SCOPE_ATTACH_IDX 2
 
 class player_hud;
+namespace Bodycam { class HudArms; }
+namespace BodycamReference {
+class EngineCharacterHost;
+class EngineFrameAdapter;
+}
 class CHudItem;
+class CWeapon;
 class CMotionDef;
+
+// A hand motion playing on one of the two arm models.
+struct HudHandPlayback
+{
+    MotionID motion;
+    u32 generation = 0; // Counts the motions the item has started.
+    float seconds = 0.f;
+    float duration = 0.f;
+    float weight = 0.f;
+    unsigned model = 0; // 0 the right arm model, 1 the left.
+};
+
+struct HudActionState
+{
+    bool playing = false;
+    bool reload = false;
+    bool preservesAim = false;
+};
 
 struct motion_descr
 {
@@ -148,16 +177,19 @@ struct script_layer
 	CObjectAnimator* anm;
 	float blend_amount;
 	float m_power;
+	float m_bodycam_lowering_influence;
 	bool active;
 	Fmatrix blend;
 	u8 m_part;
     shared_str m_pivot_bone;
 
-	script_layer(LPCSTR name, u8 part, float speed = 1.f, float power = 1.f, bool looped = true, LPCSTR pivot_bone = nullptr)
+	script_layer(LPCSTR name, u8 part, float speed = 1.f, float power = 1.f, bool looped = true,
+		LPCSTR pivot_bone = nullptr, float bodycam_lowering_influence = 1.f)
 	{
 		m_name = name;
 		m_part = part;
 		m_power = power;
+		m_bodycam_lowering_influence = clampr(bodycam_lowering_influence, 0.f, 1.f);
 		m_pivot_bone = pivot_bone;
 		blend.identity();
 		anm = xr_new<CObjectAnimator>();
@@ -313,15 +345,19 @@ struct attachable_hud_item
 	Fmatrix m_item_transform;
 
     // ver; final anim speed holder for use in motion mark timing scaling
-    float final_anim_speed;
+    float final_anim_speed = 1.f;
 
 	player_hud_motion_container* m_hand_motions;
+	MotionID m_active_hand_motion;
+	CBlend* m_active_hand_blend;
+	u32 m_active_hand_generation;
 
 	attachable_hud_item(player_hud* pparent) : m_parent(pparent), m_upd_firedeps_frame(u32(-1)), m_parent_hud_item(nullptr),
-		m_model(nullptr), m_attach_place_idx(0) {
+		m_model(nullptr), m_attach_place_idx(0), m_active_hand_blend(nullptr), m_active_hand_generation(0) {
 	}
 	~attachable_hud_item();
 	void load(const shared_str& sect_name);
+	void update_attach_offset();
 	void update(bool bForce);
 	void setup_firedeps(firedeps& fd);
 	void render(IDSGraphManager* DM);
@@ -371,7 +407,8 @@ public:
 	void StopScriptAnim();
 	void create_script_anim_item_model(LPCSTR section);
 	void delete_script_anim_item_model();
-	void PlayBlendAnm(LPCSTR name, u8 part = 0, float speed = 1.f, float power = 1.f, bool bLooped = true, bool no_restart = false, LPCSTR pivot_bone = nullptr);
+	void PlayBlendAnm(LPCSTR name, u8 part = 0, float speed = 1.f, float power = 1.f, bool bLooped = true, bool no_restart = false,
+		LPCSTR pivot_bone = nullptr, float bodycam_lowering_influence = 1.f);
 	void StopBlendAnm(LPCSTR name, bool bForce = false);
 	void StopAllBlendAnms(bool bForce);
 	float SetBlendAnmTime(LPCSTR name, float time);
@@ -379,7 +416,8 @@ public:
 	void render_item_ui();
 	bool render_item_ui_query();
 	u32 anim_play(u16 part, const MotionID& M, BOOL bMixIn, const CMotionDef*& md, float speed, u16 override_part = u16(-1));
-	u32 script_anim_play(u8 hand, LPCSTR itm_name, LPCSTR anm_name, bool bMixIn = true, float speed = 1.f);
+	u32 script_anim_play(u8 hand, LPCSTR itm_name, LPCSTR anm_name, bool bMixIn = true, float speed = 1.f,
+		float bodycam_lowering_influence = 1.f);
 	const shared_str& section_name() const { return m_sect_name; }
 	void OnFrame();
 	void net_Relcase(CObject* obj);
@@ -388,6 +426,7 @@ public:
 	Fvector script_anim_offset[2];
 	u32 script_anim_end;
 	float script_anim_offset_factor;
+	float script_anim_bodycam_lowering_influence;
 	bool m_bStopAtEndAnimIsRunning;
 	bool script_anim_item_attached;
 	bool script_override_arms;
@@ -408,8 +447,46 @@ public:
 
 	void attach_item(CHudItem* item);
 	void re_sync_anim(u8 part);
+    bool HandPlaybackSnapshot(HudHandPlayback& output) const;
+    std::vector<HudHandPlayback> ReferenceActionPlaybacks() const;
+    bool ReferenceSemanticActionPlaying() const;
+    bool ClassicRegripCamera(Fmatrix& local_delta) const;
+    bool ClassicRecoilFire(bool firing,bool aiming,const CWeapon* weapon);
+    // Classic sprint start: playback rate of the current authored movement
+    // loop, so its bob keeps the real footstep cadence. 1 is authored timing.
+    void BodycamPaceMovementLoop(float factor);
+    float m_bodycam_loop_pace = 1.f;
+    // Movement notification for scripts only (no HUD clip restart).
+    void BodycamNotifyScriptMovement(ACTOR_DEFS::EMoveCommand cmd);
+    // Authored sprint-entry clip driven by sprint progress: hold the current
+    // one-shot at a normalized phase, then release it at its authored rate
+    // (returns the seconds it still needs).
+    void BodycamScrubOneShot(float phase);
+    float BodycamReleaseOneShot();
+    xr_map<CBlend*, float> m_bodycam_held_blends;
+    // Share of the bodycam lowering the playing script animations leave in
+    // place, 0..1. Below 1 a script animation owns the hands.
+    float BodycamLoweringInfluence() const;
+    HudActionState ReferenceActionStatus() const;
+    player_hud_motion* ReferenceSelectActionMotion(attachable_hud_item&,player_hud_motion*);
+    bool ReferenceActionBlending() const;
 	void set_part_cycle_time(u8 part, float time);
 	void set_part_cycle_speed(u8 part, float speed);
+	void DumpAuthoredMotionProfile() const;
+    void ResetReferenceHost();
+    void UnbindReferenceWeapon();
+    bool ReferenceOwnsCamera() const;
+    void ConfigureReferenceActions();
+    void BindReferenceWeapon(CWeapon&);
+    bool EngineAdsCameraFromWeapon(unsigned zoomType,Fmatrix& result);
+    void RefreshReferenceEquipment();
+
+    CActor* ReferenceActor() const { return m_reference_actor; }
+    BodycamReference::EngineCharacterHost* ReferenceHost() const { return m_reference_host; }
+    bool ReferenceOwnsMotion(const CHudItem* item=nullptr) const;
+    void ReferenceSelectPlayedAction(std::uint64_t motion,const char* alias);
+    bool ReferenceMouse(int dx,int dy);
+    bool ReferenceFire(bool firing,bool aiming,const CHudItem* item,bool cancelled=false);
 	bool allow_activation(CHudItem* item);
 	attachable_hud_item* attached_item(u16 item_idx) { return m_attached_items[item_idx]; };
 	void detach_item_idx(u16 idx);
@@ -419,6 +496,7 @@ public:
 
 	void detach_all_items()
 	{
+		UnbindReferenceWeapon();
 		m_attached_items[0] = NULL;
 		m_attached_items[1] = NULL;
 		m_attached_items[SCOPE_ATTACH_IDX] = NULL;
@@ -439,12 +517,45 @@ public:
 	bool inertion_allowed();
 
 private:
+	struct HudPoseFrame
+	{
+		CWeapon* weapon = nullptr;
+		Fmatrix left_item_hand_relative;
+		Fmatrix script_item_hand_relative;
+		bool left_item_follows_hand = false;
+		bool script_item_follows_hand = false;
+        bool reference = false;
+        float reference_motion_influence = 0.f;
+        // A bound weapon: it hangs on the right hand bone by reference_hand_grip.
+        bool reference_weapon_pose = false;
+        u16 reference_hand_bone = u16(-1);
+        Fmatrix reference_hand_grip;
+	};
+	void prepare_hud_pose(const Fmatrix& camera, HudPoseFrame& frame);
+	void finalize_hud_pose(const HudPoseFrame& frame);
 	const Fvector attach_rot(u8 part) const;
 	const Fvector attach_pos(u8 part) const;
+	u16 left_hand_bone() const;
+	bool capture_left_hand_attachment(const Fmatrix& item_offset, bool lead_gun,
+		Fmatrix& hand_relative) const;
+	bool compose_left_hand_attachment(const Fmatrix& hand_relative, Fmatrix& result) const;
 	shared_str m_sect_name;
 	xr_vector<u16> m_ancors;
+	u16 m_left_hand_bone = BI_NONE;
 	attachable_hud_item* m_attached_items[3];
 	static void _BCL FingerCallback(CBoneInstance* B);
+	Bodycam::HudArms* m_bodycam_hud_arms = nullptr;
+    BodycamReference::EngineCharacterHost* m_reference_host = nullptr;
+    CActor* m_reference_actor = nullptr;
+    friend class BodycamReference::EngineFrameAdapter;
+    bool m_reference_profile_attempted = false;
+    // The mode request under which a Reference frame failed; Reference starts again on the next request.
+    std::optional<std::uint64_t> m_reference_failed_request;
+    // The mode request under which the scope effects profile failed to load.
+    std::optional<std::uint64_t> m_reference_optics_failed_request;
+    Fmatrix m_engine_ads_sample_gun;
+    std::string m_engine_ads_sample_motion,m_reference_pose_aim_motion;
+    Fmatrix m_reference_last_aim,m_reference_last_canted;
 
 public:
 	IKinematicsAnimated* m_model;

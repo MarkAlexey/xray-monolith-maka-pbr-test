@@ -16,6 +16,7 @@
 #include "actoreffector.h"
 #include "static_cast_checked.hpp"
 #include "player_hud.h"
+#include "bodycam_settings.h"
 
 #ifdef DEBUG
 #include "phdebug.h"
@@ -164,6 +165,7 @@ void CActor::g_cl_ValidateMState(float dt, u32 mstate_wf)
 
 void CActor::g_cl_CheckControls(u32 mstate_wf, Fvector& vControlAccel, float& Jump, float dt)
 {
+	const bool bodycam_reference = BodycamReferenceMovement();
 	float cam_eff_factor = 0.0f;
 	mstate_old = mstate_real;
 	vControlAccel.set(0, 0, 0);
@@ -189,11 +191,12 @@ void CActor::g_cl_CheckControls(u32 mstate_wf, Fvector& vControlAccel, float& Ju
 			mstate_wf &= ~mcJump;
 		}
 	}
+	if (bodycam_reference) BodycamReferenceGait(mstate_wf);
 	// update player accel
 	if (mstate_wf & mcFwd) vControlAccel.z += 1;
 	if (mstate_wf & mcBack) vControlAccel.z += -1;
-	if (mstate_wf & mcLStrafe) mstate_wf & mcSprint ? vControlAccel.x += -0.5 : vControlAccel.x += -1;
-	if (mstate_wf & mcRStrafe) mstate_wf & mcSprint ? vControlAccel.x += 0.5 : vControlAccel.x += 1;
+	if (mstate_wf & mcLStrafe) !bodycam_reference && (mstate_wf & mcSprint) ? vControlAccel.x += -0.5 : vControlAccel.x += -1;
+	if (mstate_wf & mcRStrafe) !bodycam_reference && (mstate_wf & mcSprint) ? vControlAccel.x += 0.5 : vControlAccel.x += 1;
 
 	CPHMovementControl::EEnvironment curr_env = character_physics_support()->movement()->Environment();
 	if (curr_env == CPHMovementControl::peOnGround || curr_env == CPHMovementControl::peAtWall)
@@ -267,13 +270,15 @@ void CActor::g_cl_CheckControls(u32 mstate_wf, Fvector& vControlAccel, float& Ju
 			mstate_real |= mcSprint;
 		else
 			mstate_real &= ~mcSprint;
-		if (!(mstate_real & (mcFwd)) || mstate_real & (mcCrouch | mcClimb) || !isActorAccelerated(
+		if ((bodycam_reference ? !BodycamReferenceSprintDirection() : !(mstate_real & mcFwd)) || mstate_real & (mcCrouch | mcClimb) || !isActorAccelerated(
 			mstate_wf, IsZoomAimingMode()))
 		{
 			mstate_real &= ~mcSprint;
 			if (!(mstate_real & (mcCrouch) && !(mstate_wf & mcCrouch)))
 				mstate_wishful &= ~mcSprint;
 		}
+
+		if (bodycam_reference) BodycamReferenceFallbackGait();
 
 		// check player move state
 		if (mstate_real & mcAnyMove)
@@ -312,13 +317,22 @@ void CActor::g_cl_CheckControls(u32 mstate_wf, Fvector& vControlAccel, float& Ju
 						scale *= m_fWalk_StrafeFactor;
 				}
 
+				if (bodycam_reference) scale = BodycamReferenceMoveScale(scale, vControlAccel, !!bAccelerated);
 				vControlAccel.mul(scale);
 				cam_eff_factor = scale;
 			} //scale>EPS
 		} //(mstate_real&mcAnyMove)
 	} //peOnGround || peAtWall
 
-	if (IsGameTypeSingle() && cam_eff_factor > EPS)
+	const bool classic = Local() && Bodycam::ClassicActive();
+	if (classic && g_Alive())
+		BodycamUpdateMovement(vControlAccel, dt);
+	else
+		BodycamResetMovement();
+
+	// The Classic footstep camera replaces the movement-entry camera effectors.
+	const bool footstep_camera = classic && IsFocused() && Bodycam::FootstepCameraEnabled();
+	if (!bodycam_reference && !footstep_camera && IsGameTypeSingle() && cam_eff_factor > EPS)
 	{
 		LPCSTR state_anm = NULL;
 
@@ -629,7 +643,7 @@ bool CActor::CanSprint()
 		/*&& !(mstate_real&mcLStrafe || mstate_real&mcRStrafe)*/
 		&& InventoryAllowSprint();
 
-	if ((mstate_real & mcLStrafe || mstate_real & mcRStrafe) && !(mstate_real & mcFwd))
+	if (!Bodycam::ReferenceMovementActive() && (mstate_real & mcLStrafe || mstate_real & mcRStrafe) && !(mstate_real & mcFwd))
 		can_Sprint = false;
 
 	return can_Sprint && (m_block_sprint_counter <= 0);

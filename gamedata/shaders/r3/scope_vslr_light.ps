@@ -1,0 +1,75 @@
+// The VSLR capture's surfaces lit by the installed light model, summed in linear light as the installed
+// combine sums them: sun (plight_infinity), ambient (hmodel) and up to four unshadowed lamps
+// (plight_local). The sun's shadow is the main view's widest cascade; outside it the baked sky
+// visibility stands in. Screen-space terms (ambient occlusion, indirect light) are left out.
+//
+// Contract with the installed shaders (checked by tests/reference/svp_reference_installed_check.mjs):
+// lmodel.h plight_infinity(m, P, N, albedo_gloss, light_direction) returns the sun's light-model term,
+// hmodel.h hmodel(out diffuse, out specular, m, hemi, albedo_gloss, P, N) the ambient diffuse light
+// (albedo included), plight_local(m, P, N, albedo_gloss, light_position, 1 / range^2, out rsqr) a
+// lamp's light-model term, all in the capture face's view space.
+#include "common.h"
+#include "lmodel.h"
+#include "hmodel.h"
+float4 vslr_capture_params; // inverse face size, radial limit, debug view (3 shadow, 4 ambient, 5 sun)
+Texture2D s_vslr_smap;
+SamplerComparisonState smp_smap;
+float4x4 vslr_shadow; // face view space to the kept cascade's shadow-map coordinates
+float4 vslr_shadow_params; // x: 1 when a cascade is kept this frame, y: shadow-map texel size
+float4 vslr_lamp_position[4]; // face view space, w: 1 / range^2, zero when unused
+float4 vslr_lamp_colour[4];
+float4 vslr_lamp_direction[4]; // face view space, w: cosine of a spotlight's half cone, -1 for a point lamp
+
+// Share of the sun the shadow map lets through at P, four comparison taps. The widest cascade's
+// texels are coarse near the camera, so the lookup moves off the surface along its normal (N, view
+// space) to keep surfaces at grazing sun from shadowing themselves.
+float scope_vslr_sun_visibility(float3 P, float3 N, float hemi)
+{
+    if (vslr_shadow_params.x < .5)
+        return saturate(hemi);
+    float4 tc = mul(vslr_shadow, float4(P + normalize(N) * .25, 1));
+    tc.xyz /= tc.w;
+    if (any(tc.xy < 0) || any(tc.xy > 1))
+        return saturate(hemi);
+    const float2 step = vslr_shadow_params.y;
+    float s = s_vslr_smap.SampleCmpLevelZero(smp_smap, tc.xy + float2(-step.x, -step.y), tc.z).x;
+    s += s_vslr_smap.SampleCmpLevelZero(smp_smap, tc.xy + float2(step.x, -step.y), tc.z).x;
+    s += s_vslr_smap.SampleCmpLevelZero(smp_smap, tc.xy + float2(-step.x, step.y), tc.z).x;
+    s += s_vslr_smap.SampleCmpLevelZero(smp_smap, tc.xy + float2(step.x, step.y), tc.z).x;
+    return s * .25;
+}
+float4 main(float4 pixel : SV_Position) : SV_Target0
+{
+    gbuffer_data material = gbuffer_load_data(pixel.xy * vslr_capture_params.x, pixel.xy);
+    if (material.P.z <= 0)
+        return 0;
+    float m = xmaterial;
+#ifndef USE_R2_STATIC_SUN
+    m = material.mtl;
+#endif
+    float4 albedoGloss = float4(material.C, material.gloss);
+    float shadow = scope_vslr_sun_visibility(material.P, material.N, material.hemi);
+    float3 sun = plight_infinity(m, material.P, material.N, albedoGloss, Ldynamic_dir.xyz).rgb
+        * SRGBToLinear(Ldynamic_color.rgb) * shadow;
+    float3 diffuse, specular; // specular unused
+    hmodel(diffuse, specular, m, material.hemi, albedoGloss, material.P, material.N);
+    diffuse = max(diffuse, 0);
+    float3 lamps = 0;
+    [unroll] for (int i = 0; i < 4; ++i)
+    {
+        if (vslr_lamp_position[i].w <= 0)
+            continue;
+        float rsqr; // unused
+        float3 lamp = plight_local(m, material.P, material.N, albedoGloss, vslr_lamp_position[i].xyz,
+            vslr_lamp_position[i].w, rsqr).rgb * SRGBToLinear(vslr_lamp_colour[i].rgb);
+        const float cone = vslr_lamp_direction[i].w;
+        if (cone > -1)
+            lamp *= saturate((dot(normalize(material.P - vslr_lamp_position[i].xyz), vslr_lamp_direction[i].xyz) - cone)
+                / max(1 - cone, .08));
+        lamps += max(lamp, 0);
+    }
+    const float debug = vslr_capture_params.z;
+    if (debug > 2.5)
+        return float4(debug < 3.5 ? shadow.xxx : debug < 4.5 ? diffuse : max(sun, 0), 1);
+    return float4(max(sun + lamps + diffuse, 0), 1);
+}

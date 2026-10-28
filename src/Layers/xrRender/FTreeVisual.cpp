@@ -513,32 +513,38 @@ struct FTreeVisual_common
 #endif
 
 #if defined(USE_DX11) && RENDER == R_R4
-namespace { FTreeVisual_setup frame_tree_setup, previous_tree_setup; }
+// [svp]: PiP's scope viewport keeps its own previous wind, so its motion vectors compare
+// against its own last frame
+namespace { FTreeVisual_setup frame_tree_setup[2], previous_tree_setup[2]; }
 void FTreeVisual::PrepareFrame()
 {
     R_ASSERT(!RenderContextId());
-    if (frame_tree_setup.dwFrame != Device.dwFrame)
+    const bool svp = Device.m_SecondViewport.IsSVPFrame();
+    if (frame_tree_setup[svp].dwFrame != Device.dwFrame)
     {
-        previous_tree_setup = frame_tree_setup;
-        frame_tree_setup.calculate();
+        previous_tree_setup[svp] = frame_tree_setup[svp];
+        frame_tree_setup[svp].calculate();
     }
 }
 #endif
 
 void FTreeVisual::Render(float LOD)
 {
-    PROF_EVENT("FTreeVisual::Render");
+	PROF_EVENT("FTreeVisual::Render");
+	const bool svp = Device.m_SecondViewport.IsSVPFrame(); // pip this viewport's prev-wind slot
 #if defined(USE_DX11) && RENDER == R_R4
     if (!RenderContextId()) PrepareFrame();
-    const auto& tvs = frame_tree_setup;
-    const auto& prev_tvs = previous_tree_setup;
+    const auto& tvs = frame_tree_setup[svp];
+    const auto& prev_tvs = previous_tree_setup[svp];
 #else
-    static FTreeVisual_setup tvs, prev_tvs;
-    if (tvs.dwFrame != Device.dwFrame)
-    {
-        prev_tvs = tvs;
-        tvs.calculate();
-    }
+	static FTreeVisual_setup current_tvs[2], previous_tvs[2];
+	FTreeVisual_setup& tvs = current_tvs[svp];
+	if (tvs.dwFrame != Device.dwFrame)
+	{
+		previous_tvs[svp] = tvs; // Save previous frame calculations
+		tvs.calculate();
+	}
+	const FTreeVisual_setup& prev_tvs = previous_tvs[svp];
 #endif
 	// setup constants
 #if RENDER!=R_R1

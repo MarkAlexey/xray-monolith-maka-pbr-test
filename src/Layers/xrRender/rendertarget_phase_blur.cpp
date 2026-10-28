@@ -245,7 +245,9 @@ void CRenderTarget::phase_ssfx_ssr()
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 
 	// COPY SSR RESULT ( ACC ) ////////////////////////////////////////////
+	svp_copy_begin(SVP_CP_HIST, rt_copy_bytes(rt_ssfx_ssr));
 	HW.pContext->CopyResource(rt_ssfx_ssr->pTexture->surface_get(), rt_ssfx->pTexture->surface_get());
+	svp_copy_end(SVP_CP_HIST);
 
 	// Disable/Enable Blur if the value is <= 0
 	//if (ps_ssfx_ssr.y > 0 || ps_ssfx_ssr.x > 1.0)
@@ -369,7 +371,9 @@ void CRenderTarget::phase_ssfx_volumetric_blur()
 	RCache.set_Element(s_ssfx_volumetric_blur->E[5]);
 	draw_fullscreen_quad(C);
 
+	svp_copy_begin(SVP_CP_PASS, rt_copy_bytes(rt_Generic_2));
 	HW.pContext->CopyResource(rt_Generic_2->pTexture->surface_get(), rt_ssfx_accum->pTexture->surface_get());
+	svp_copy_end(SVP_CP_PASS);
 };
 
 void CRenderTarget::phase_ssfx_water_blur()
@@ -525,7 +529,9 @@ void CRenderTarget::phase_ssfx_sss()
 
 	draw_fullscreen_quad(C);
 
+	svp_copy_begin(SVP_CP_PASS, rt_copy_bytes(rt_ssfx_sss));
 	HW.pContext->CopyResource(rt_ssfx_sss->pTexture->surface_get(), rt_ssfx_temp2->pTexture->surface_get());
+	svp_copy_end(SVP_CP_PASS);
 
 };
 
@@ -742,7 +748,9 @@ void CRenderTarget::phase_ssfx_sss_ext(light_Package& LP)
 
 	draw_fullscreen_quad(C);
 
+	svp_copy_begin(SVP_CP_PASS, rt_copy_bytes(rt_ssfx_sss_ext));
 	HW.pContext->CopyResource(rt_ssfx_sss_ext->pTexture->surface_get(), rt_ssfx_sss_tmp->pTexture->surface_get());
+	svp_copy_end(SVP_CP_PASS);
 
 	// SSS Ext 2 -------------------------------------------------------
 
@@ -761,7 +769,9 @@ void CRenderTarget::phase_ssfx_sss_ext(light_Package& LP)
 
 	draw_fullscreen_quad(C);
 
+	svp_copy_begin(SVP_CP_PASS, rt_copy_bytes(rt_ssfx_sss_ext2));
 	HW.pContext->CopyResource(rt_ssfx_sss_ext2->pTexture->surface_get(), rt_ssfx_sss_tmp->pTexture->surface_get());
+	svp_copy_end(SVP_CP_PASS);
 
 	// Combine ---------------------------------------------------------
 
@@ -818,7 +828,14 @@ void CRenderTarget::phase_ssfx_fog_scattering()
 
 	draw_fullscreen_quad(C);
 
+#if RENDER == R_R4
+    scope_reference_capture_fog();
+    u_setrt(dest_rt, nullptr, nullptr, nullptr);
+#endif
+
+	svp_copy_begin(SVP_CP_TAIL, rt_copy_bytes(rt_Generic_0));
 	HW.pContext->CopyResource(rt_Generic_0->pTexture->surface_get(), dest_rt->pTexture->surface_get());
+	svp_copy_end(SVP_CP_TAIL);
 
 }
 
@@ -842,7 +859,9 @@ void CRenderTarget::phase_ssfx_motion_blur()
 
 	draw_fullscreen_quad(C);
 
+	svp_copy_begin(SVP_CP_TAIL, rt_copy_bytes(rt_Generic_0));
 	HW.pContext->CopyResource(rt_Generic_0->pTexture->surface_get(), dest_rt->pTexture->surface_get());
+	svp_copy_end(SVP_CP_TAIL);
 }
 
 #endif

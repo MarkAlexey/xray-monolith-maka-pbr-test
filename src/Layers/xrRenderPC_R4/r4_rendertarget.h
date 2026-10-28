@@ -1,12 +1,22 @@
 #pragma once
 
+#include <functional> // pip draw_scope phase bind callback
 #include "../xrRender/ColorMapManager.h"
 #include "../xrRender/FullscreenQuad.h"
 #include "../xrRender/RenderDimensions.h"
 #include "../xrRender/light_db.h"
+#include "SvpDlss.h" // pip SVP DLSS-SR input contract
+#include "svp_reference_packet.h"
+#include "svp_reference_material_lifetime.h"
+#include "svp_reference_sky_capture.h"
 class light;
 struct RecordedLight;
 struct skin_sss_timer; // r4_rendertarget_phase_skin_sss.cpp
+class dxRender_Visual;
+
+// pip SVP scene render extent for the color/depth/MV targets, full display-res (svp_height) at gate 0
+// so r__svp_render_scale is inert until the DLSS scaffolding is active (r__svp_dlss != 0)
+u32 svp_render_extent();
 
 //#define DU_SPHERE_NUMVERTEX 92
 //#define DU_SPHERE_NUMFACES	180
@@ -101,6 +111,14 @@ public:
 	xr_vector<Fplane>												dbg_planes;
 #endif
 
+	// PiP base RT/ZB, main = HW.secret_pBaseRT, SVP renders into its own rt_baseRT/baseZB
+	ID3D11RenderTargetView* baseRT;
+	ID3D11DepthStencilView* baseZB;
+	ref_rt rt_baseRT;
+	ref_rt rt_baseZB;
+	// SVP RTs are created $svp-suffixed and remapped over the stock names in SetActive
+	xr_vector<std::pair<ref_texture, ref_rt>> RenderTargetRemaps;
+
 	// MRT-path
 	ref_rt rt_Depth; // Z-buffer like - initial depth
 	ref_rt rt_MSAADepth; // z-buffer for MSAA deferred shading
@@ -126,6 +144,8 @@ public:
 	resptr_core<CRT, resptrcode_crt> rt_Generic_temp;
 
 	ref_rt rt_secondVP;	// 32bit		(r,g,b,a) --//#SM+#-- +SecondVP+
+	ID3DTexture2D* m_svp_nb_mip_surf = nullptr; // pip mip-prefiltered svp color for near-blur
+	ref_texture m_svp_nb_mip_tex; // pip holds the all-mip srv for GenerateMips
 
 
 	ref_rt rt_fakescope;	// crookr fakescope
@@ -161,6 +181,7 @@ public:
 	// env
 	ref_texture t_envmap_0; // env-0
 	ref_texture t_envmap_1; // env-1
+	ref_texture t_reticle; // pip per-lens reticle art bound for the scope color shader ($user$reticle)
 
 	// smap
 	ref_rt rt_smap_surf; // 32bit,		color
@@ -231,6 +252,85 @@ public:
 	ref_rt rt_tempzb; // Redotix99: for 3D Shader Based Scopes
 
 	ref_shader s_ssfx_dumb;
+
+	// pip scope lens glue shaders, created lazily (never at init) so a setup without the PiP mod is unaffected
+	ref_shader s_scope_color_write;
+    ref_shader s_scope_reference_filter;
+    ref_rt rt_scope_reference_filter[4]; // highlights, horizontal blur, vertical blur, dispersion
+    ref_texture t_scope_reference_filter_source;
+    ref_texture t_scope_reference_composite[3]; // capture, translucent dirt, opaque dirt
+    SvpReferencePacket scope_reference_packet;
+    ref_texture scope_reference_glass_materials[2];
+    ref_texture t_scope_reference_glass_inputs[2];
+    ref_texture scope_reference_materials[2]; // keeps the loaded textures when a packet is rejected
+    SvpReferenceMaterials::QualifiedSurface<ID3DBaseTexture> scope_reference_material_checks[4]; // materials, then glass materials
+    ref_rt rt_scope_reference_raw, rt_scope_reference_sky_raw, rt_scope_reference_ocular, rt_scope_reference_inside;
+    ref_texture t_scope_reference_main_meter;
+    ref_shader s_scope_reference_glyph;
+    ref_shader s_scope_reference_capture, s_scope_reference_mesh, s_scope_reference_tonemap;
+    ref_shader s_scope_reference_distortion, s_scope_reference_volumetric;
+    ref_shader s_scope_reference_particle_display, s_scope_reference_particle_baseline, s_scope_reference_particle_resolve;
+    ref_shader s_scope_reference_fog, s_scope_reference_fog_blur;
+    ref_rt rt_scope_reference_fog[2];
+    ref_texture t_scope_reference_fog_blur;
+    ref_rt rt_scope_reference_scene_temp;
+    ref_texture t_scope_reference_scene_source;
+    ref_texture t_scope_reference_particle_display;
+    ref_shader s_scope_reference_reticle;
+    ref_shader s_scope_reference_reticle_deferred;
+    SvpReferenceSkyCapture scope_reference_sky;
+    u32 scope_reference_sky_frame = u32(-1);
+    u32 scope_reference_camera_frame = u32(-1);
+    ref_texture t_scope_reference_ocular;
+    u32 scope_reference_raw_frame = u32(-1);
+    SvpReferenceStamp scope_reference_raw_stamp;
+    u32 scope_reference_composited_frame = u32(-1);
+    u32 scope_glass_deferred_frame = u32(-1);
+    IRenderable* scope_glass_deferred_owner = nullptr; // valid while scope_glass_deferred_current()
+    ref_shader s_scope_glass_deferred[6]; // by skinning mode -1..4; -1 is the soft-skinned shader
+    bool scope_glass_deferred_current() const { return scope_glass_deferred_frame == Device.dwFrame; }
+    void phase_scope_glass_deferred();
+    // lens glass composition (svp_optics.cpp, scope_glass_compose.h): the glass's own radiance at its
+    // pixels, after the installed combine, or under night vision into its light buffer before it
+    ref_shader s_scope_glass_compose, s_scope_glass_compose_nvg;
+    void scope_glass_compose_create();
+    bool scope_glass_compose_begin(bool night_vision);
+    void scope_glass_compose_draw(u32 offset);
+    // bind(shader) sets the element and the combine's constants, as for the installed combine.
+    template <typename Bind> void phase_scope_glass_combine(Bind&& bind, u32 offset)
+    {
+        if (!scope_glass_compose_begin(false)) return;
+        bind(s_scope_glass_compose);
+        scope_glass_compose_draw(offset);
+    }
+    template <typename Bind> void phase_scope_glass_night_vision(Bind&& bind, u32 offset)
+    {
+        if (!scope_glass_compose_begin(true)) return;
+        u_setrt(rt_Accumulator, nullptr, nullptr, baseZB);
+        bind(s_scope_glass_compose_nvg);
+        scope_glass_compose_draw(offset);
+        u_setrt(rt_Generic_0, rt_Generic_1, rt_Heat, baseZB);
+    }
+    // The late forward glass layer is RGB; under night vision with deferred glass the combine has
+    // already encoded the target and the deferred glass carries the lens.
+    bool scope_glass_forward_layer_allowed() const;
+    ref_shader s_scope_glass_fallback;
+	ref_shader s_scope_depth_write;
+	ref_shader s_scope_debug; // pip r__scope_debug on-screen multi-view inspector overlay
+	ref_shader s_scope_lensfx; // pip r__svp_lensfx additive lens FX (CA, distortion, exit-pupil dimming)
+	ref_shader s_svp_nearblur; // pip near-field defocus on the scope image (svpscope 2)
+	ref_shader s_svp_distort_stamp; // pip neutral distort-mask stamp over the composited lens
+	ref_shader s_svp_taa_stamp; // pip raw taa skip mask over the composited lens
+	ref_shader s_svp_lens_stencil; // pip 3DSS lens stencil (254) stamp under the late-pass overlays
+	ref_shader s_svp_lens_stencil_glass; // pip the same stamp where deferred physical glass is the visible lens
+	bool m_scope_shaders_ready = false;
+	// taa history seeds from the current frame on the next resolve, true at creation and on scope edges
+	bool m_taa_seed_history = true;
+	bool m_svp_dlss_built = false; // pip this SVP target was built with the DLSS gate on (toggle-recreate key)
+	// lean gate one-shot clear, the water reflection buffer gets wiped once on entering the skip
+	bool m_lean_water_cleared = false;
+	void EnsureScopeShaders();
+	void phase_scope_debug(); // pip draw the scope debug overlay (main+SVP views, ssfx, smap), main only
 
 	//	Igor: for async screenshots
 	ID3DTexture2D* t_ss_async; //32bit		(r,g,b,a) is situated in the system memory
@@ -454,10 +554,16 @@ private:
 	bool m_bHasActiveVolumetric;
 	bool m_bHasActiveVolumetric_spot;
 public:
+	// dims at creation, the SVP target is square so svpCamera reads these for its aspect
+	const u32 Width;
+	const u32 Height;
+
 	CRenderTarget();
 	// Draws the full-screen post-process quad (FullscreenQuad.h) with the element already set
 	void draw_fullscreen_quad(u32 color) { m_fullscreen_quad.Draw(color, g_combine, RenderScreenWidth(), RenderScreenHeight()); }
+	CRenderTarget(LPCSTR name, u32 width, u32 height);
 	~CRenderTarget();
+	void SetActive(bool force = false);
 	void accum_point_geom_create();
 	void accum_point_geom_destroy();
 	void accum_omnip_geom_create();
@@ -482,8 +588,6 @@ public:
 	void u_calc_tc_duality_ss(Fvector2& r0, Fvector2& r1, Fvector2& l0, Fvector2& l1);
 	BOOL u_need_PP();
 	bool u_need_CM();
-	BOOL u_DBT_enable(float zMin, float zMax);
-	void u_DBT_disable();
 	void phase_sunshafts();
 	void phase_blur();
 	void phase_pp_bloom();
@@ -491,9 +595,72 @@ public:
 	void phase_gasmask_drops();
 	void phase_gasmask_dudv();
 	void phase_nightvision();
+	bool svp_nvg_pass();
 	void phase_fakescope(); //crookr
 	void phase_heatvision(); //--DSR-- HeatVision
-	void phase_3DSSReticle(); // Redotix99: for 3D Shader Based Scopes
+	void phase_3DSSReticle(bool object_lens_pass); // PiP object lens early, reticle/depth overlays late
+	// 3DSS reticle glow, drawn into its own targets and added after bloom and tone mapping
+	// (r4_rendertarget_phase_3dss_reticle.cpp)
+	ref_rt rt_reticle_emission, rt_reticle_glow_source; // the lit cores, and the same weighted by glow strength
+	ref_rt rt_reticle_image_emission, rt_reticle_image_glow; // both as the lenses copy the frame
+	ref_rt rt_reticle_glow_full, rt_reticle_glow_half[2], rt_reticle_glow_quarter[2]; // the glow lobes
+	ref_shader s_reticle_glow, s_reticle_glow_final; // their passes, and the tight lobe with the composite
+	u32 reticle_glow_frame = u32(-1);
+	u32 reticle_glow_composed_frame = u32(-1); // composited before night vision this frame
+	bool reticle_glow_dirty = false;
+	void reticle_glow_create();
+	void reticle_glow_begin();
+	void render_3DSS_reticles();
+	void reticle_glow_compose();
+	void reticle_glow_compose_before_nightvision();
+	void reticle_glow_composite(const ref_rt& target, bool night_vision);
+	static void reticle_glow_note(dxRender_Visual* visual);
+	void phase_svp_capture(); // pip copy the SVP combined color into rt_secondVP for the lens to sample
+    void phase_scope_reference_filters(const ref_rt& source, float threshold, float range, float contrast);
+    bool scope_reference_submit(const SvpReferencePacket& packet);
+    bool prepare_scope_physical_glass();
+    void bind_scope_physical_glass(bool enabled);
+    void scope_reference_refresh();
+    bool scope_reference_prepare_capture();
+    bool scope_reference_current() const;
+    bool scope_reference_material_current() const;
+    bool scope_reference_capture_begin();
+    bool phase_scope_reference_sky();
+    bool scope_reference_sky_shaders();
+    void scope_reference_sky_draw(bool capture);
+    void scope_reference_sky_compare();
+    bool scope_reference_sky_qualified();
+    void scope_reference_capture_end();
+    void scope_reference_capture_particles();
+    void scope_reference_capture_fog();
+    void scope_reference_capture_volumetric(u32 offset);
+    void scope_reference_capture_distortion();
+    bool phase_scope_reference_ocular();
+    bool phase_scope_reference_composite(const ref_rt& destination,ID3DDepthStencilView* depth,
+        const Fvector4 (&constants)[SvpReferenceOpticsFrame::ConstantCount]);
+	bool svp_nearblur_pass(); // pip near-field defocus dispatch, true when it ran else the caller copies
+	void draw_scope(ref_shader se, std::function<void()> bind, bool objective = false); // pip render the ocular or physical objective lens
+	void svp_objective_hud_prepare(bool svp_follows); // pip validate one native objective weapon draw
+	void svp_objective_hud_report(); // pip report the native objective draw
+	void EvalSVP_DLSS(const SvpDlssInputs& in); // pip DLSS-SR eval, bilinear-passthrough stub for now (Task 7)
+	u32 draw_reflex(bool svp = false, bool reticle_light = true); // pip render captured reflex materials with their own shaders (reticle_light false: without the atlas reticle light)
+	// pip atlas reticle glow of the PiP and Reference lenses and of a reflex in the capture (svp_reticle_emission.cpp)
+	ref_shader s_reticle_emission_pip, s_reticle_emission_glass;
+	ref_shader s_reticle_emission_reference, s_reticle_emission_reference_deferred;
+	ref_rt rt_reticle_capture_emission, rt_reticle_capture_glow; // a hybrid reflex's glow in capture space
+	ref_rt rt_reticle_capture_light; // a hybrid reflex in capture space, shown over the Reference image
+	u32 reticle_capture_frame = u32(-1);
+	u32 reticle_capture_light_frame = u32(-1);
+	ref_rt rt_scope_reference_capture_tc; // where the Reference image takes the capture
+	ref_shader s_scope_reference_capture_light;
+	void draw_reticle_emission(const ref_shader& shader, ID3DDepthStencilView* depth);
+	void reticle_capture_begin(bool light);
+	bool reticle_capture_light_current() const;
+	void draw_reference_capture_light();
+	void reticle_atlas_image(const ref_rt& image);
+	void draw_scope_overlays(ID3DDepthStencilView* zb, bool stamp_lens, bool refresh_scene); // pip 3DSS non-lens late-pass meshes
+	void scope_overlay_scene_copy(); // pip scene copy the late-pass overlays blur
+	bool draw_hybrid_reflex(); // pip render an engaged magnifier reflex through the objective camera
 	void phase_lut();
 	void phase_smaa();
 	void phase_scene_prepare();
@@ -548,12 +715,14 @@ public:
 	void draw_rain(light& RainSetup);
 
 	void mark_msaa_edges();
+	void stamp_svp_corner_mask(); // pip zero the geometry stencil in the dead disc corners so the svp lighting skips them
 
 	bool need_to_render_sunshafts();
 	bool use_minmax_sm_this_frame();
 
 	BOOL enable_scissor(light* L); // true if intersects near plane
-	void enable_dbt_bounds(light* L);
+	// conservative screen rect for the light volume, false leaves the draw unscissored
+	BOOL compute_light_scissor(light* L, BOOL near_intersect, Irect& R);
 
 	void disable_aniso();
 
@@ -644,4 +813,32 @@ public:
 	{
 	}
 #endif
+};
+
+// 3DSS reticle glow: the glow targets at slots 2 and 3 for the reticle draws while it lives, and the reflex shaders
+// told to put their reticle light there; a draw with light false is repeated later and leaves that light out
+// (r4_rendertarget_phase_3dss_reticle.cpp)
+class C3DSSReticleGlow
+{
+public:
+	C3DSSReticleGlow(CRenderTarget* target, bool light = true); // the main view's glow targets, none: no change
+	C3DSSReticleGlow(const ref_rt& core, const ref_rt& glow); // glow targets of another image
+	~C3DSSReticleGlow();
+	C3DSSReticleGlow(const C3DSSReticleGlow&) = delete;
+	C3DSSReticleGlow& operator=(const C3DSSReticleGlow&) = delete;
+	bool active() const { return bound; }
+	// the sights drawn now set the frame's glow size
+	template <class Items> void note(const Items& items) const
+	{
+		if (bound)
+			for (const auto& item : items)
+				CRenderTarget::reticle_glow_note(item.pVisual);
+	}
+private:
+	void hold(ID3DRenderTargetView* core, ID3DRenderTargetView* glow, bool light);
+	bool bound = false;   // the glow targets are at slots 2 and 3
+	bool changed = false; // the binder flag or the targets differ from the caller's
+	float saved_reflex_glow = 0.f;
+	ID3DRenderTargetView* saved[4] = {}; // the caller's targets, as RCache holds them (not owned)
+	ID3DDepthStencilView* depth = nullptr;
 };

@@ -134,10 +134,20 @@ u16 find_bone_id(vecBones* bones, shared_str nm)
 	return BI_NONE;
 }
 
+string2048 g_motions_bind_fail_reason = {};
+
+static void bind_fail_note(LPCSTR line)
+{
+	if (xr_strlen(g_motions_bind_fail_reason) + xr_strlen(line) + 2 >= sizeof(g_motions_bind_fail_reason)) return;
+	xr_strcat(g_motions_bind_fail_reason, line);
+	xr_strcat(g_motions_bind_fail_reason, "\n");
+}
+
 //-----------------------------------------------------------------------
 BOOL motions_value::load(LPCSTR N, IReader* data, vecBones* bones)
 {
 	m_id = N;
+	g_motions_bind_fail_reason[0] = 0;
 
 	bool bRes = true;
 	// Load definitions
@@ -241,6 +251,7 @@ BOOL motions_value::load(LPCSTR N, IReader* data, vecBones* bones)
 				bRes = false;
 				xr_sprintf(line, "no motion bone matches the model");
 				Msg("! [MODEL-FATAL] %s (%s)", line, N);
+				bind_fail_note(line);
 			}
 		}
 
@@ -272,6 +283,7 @@ BOOL motions_value::load(LPCSTR N, IReader* data, vecBones* bones)
 		{
 			bRes = false;
 			Msg("! [MODEL-FATAL] motion file declares no bone tracks (%s)", N);
+			bind_fail_note("motion file declares no bone tracks");
 		}
 
 		// The root bone is what every blend takes its length from, so a file that
@@ -279,8 +291,10 @@ BOOL motions_value::load(LPCSTR N, IReader* data, vecBones* bones)
 		if (bRes && !bone_covered.empty() && !bone_covered[0])
 		{
 			bRes = false;
-			Msg("! [MODEL-FATAL] no motion track for the root bone '%s' (%s)",
-			    bones->at(0)->name.c_str(), N);
+			string256 line;
+			xr_sprintf(line, "no motion track for the root bone '%s'", bones->at(0)->name.c_str());
+			Msg("! [MODEL-FATAL] %s (%s)", line, N);
+			bind_fail_note(line);
 		}
 
 		if (bRes)

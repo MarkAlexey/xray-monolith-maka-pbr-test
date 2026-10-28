@@ -8,7 +8,9 @@
 
 #include "../../xrEngine/xr_efflensflare.h"
 
-static Fmatrix mSky_prev = Fidentity;
+// pip per-viewport sky prev: the main and SVP passes each keep their own last-frame transform, a single
+// shared one cross-contaminates the sky motion vectors (TAA tolerates it, upscaling shows the ghosting)
+static Fmatrix mSky_prev[2] = { Fidentity, Fidentity };
 
 //////////////////////////////////////////////////////////////////////////
 // half box def
@@ -217,6 +219,8 @@ dxEnvironmentRender::dxEnvironmentRender()
 {
 	tsky0 = DEV->_CreateTexture("$user$sky0");
 	tsky1 = DEV->_CreateTexture("$user$sky1");
+	tenv0 = DEV->_CreateTexture("$user$env_s0");
+	tenv1 = DEV->_CreateTexture("$user$env_s1");
 }
 
 void dxEnvironmentRender::OnFrame(CEnvironment& env)
@@ -252,6 +256,18 @@ void dxEnvironmentRender::OnFrame(CEnvironment& env)
 	tsky1->surface_set(e1);
 	_RELEASE(e1);
 
+	// Publish the current environment pair before HUD rendering. Deferred
+	// combine also owns these resources, but runs too late for objective glass.
+	if (mixRen.sky_r_textures_env.size() >= 2)
+	{
+		e0 = mixRen.sky_r_textures_env[0].second->surface_get();
+		e1 = mixRen.sky_r_textures_env[1].second->surface_get();
+		tenv0->surface_set(e0);
+		_RELEASE(e0);
+		tenv1->surface_set(e1);
+		_RELEASE(e1);
+	}
+
 	// ******************** Environment params (setting)
 #if defined(USE_DX10) || defined(USE_DX11)
 	//	TODO: DX10: Implement environment parameters setting for DX10 (if necessary)
@@ -280,6 +296,36 @@ void dxEnvironmentRender::OnUnload()
 	tonemap = 0;
 }
 
+// pip Reference scope sky capture: runs after the sky box, before the sun
+void (*dxEnvironmentRender::after_sky_box)() = nullptr;
+
+// Fills and binds the sky box geometry (12 vertices, 20 triangles at the returned offsets) and sets
+// the sky world transform, which it returns.
+Fmatrix dxEnvironmentRender::PrepareSkyBox(CEnvironment& env, u32& vertex_offset, u32& index_offset)
+{
+	Fmatrix mSky;
+	mSky.rotateY(env.CurrentEnv->sky_rotation);
+	mSky.translate_over(Device.vCameraPosition);
+
+	u32 C = color_rgba(iFloor(env.CurrentEnv->sky_color.x * 255.f), iFloor(env.CurrentEnv->sky_color.y * 255.f),
+	                   iFloor(env.CurrentEnv->sky_color.z * 255.f), iFloor(env.CurrentEnv->weight * 255.f));
+
+	// Fill index buffer
+	u16* pib = RCache.Index.Lock(20 * 3, index_offset);
+	CopyMemory(pib, hbox_faces, 20*3*2);
+	RCache.Index.Unlock(20 * 3);
+
+	// Fill vertex buffer
+	v_skybox* pv = (v_skybox*)RCache.Vertex.Lock(12, sh_2geom.stride(), vertex_offset);
+	for (u32 v = 0; v < 12; v++) pv[v].set(hbox_verts[v * 2], C, hbox_verts[v * 2 + 1]);
+	RCache.Vertex.Unlock(12, sh_2geom.stride());
+
+	// Apply skybox matrix
+	RCache.set_xform_world(mSky);
+	RCache.set_Geometry(sh_2geom);
+	return mSky;
+}
+
 void dxEnvironmentRender::RenderSky(CEnvironment& env, bool OnlyMV)
 {
 	PROF_EVENT("EnvironmentRender::RenderSky");
@@ -303,33 +349,15 @@ void dxEnvironmentRender::RenderSky(CEnvironment& env, bool OnlyMV)
 	dxEnvDescriptorMixerRender& mixRen = *(dxEnvDescriptorMixerRender*)&*env.CurrentEnv->m_pDescriptorMixer;
 
 	// draw sky box
-	Fmatrix mSky;
-	mSky.rotateY(env.CurrentEnv->sky_rotation);
-	mSky.translate_over(Device.vCameraPosition);
-
 	u32 i_offset, v_offset;
-	u32 C = color_rgba(iFloor(env.CurrentEnv->sky_color.x * 255.f), iFloor(env.CurrentEnv->sky_color.y * 255.f),
-	                   iFloor(env.CurrentEnv->sky_color.z * 255.f), iFloor(env.CurrentEnv->weight * 255.f));
-
-	// Fill index buffer
-	u16* pib = RCache.Index.Lock(20 * 3, i_offset);
-	CopyMemory(pib, hbox_faces, 20*3*2);
-	RCache.Index.Unlock(20 * 3);
-
-	// Fill vertex buffer
-	v_skybox* pv = (v_skybox*)RCache.Vertex.Lock(12, sh_2geom.stride(), v_offset);
-	for (u32 v = 0; v < 12; v++) pv[v].set(hbox_verts[v * 2], C, hbox_verts[v * 2 + 1]);
-	RCache.Vertex.Unlock(12, sh_2geom.stride());
-
-	// Apply skybox matrix
-	RCache.set_xform_world(mSky);
+	const Fmatrix mSky = PrepareSkyBox(env, v_offset, i_offset);
 
 	if (OnlyMV)
 	{
-		RCache.set_xform_world_prev(mSky_prev);
-		mSky_prev = mSky;
+		const u32 svp_vp = Device.m_SecondViewport.IsSVPFrame();
+		RCache.set_xform_world_prev(mSky_prev[svp_vp]);
+		mSky_prev[svp_vp] = mSky;
 
-		RCache.set_Geometry(sh_2geom);
 		RCache.set_Shader(sh_2sky);
 		RCache.set_Element(sh_2sky->E[1]);
 		RCache.Render(D3DPT_TRIANGLELIST, v_offset, 0, 12, i_offset, 20);
@@ -338,11 +366,11 @@ void dxEnvironmentRender::RenderSky(CEnvironment& env, bool OnlyMV)
 	}
 	else
 	{
-		RCache.set_Geometry(sh_2geom);
 		RCache.set_Shader(sh_2sky);
 		RCache.set_Element(sh_2sky->E[0]);
 		RCache.set_Textures(&mixRen.sky_r_textures);
 		RCache.Render(D3DPT_TRIANGLELIST, v_offset, 0, 12, i_offset, 20);
+		if (after_sky_box) after_sky_box();
 	}
 
 	// Sun
@@ -421,6 +449,8 @@ void dxEnvironmentRender::OnDeviceDestroy()
 {
 	tsky0->surface_set(NULL);
 	tsky1->surface_set(NULL);
+	tenv0->surface_set(NULL);
+	tenv1->surface_set(NULL);
 
 	sh_2sky.destroy();
 	sh_2geom.destroy();

@@ -428,6 +428,18 @@ void CROS_impl::calc_sky_hemi_value(Fvector& position, CObject* _object)
 			//	Msg				("%d:-- %s",sample,result[sample]?"true":"false");
 		}
 	}
+	// Absolute directional sky visibility, normalized by the same unoccluded
+	// sample set. Reuse cached native rays; never normalize by current light.
+	float visible[NUM_FACES] = {}, possible[NUM_FACES] = {};
+	for (int i = 0; i < result_count; ++i)
+	{
+		Fvector direction; direction.set(hdir[i][0], hdir[i][1], hdir[i][2]);
+		accum_hemi(possible, direction, 1.f);
+		if (result[i]) accum_hemi(visible, direction, 1.f);
+	}
+	for (int i = 0; i < NUM_FACES; ++i)
+		sky_visibility[i] = possible[i] > EPS ? visible[i] / possible[i] : 0.f;
+
 	// hemi & sun: update and smooth
 	//	float	l_f				=	dt*lt_smooth;
 	//	float	l_i				=	1.f-l_f;

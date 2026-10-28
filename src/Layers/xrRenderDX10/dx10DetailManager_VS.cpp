@@ -1616,7 +1616,8 @@ void CDetailManager::inst_Draw(CDetail& Object, u32 O, u32 var_id, const InstTwi
 	if (merge)
 		RCache.set_Indices(m_merge_ib);
 
-	if (merge && m_thin_on && (occ ? merge->occ_thin._get() : merge->thin._get()))
+	const bool thin_on = m_thin_on && !m_svp_pass;
+	if (merge && thin_on && (occ ? merge->occ_thin._get() : merge->thin._get()))
 	{
 		static shared_str strThin("dt_thin");
 		RCache.set_ca(strThin, 0, m_thin_c[0]);
@@ -1650,6 +1651,17 @@ void CDetailManager::inst_Draw(CDetail& Object, u32 O, u32 var_id, const InstTwi
 
 	u32 run_first = 0, run_n = 0;
 	float run_scale = 1.f;
+	// pip stats, only the culled passes count their runs
+	auto count_run = [&](u32 draws)
+	{
+		if (cull_obj)
+		{
+			m_cull_stats.runs++;
+			m_cull_stats.run_max = _max(m_cull_stats.run_max, run_n);
+			m_cull_stats.draws += draws;
+		}
+		run_n = 0;
+	};
 	auto flush = [&]()
 	{
 		if (merge)
@@ -1668,36 +1680,21 @@ void CDetailManager::inst_Draw(CDetail& Object, u32 O, u32 var_id, const InstTwi
 			}
 			Device.Statistic->RenderDUMP_DT_Count += run_n;
 			RCache.stat.r.s_details.add(run_n * Object.number_vertices);
-			run_n = 0;
+			count_run(u32(full != 0) + u32(rem != 0));
 			return;
 		}
 		RCache.set_c(strDraw, float(run_first), run_scale, 0.f, 0.f);
 		RCache.RenderInstanced(D3DPT_TRIANGLELIST, vOffset, Object.number_vertices, iOffset, Object.number_indices / 3, run_n);
 		Device.Statistic->RenderDUMP_DT_Count += run_n;
 		RCache.stat.r.s_details.add(run_n * Object.number_vertices);
-		run_n = 0;
+		count_run(1);
 	};
 
 	for (u32 s = s0; s < s1; s++)
 	{
 		const InstSpan& span = m_inst_spans[s];
-		if (cull_obj)
-		{
-			Fsphere b = m_vis_bounds[var_id][O][s - s0];
-			bool culled;
-			if (L)
-			{
-				culled = L->position.distance_to_sqr(b.P) >= _sqr(L->range);
-				if (!culled && fade_distance <= -1)
-					culled = 1.0f - b.P.distance_to_xz_sqr(light_position) * 0.005f <= 0;
-				if (!culled && cull_frustum)
-					culled = !L->X.S.frustum.testSphere_dirty(b.P, b.R * cull_grow);
-			}
-			else
-				culled = !m_sun_cull->testSphere_dirty(b.P, b.R * cull_grow);
-			if (culled)
-				continue;
-		}
+		if (cull_obj && cull_Span(m_vis_bounds[var_id][O][s - s0], L, cull_grow, cull_frustum, span.count))
+			continue;
 
 		float scale = 1.f;
 		if (fade_distance <= -1)
@@ -1740,6 +1737,18 @@ void CDetailManager::hw_Load_Shaders()
 	hwc_s_array = T1.get("array");
 }
 
+// pip adds one pass worth of cull counts to the stats overlay counters
+static void cull_Publish(const CDetailManager::CullStats& c, u32& tested, u32& kept, u32& runs, u32& dropped,
+                         u32& draws, u32& run_max)
+{
+	tested += c.tested;
+	kept += c.kept;
+	runs += c.runs;
+	dropped += c.dropped;
+	draws += c.draws;
+	run_max = _max(run_max, c.run_max);
+}
+
 void CDetailManager::hw_Render(light* L)
 {
 	PROF_EVENT("CDetailManager::hw_Render");
@@ -1766,7 +1775,10 @@ void CDetailManager::hw_Render(light* L)
 	if (m_occ_cap && !ps_r__detail_occ)
 		occ_Release();
 
-	if (ps_r__detail_inst && RImplementation.phase == CRender::PHASE_NORMAL && m_inst_frame != Device.dwFrame && !m_inst_twins.empty())
+	// pip only the main view builds, a scope pass after a failed build must not step the alpha again
+	const bool main_view = RImplementation.phase == CRender::PHASE_NORMAL && !m_svp_pass;
+
+	if (ps_r__detail_inst && main_view && m_inst_frame != Device.dwFrame && !m_inst_twins.empty())
 	{
 		inst_Build();
 
@@ -1780,7 +1792,7 @@ void CDetailManager::hw_Render(light* L)
 		}
 	}
 
-	if (ps_r__detail_occ && !m_occ_off && RImplementation.phase == CRender::PHASE_NORMAL)
+	if (ps_r__detail_occ && !m_occ_off && main_view)
 	{
 		LPCSTR reason = nullptr;
 		if (occ_On(reason))
@@ -1806,12 +1818,13 @@ void CDetailManager::hw_Render(light* L)
 	RCache.set_CullMode(CULL_NONE);
 	RCache.set_xform_world(Fidentity);
 	RCache.set_Geometry(hw_Geom);
+	m_cull_stats = {};
 	float scale = 1.f / float(quant);
 	Fvector4 wave, prev_wave;
 	Fvector4 consts;
 
 #ifdef USE_DX11
-	m_occ_first = m_occ_frame == Device.dwFrame && m_occ_first_on && m_occ_var[2][1] && RImplementation.phase == CRender::PHASE_NORMAL;
+	m_occ_first = m_occ_frame == Device.dwFrame && m_occ_first_on && m_occ_var[2][1] && main_view;
 	if (m_occ_first)
 	{
 		occ_Dispatch(0, m_occ_var[2][1], 0, u32(-1));
@@ -1890,7 +1903,55 @@ void CDetailManager::hw_Render(light* L)
 		prev_dir2.set(dir2);
 	}
 
+	// pip stats, the sun cascades fill the main grass counters and the scope pass its own
+	if (ps_r__svp_stats && m_sun_cull)
+		cull_Publish(m_cull_stats, svp_stats_grass_slots, svp_stats_grass_keep, svp_stats_grass_runs,
+		             svp_stats_grass_drop, svp_stats_grass_draws, svp_stats_grass_run_max);
+	else if (ps_r__svp_stats && m_svp_cull)
+		cull_Publish(m_cull_stats, svp_stats_grass_svp_slots, svp_stats_grass_svp_keep, svp_stats_grass_svp_runs,
+		             svp_stats_grass_svp_drop, svp_stats_grass_svp_draws, svp_stats_grass_svp_run_max);
+	if (m_svp_cull && m_cull_stats.dropped)
+		svp_ledger_grass_cull = 1;
+
 	RCache.set_CullMode(CULL_CCW);
+}
+
+void CDetailManager::svp_Begin(Fmatrix& full_xform)
+{
+	m_svp_pass = true;
+	if (!ps_r__svp_grass_cull)
+		return;
+	// lateral planes and a far plane, no near plane, same build the scope world cull uses
+	m_svp_cull_frustum.CreateFromMatrix(full_xform, FRUSTUM_P_LRTB + FRUSTUM_P_FAR);
+	m_svp_cull = &m_svp_cull_frustum;
+}
+
+void CDetailManager::svp_End()
+{
+	m_svp_pass = false;
+	m_svp_cull = nullptr;
+}
+
+// True when a slot sphere falls outside the light, sun cascade or scope view
+bool CDetailManager::cull_Span(Fsphere b, light* L, float grow, bool frustum, u32 count)
+{
+	bool culled;
+	if (L)
+	{
+		culled = L->position.distance_to_sqr(b.P) >= _sqr(L->range);
+		if (!culled && fade_distance <= -1)
+			culled = 1.0f - b.P.distance_to_xz_sqr(light_position) * 0.005f <= 0;
+		if (!culled && frustum)
+			culled = !L->X.S.frustum.testSphere_dirty(b.P, b.R * grow);
+	}
+	else
+		culled = !(m_sun_cull ? m_sun_cull : m_svp_cull)->testSphere_dirty(b.P, b.R * grow);
+	m_cull_stats.tested++;
+	if (culled)
+		m_cull_stats.dropped += count;
+	else
+		m_cull_stats.kept++;
+	return culled;
 }
 
 void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave, const Fvector4& wind, 
@@ -1946,6 +2007,9 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 	c_ambient.set(desc.ambient.x, desc.ambient.y, desc.ambient.z);
 	c_hemi.set(desc.hemi_color.x, desc.hemi_color.y, desc.hemi_color.z);
 
+	// pip the main-pass drain keeps the visible set when the SVP pass draws the scope grass second
+	extern bool g_svp_defer_detail_clear;
+
 	const bool rows_on = ps_r__detail_rows != 0;
 	if (rows_on && !(Device.fTimeDelta >= 0) && !m_occ_first_group)
 		m_rows_epoch++;
@@ -1961,10 +2025,11 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 	const size_t prefetch_first = offsetof(SlotItem, mRotY_calculated);
 	const size_t prefetch_last = offsetof(SlotItem, alpha_target) + sizeof(float) - 1;
 
-	const bool alpha_step = RImplementation.phase == CRender::PHASE_NORMAL;
+	// pip the scope pass draws after the main one in the same frame, the alpha already stepped
+	const bool alpha_step = RImplementation.phase == CRender::PHASE_NORMAL && !m_svp_pass;
 
-	const bool cull = RImplementation.phase == CRender::PHASE_SMAP &&
-		(L ? ps_r__detail_shadow_cull != 0 : m_sun_cull != nullptr) &&
+	const bool cull = (RImplementation.phase == CRender::PHASE_SMAP ?
+		(L ? ps_r__detail_shadow_cull != 0 : m_sun_cull != nullptr) : m_svp_cull != nullptr) &&
 		m_vis_bounds_frame == Device.dwFrame && m_vis_bounds[var_id].size() == list.size();
 	float cull_grow = 1.f;
 	bool cull_frustum = false;
@@ -1977,7 +2042,8 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 #ifdef USE_DX11
 	const bool cb_direct_on = rows_on;
 
-	const bool occ_on = inst_on && m_occ_frame == Device.dwFrame && RImplementation.phase == CRender::PHASE_NORMAL;
+	// pip the occlusion results come from the main camera's depth, the scope pass draws without them
+	const bool occ_on = inst_on && m_occ_frame == Device.dwFrame && RImplementation.phase == CRender::PHASE_NORMAL && !m_svp_pass;
 	if (occ_on && sector_visible && !m_occ_first_group)
 	{
 		occ_Test(var_id);
@@ -2005,7 +2071,7 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 				if (it != m_merge.end())
 				{
 					merge = &it->second;
-					element = m_thin_on && it->second.thin ? it->second.thin._get() : it->second.E._get();
+					element = m_thin_on && !m_svp_pass && it->second.thin ? it->second.thin._get() : it->second.E._get();
 				}
 			}
 
@@ -2150,6 +2216,13 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 #endif
 					RCache.Render(D3DPT_TRIANGLELIST, vOffset, 0, dwCNT_verts, iOffset, dwCNT_prims);
 					RCache.stat.r.s_details.add(dwCNT_verts);
+					// pip stats, a culled pass counts each batch as one run
+					if (cull)
+					{
+						m_cull_stats.runs++;
+						m_cull_stats.run_max = _max(m_cull_stats.run_max, dwBatch);
+						m_cull_stats.draws++;
+					}
 				};
 
 				//	Map constants to memory directly
@@ -2166,23 +2239,8 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 				{
 					SlotItemVec* items = *_vI;
 
-					if (cull_obj)
-					{
-						Fsphere b = m_vis_bounds[var_id][O][_vI - vis.begin()];
-						bool culled;
-						if (L)
-						{
-							culled = L->position.distance_to_sqr(b.P) >= _sqr(L->range);
-							if (!culled && fade_distance <= -1)
-								culled = 1.0f - b.P.distance_to_xz_sqr(light_position) * 0.005f <= 0;
-							if (!culled && cull_frustum)
-								culled = !L->X.S.frustum.testSphere_dirty(b.P, b.R * cull_grow);
-						}
-						else
-							culled = !m_sun_cull->testSphere_dirty(b.P, b.R * cull_grow);
-						if (culled)
-							continue;
-					}
+					if (cull_obj && cull_Span(m_vis_bounds[var_id][O][_vI - vis.begin()], L, cull_grow, cull_frustum, u32(items->size())))
+						continue;
 
 					if (rows_obj)
 					{
@@ -2321,7 +2379,8 @@ void CDetailManager::hw_Render_dump(const Fvector4& consts, const Fvector4& wave
 			}
 			// Clean up
 			// KD: we must not clear vis on r2 since we want details shadows
-			if (ps_ssfx_grass_shadows.x <= 0 && !m_occ_first_group)
+			// pip the deferred clear keeps the set alive for the SVP drain, its own pass clears after
+			if (ps_ssfx_grass_shadows.x <= 0 && !m_occ_first_group && !g_svp_defer_detail_clear)
 			{
 				if (!psDeviceFlags2.test(rsGrassShadow) || RImplementation.PHASE_NORMAL == RImplementation.phase) // phase normal without shadows
 					vis.clear_not_free();

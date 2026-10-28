@@ -11,10 +11,15 @@
 #if defined(USE_DX11) && RENDER == R_R4
 #include "SkeletonRenderSnapshot.h"
 #endif
+#include "scope_glass_surface_frames.h"
 
 // refs
 class CKinematics;
 class Fvisual;
+
+void svp_hud_bone_snapshot_begin();
+extern bool g_svp_hud_frozen_pass;
+extern bool g_svp_hud_history_write;
 
 //.#pragma pack(push,4)
 
@@ -47,6 +52,9 @@ protected:
     std::shared_ptr<SkeletonRenderSnapshot> shadow_snapshot;
     void RenderSnapshot(const SkeletonRenderSnapshot& pose, ref_geom& geometry, u32 vertices, u32 offset, u32 primitives);
 #endif
+	bool scope_surface_cached = false;
+	std::vector<scope_surface_frame> scope_surface_frames;
+	void BindScopeSurfaceFrames(CBoneInstance* render_bones);
 
 	// render-mode specifics
 	union
@@ -64,7 +72,7 @@ protected:
 	};
 
 	void _Copy(CSkeletonX* V);
-	void _Render_soft(ref_geom& hGeom, u32 vCount, u32 iOffset, u32 pCount);
+	void _Render_soft(ref_geom& hGeom, u32 vCount, u32 iOffset, u32 pCount, CBoneInstance* bones);
 	void _Render(ref_geom& hGeom, u32 vCount, u32 iOffset, u32 pCount);
 	void _Load(const char* N, IReader* data, u32& dwVertCount);
 
@@ -116,6 +124,24 @@ public:
     std::shared_ptr<const SkeletonRenderSnapshot> SnapshotShadow(const Fmatrix& world);
 #endif
 	BOOL has_visible_bones();
+	u64 ScopeGlassBoneMask();
+	bool IsPhysicalScopeGlass();
+	bool SVP_LensBoneXform(Fmatrix& out); // pip lens bone object-space skinning matrix for the SVP eyepiece
+	bool SVP_LensBoneVisible(); // pip lens bone visibility for the eyepiece pick
+	bool SVP_GetLensDetection(SLensDetection& out); // pip forward the owning kinematics measured lens fit for the render-side diag
+	bool SVP_CaptureBoneSnapshot();
+	bool SVP_BoneSnapshotReady() const; // pip exact main hud bone palette shared by both viewports
+	bool SVP_RigidBoneSnapshotXform(Fmatrix& out);
+	bool SVP_BoneSnapshotXform(Fmatrix& out);
+	bool SVP_BoneSnapshotXform(u16 bone, Fmatrix& out);
+	bool SVP_BoneSnapshotXform(const IKinematics* owner, u16 bone, Fmatrix& out);
+	bool SVP_BoneSnapshotVisible(BOOL& visible);
+	u16 SVP_MeasureBoneCount() const; // pip bone count for the near-plane derive, 0 when unparented
+	bool SVP_BoneCornersWorld(u16 bone, const Fmatrix& pose, Fvector* corners8); // pip posed bone obb
+	u32 SVP_MeshVertsWorld(const Fmatrix& pose, const xr_vector<u8>& through, xr_vector<Fvector>& out); // pip posed verts of the flagged bones
+	const void* SVP_SkeletonOwner() const { return Parent; }
+	// pip append each dedup bind-pose vertex, model space, with its global dominant bone id
+	void SVP_GatherVerts(xr_vector<Fvector>& positions, xr_vector<u16>& bones);
 
 	//--DSR-- SilencerOverheat_start
 	BOOL has_bone_id(u16 bone_id)

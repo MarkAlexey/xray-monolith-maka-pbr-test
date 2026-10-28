@@ -1,0 +1,15 @@
+// Distortion as in combine_2_naa.ps: same neutral mask value, offset scale and depth rejection.
+#include "common.h"
+Texture2D scope_reference_scene_source;
+Texture2D s_distort;
+float4 main(float4 position : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+{
+    float4 mask = s_distort.Sample(smp_nofilter, uv);
+    float2 warped = uv + (mask.xy - (127.0 / 255.0)) * def_distort;
+    gbuffer_data base = gbuffer_load_data(uv, position);
+    gbuffer_data other = gbuffer_load_data_offset(uv, warped, position);
+    if (other.P.z + 0.001 < base.P.z) warped = uv;
+    float4 original = scope_reference_scene_source.SampleLevel(smp_rtlinear, uv, 0);
+    float3 rgb = scope_reference_scene_source.SampleLevel(smp_rtlinear, warped, 0).rgb;
+    return float4(rgb, original.a);
+}

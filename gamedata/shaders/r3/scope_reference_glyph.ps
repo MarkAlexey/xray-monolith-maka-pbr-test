@@ -1,0 +1,22 @@
+#define SCOPE_REFERENCE_GLYPH_LAYER
+#define SCOPE_REFERENCE_MARK_ONLY
+static bool reference_glyph_flip=false;
+static float4 reference_glyph_inside=0;
+#define SCOPE_REFERENCE_INSIDE_COVERAGE(value) reference_glyph_inside=value
+#define SVP_RETICLE_FLIP_TEST(S) reference_glyph_flip
+#include "scope_common.h"
+#include "scope_custom_reticle.h"
+float4 main(v_out input):SV_Target
+{
+    // The mesh is rasterised in its UV chart. The reticle code expects
+    // screen-space position and gradients, so rebuild them from the clip position.
+    float2 screen=input.reference_clip.xy/input.reference_clip.w*float2(.5,-.5)+.5;
+    float2 a=ddx(screen),b=ddy(screen);
+    float determinant=a.x*b.y-a.y*b.x;
+    float screenVdy=(ddy(input.tc0.y)*a.x-ddx(input.tc0.y)*b.x)/determinant;
+    reference_glyph_flip=screenVdy<0;
+    input.hpos.xy=screen*output_res.xy;
+    scope=new_Scope(input);
+    scope_custom_reticle(scope);
+    return reference_glyph_inside;
+}

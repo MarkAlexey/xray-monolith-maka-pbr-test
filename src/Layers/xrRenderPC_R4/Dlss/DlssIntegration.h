@@ -16,6 +16,8 @@ bool Configured();
 unsigned RenderWidth();
 unsigned RenderHeight();
 Offset RasterJitter();
+// true while the PiP scope viewport (TargetSVP) is the active target; the upscaler is bypassed
+bool ScopePass();
 Offset PreviousRasterJitter();
 ID3DDepthStencilView* SceneDepth();
 ID3D11Texture2D* SceneDepthTexture();

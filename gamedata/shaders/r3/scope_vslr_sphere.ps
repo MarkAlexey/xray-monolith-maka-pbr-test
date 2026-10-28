@@ -1,0 +1,43 @@
+// Debug (r__scope_vslr_debug 1 and 2): a mirror sphere in front of the camera that reflects the
+// published capture, traced as the glass traces it.
+#include "common.h"
+#include "vslr_trace.h"
+TextureCube env_s0;
+TextureCube env_s1;
+uniform float4 env_color;
+float4 vslr_sphere; // world centre and radius
+float4 vslr_origin; // published capture centre
+float4 vslr_eye;
+float4 vslr_ray_right, vslr_ray_up, vslr_ray_forward;
+float4 vslr_debug_params; // inverse output width/height, capture radius, exposure
+
+float4 main(float4 pixel : SV_Position) : SV_Target
+{
+    float2 uv = pixel.xy * vslr_debug_params.xy;
+    float2 ndc = uv * float2(2, -2) + float2(-1, 1);
+    float3 ray = normalize(vslr_ray_forward.xyz + ndc.x * vslr_ray_right.xyz + ndc.y * vslr_ray_up.xyz);
+    float3 relative = vslr_eye.xyz - vslr_sphere.xyz;
+    float b = dot(relative, ray);
+    float discriminant = b * b - dot(relative, relative) + vslr_sphere.w * vslr_sphere.w;
+    if (discriminant < 0) discard;
+    float distance = -b - sqrt(discriminant);
+    if (distance <= 0) discard;
+    float3 hitPosition = vslr_eye.xyz + ray * distance;
+    gbuffer_data scene = gbuffer_load_data(uv, pixel.xy);
+    float hitDepth = mul(m_V, float4(hitPosition, 1)).z;
+    if (scene.P.z > 0 && scene.P.z < hitDepth) discard;
+    float3 normal = normalize(hitPosition - vslr_sphere.xyz);
+    float3 reflection = reflect(ray, normal);
+    VslrHit hit = vslr_trace(hitPosition + normal * 0.01f - vslr_origin.xyz,
+        reflection, vslr_debug_params.z, vslr_hit_tolerance);
+    // The weather sky behind directions the capture holds nothing in.
+    float3 sky = SRGBToLinear(max(lerp(env_s0.SampleLevel(smp_base, reflection, 0).rgb,
+        env_s1.SampleLevel(smp_base, reflection, 0).rgb, env_color.w) * env_color.rgb, 0));
+    float3 fallback = vslr_lobe(reflection, 0, sky);
+    float3 colour = fallback;
+    if (hit.confidence > 0)
+        colour = lerp(fallback, vslr_lobe(hit.direction, 0, sky), hit.confidence);
+    // Debug SDR output.
+    colour *= vslr_debug_params.w;
+    return float4(pow(colour / (1 + colour), 1.0f / 2.2f), 1);
+}

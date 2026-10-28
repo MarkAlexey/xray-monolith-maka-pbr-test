@@ -1,0 +1,13 @@
+// The viewer's mirror image (scope_vslr_renderer.cpp, capture_mirror): the viewer's body model lit by
+// scope_vslr_light.ps, premultiplied, with alpha one where the body was drawn, blended over the image
+// before by vslr_capture_params.z (1 shows the new image alone).
+#include "common.h"
+Texture2D vslr_lit;
+Texture2D vslr_mirror_previous;
+float4 vslr_capture_params; // x: inverse image size, z: weight of the new image
+float4 main(float4 pixel : SV_Position) : SV_Target0
+{
+    gbuffer_data body = gbuffer_load_data(pixel.xy * vslr_capture_params.x, pixel.xy);
+    float4 drawn = body.P.z > 0 ? float4(vslr_lit.Load(int3(pixel.xy, 0)).rgb, 1) : 0;
+    return lerp(vslr_mirror_previous.Load(int3(pixel.xy, 0)), drawn, vslr_capture_params.z);
+}

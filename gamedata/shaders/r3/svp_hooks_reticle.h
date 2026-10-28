@@ -1,0 +1,76 @@
+// relocated true-PiP sight-reticle terms, included by scope_custom_reticle.h after scope_3dss_common.h
+#ifndef SVP_HOOKS_RETICLE_INCLUDED
+#define SVP_HOOKS_RETICLE_INCLUDED
+
+#include "svp_hooks_common.h"
+
+bool svp_reticle_kill_chroma()
+{
+	return SVP_TRUE_PIP && svp_control.y > 0.5 && IMAGE_TYPE != IT_THERMAL && IMAGE_TYPE != IT_THERMAL_COLOR;
+}
+
+// no-op, the GAMMA patch's scope_custom_reticle.h still calls it
+float svp_reticle_acog_fiber(float lum)
+{
+	return lum;
+}
+
+// the pip tangent substitutes the eye-coupled field with a centered one of the same rim
+// magnitude, svp_optics.z carries the sine-exact slope and zero falls back to the tan in x
+float2 svp_reticle_tangent(Scope S, float2 V_tangent)
+{
+	if (SVP_TRUE_PIP)
+	{
+		float slope = (svp_optics.z > 0.0001) ? svp_optics.z : svp_optics.x;
+		return -(S.tc0 - 0.5) * slope;
+	}
+	return V_tangent.xy;
+}
+
+// Sight reticle. true PiP adds a true-scale parallax term (svp_optics.y) on the pip tangent
+float2 svp_reticle_t_field(Scope S, float2 V_tangent)
+{
+	float mas = svp_effective_mas(mas_scale());
+	float2 t_field = svp_reticle_tangent(S, V_tangent) * mas;
+	if (SVP_TRUE_PIP && !svp_physical_optics_active())
+		t_field += V_tangent.xy * (mas * svp_optics.y);
+	return t_field;
+}
+
+#ifndef SVP_RETICLE_FLIP_TEST
+#define SVP_RETICLE_FLIP_TEST(S) (ddy(S.tc0.y) < 0.0)
+#endif
+
+// mirror the sample V around the reticle center under true PiP so it matches the auto-flipped world
+// same raw mesh UV test as the image chunk so the two can never disagree
+void svp_reticle_flip(inout float2 reticle_tc, inout float2 reticle_lens_tc, Scope S)
+{
+	if (RETICLE_TYPE != RT_SCREEN && RETICLE_TYPE != RT_FLAT_SCREEN
+		&& SVP_TRUE_PIP && svp_glass.w > 0.5 && SVP_RETICLE_FLIP_TEST(S))
+	{
+		reticle_tc.y = 1.0 - reticle_tc.y;
+		reticle_lens_tc.y = 1.0 - reticle_lens_tc.y;
+	}
+}
+
+void svp_reticle_follow_barrel(
+	inout float2 reticle_tc, inout float2 reticle_lens_tc,
+	float reticle_scale, float lens_reticle_scale, float projection_distance)
+{
+	if (svp_physical_optics_active() && svp_barrel_alignment.z > 0.5)
+	{
+		const float projection_slope = 1.0
+			+ projection_distance * svp_effective_mas(mas_scale()) * svp_optics.x;
+		const float2 correction = svp_barrel_alignment.xy
+			* max(projection_slope, 0.001);
+		reticle_tc -= correction / max(reticle_scale, 0.001);
+		reticle_lens_tc -= correction / max(lens_reticle_scale, 0.001);
+	}
+}
+
+// no-op, the GAMMA patch's scope_custom_reticle.h still calls it
+void svp_reticle_washout(inout float4 result, float lum)
+{
+}
+
+#endif

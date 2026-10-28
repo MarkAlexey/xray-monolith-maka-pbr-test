@@ -3,6 +3,7 @@
 //////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
+#include "bodycam_reference_projection.h"
 #include "igame_level.h"
 #include "igame_persistent.h"
 
@@ -150,6 +151,7 @@ CCameraManager::CCameraManager(bool bApplyOnUpdate)
 #endif
 
 	m_bAutoApply = bApplyOnUpdate;
+	m_base_cam_info_valid = false;
 
 	pp_identity.blur = 0;
 	pp_identity.gray = 0;
@@ -240,6 +242,22 @@ void CCameraManager::RemoveCamEffector(CEffectorCam* ef)
 		{
 			OnEffectorReleased(cam);
 			m_EffectorsCam.erase(it);
+			return;
+		}
+	}
+}
+
+void CCameraManager::RepositionCamEffector(CEffectorCam* ef)
+{
+	for (EffectorCamIt it = m_EffectorsCam.begin(); it != m_EffectorsCam.end(); it++)
+	{
+		if (*it == ef)
+		{
+			m_EffectorsCam.erase(it);
+			if (ef->AbsolutePositioning())
+				m_EffectorsCam.push_back(ef);
+			else
+				m_EffectorsCam.push_front(ef);
 			return;
 		}
 	}
@@ -343,8 +361,38 @@ void CCameraManager::UpdateFromCamera(const CCameraBase* C)
 	       g_pGamePersistent->Environment().CurrentEnv->far_plane, C->m_Flags.flags);
 }
 
+void CCameraManager::ApplyDeviceOverride(const Fvector& P, const Fvector& D, const Fvector& N, float fFOV, float fASPECT,
+	float fFAR, float viewport_near)
+{
+	m_cam_info.p.set(P);
+	m_cam_info.d.set(D);
+	m_cam_info.n.set(N);
+	m_cam_info.d.normalize();
+	m_cam_info.n.normalize();
+	m_cam_info.r.crossproduct(m_cam_info.n, m_cam_info.d);
+	m_cam_info.n.crossproduct(m_cam_info.d, m_cam_info.r);
+	m_cam_info.fFov = fFOV;
+	m_cam_info.fAspect = fASPECT;
+	m_cam_info.fFar = fFAR;
+	m_cam_info.dont_apply = false;
+	ApplyDevice(viewport_near);
+}
+
 void CCameraManager::Update(const Fvector& P, const Fvector& D, const Fvector& N, float fFOV_Dest, float fASPECT_Dest,
                             float fFAR_Dest, u32 flags)
+{
+	UpdateInternal(P, D, N, fFOV_Dest, fASPECT_Dest, fFAR_Dest, flags, false);
+}
+
+void CCameraManager::UpdateReference(const Fmatrix& cameraWorld, float fFOV, float fASPECT, float fFAR)
+{
+	VERIFY(_valid(cameraWorld));
+	UpdateInternal(cameraWorld.c, cameraWorld.k, cameraWorld.j, fFOV, fASPECT, fFAR,
+		CCameraBase::flPositionRigid | CCameraBase::flDirectionRigid, true);
+}
+
+void CCameraManager::UpdateInternal(const Fvector& P, const Fvector& D, const Fvector& N,
+	float fFOV_Dest, float fASPECT_Dest, float fFAR_Dest, u32 flags, bool reference)
 {
 #ifdef DEBUG
     if (!Device.Paused())
@@ -353,6 +401,9 @@ void CCameraManager::Update(const Fvector& P, const Fvector& D, const Fvector& N
         dbg_upd_frame = Device.dwFrame;
     }
 #endif // DEBUG
+	if (m_base_cam_info_valid)
+		m_cam_info = m_base_cam_info;
+
 	// camera
 	if (flags & CCameraBase::flPositionRigid)
 		m_cam_info.p.set(P);
@@ -376,19 +427,32 @@ void CCameraManager::Update(const Fvector& P, const Fvector& D, const Fvector& N
 	m_cam_info.n.crossproduct(m_cam_info.d, m_cam_info.r);
 
 	float aspect = Device.fHeight_2 / Device.fWidth_2;
-	float src = 10 * Device.fTimeDelta;
-	clamp(src, 0.f, 1.f);
-	float dst = 1 - src;
-	m_cam_info.fFov = m_cam_info.fFov * dst + fFOV_Dest * src;
-	m_cam_info.fFar = m_cam_info.fFar * dst + fFAR_Dest * src;
-	m_cam_info.fAspect = m_cam_info.fAspect * dst + (fASPECT_Dest * aspect) * src;
+	if (reference)
+	{
+		m_cam_info.fFov = fFOV_Dest;
+		m_cam_info.fFar = fFAR_Dest;
+		m_cam_info.fAspect = fASPECT_Dest * aspect;
+	}
+	else
+	{
+		float src = 10 * Device.fTimeDelta;
+		clamp(src, 0.f, 1.f);
+		float dst = 1 - src;
+		m_cam_info.fFov = m_cam_info.fFov * dst + fFOV_Dest * src;
+		m_cam_info.fFar = m_cam_info.fFar * dst + fFAR_Dest * src;
+		m_cam_info.fAspect = m_cam_info.fAspect * dst + (fASPECT_Dest * aspect) * src;
+	}
 	m_cam_info.dont_apply = false;
 
+	// Native action and stance effectors layer over the solved Reference base.
 	UpdateCamEffectors();
 
 	UpdatePPEffectors();
 
-	if (false == m_cam_info.dont_apply && m_bAutoApply)
+	m_base_cam_info = m_cam_info;
+	m_base_cam_info_valid = true;
+
+	if (false == m_cam_info.dont_apply && m_bAutoApply && !reference)
 		ApplyDevice(VIEWPORT_NEAR);
 
 	UpdateDeffered();
@@ -501,7 +565,7 @@ void CCameraManager::ApplyDevice(float _viewport_near)
 	Device.fASPECT = m_cam_info.fAspect;
 	//--#SM+# Begin-- +SecondVP+
 	// Recalculate scene FOV for SecondVP frame
-	if (Device.m_SecondViewport.IsSVPFrame())
+	if (!Device.true_pip_on && Device.m_SecondViewport.IsSVPFrame())
 	{
 		// For the second viewport, set FOV from HUD shader constants
 		Device.fFOV = g_pGamePersistent->m_pGShaderConstants->hud_params.y;
@@ -513,7 +577,19 @@ void CCameraManager::ApplyDevice(float _viewport_near)
 		Device.m_SecondViewport.isCamReady = false;
 
 	Device.mProject.build_projection(deg2rad(Device.fFOV), m_cam_info.fAspect, _viewport_near, m_cam_info.fFar);
-	Device.mProjectHud.build_projection(deg2rad(psHUD_FOV * 83.f), Device.fASPECT, R_VIEWPORT_NEAR, m_cam_info.fFar);
+	// pip true hud fov renders the weapon at the scene perspective while fully aimed through a PiP scope
+	extern int g_svp_hud_true_fov;
+	const float hud_fov_deg = BodycamReference::HudProjectionFov(
+		Device.dwFrame, Device.reference_hud_projection_frame, Device.fFOV, psHUD_FOV * BodycamReference::kHudFovDegrees,
+		g_svp_hud_true_fov && Device.true_pip_on && Device.m_SecondViewport.IsSVPActive()
+		&& g_pGamePersistent && g_pGamePersistent->m_pGShaderConstants->hud_params.x > 0.999f,
+		Device.reference_hud_nearwall_scale);
+	Device.mProjectHud.build_projection(deg2rad(hud_fov_deg), Device.fASPECT, R_VIEWPORT_NEAR, m_cam_info.fFar);
+
+    const float referenceClipScale=BodycamReference::HudProjectionClipScale(
+        Device.dwFrame,Device.reference_hud_projection_frame,Device.reference_hud_clip_scale);
+    Device.mProjectHud._11*=referenceClipScale;
+    Device.mProjectHud._22*=referenceClipScale;
 
 	Device.mInvProject.invert(Device.mProject);
 	Device.mInvProjectHud.invert(Device.mProjectHud);
@@ -522,29 +598,33 @@ void CCameraManager::ApplyDevice(float _viewport_near)
 	if (g_pGamePersistent && g_pGamePersistent->m_pMainMenu->IsActive())
 		ResetPP();
 	else
-	{
-		pp_affected.validate("apply device");
-		// postprocess
-		IRender_Target* T = ::Render->getTarget();
-		T->set_duality_h(pp_affected.duality.h);
-		T->set_duality_v(pp_affected.duality.v);
-		T->set_blur(pp_affected.blur);
-		T->set_gray(pp_affected.gray);
-		T->set_noise(pp_affected.noise.intensity);
+		ApplyPP();
+}
 
-		clamp(pp_affected.noise.grain, EPS_L, 1000.0f);
+// pip the pp half of ApplyDevice, callable on its own
+void CCameraManager::ApplyPP()
+{
+	pp_affected.validate("apply device");
+	// postprocess
+	IRender_Target* T = ::Render->getTarget();
+	T->set_duality_h(pp_affected.duality.h);
+	T->set_duality_v(pp_affected.duality.v);
+	T->set_blur(pp_affected.blur);
+	T->set_gray(pp_affected.gray);
+	T->set_noise(pp_affected.noise.intensity);
 
-		T->set_noise_scale(pp_affected.noise.grain);
+	clamp(pp_affected.noise.grain, EPS_L, 1000.0f);
 
-		T->set_noise_fps(pp_affected.noise.fps);
-		T->set_color_base(pp_affected.color_base);
-		T->set_color_gray(pp_affected.color_gray);
-		T->set_color_add(pp_affected.color_add);
+	T->set_noise_scale(pp_affected.noise.grain);
 
-		T->set_cm_imfluence(pp_affected.cm_influence);
-		T->set_cm_interpolate(pp_affected.cm_interpolate);
-		T->set_cm_textures(pp_affected.cm_tex1, pp_affected.cm_tex2);
-	}
+	T->set_noise_fps(pp_affected.noise.fps);
+	T->set_color_base(pp_affected.color_base);
+	T->set_color_gray(pp_affected.color_gray);
+	T->set_color_add(pp_affected.color_add);
+
+	T->set_cm_imfluence(pp_affected.cm_influence);
+	T->set_cm_interpolate(pp_affected.cm_interpolate);
+	T->set_cm_textures(pp_affected.cm_tex1, pp_affected.cm_tex2);
 }
 
 void CCameraManager::ResetPP()

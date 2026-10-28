@@ -47,11 +47,14 @@ void ActivationFailed(const char* reason, const char* recovery)
     ShowBackendError(Method());
 }
 const char* BackendReason(const char* fallback) { return backendError[0] ? backendError : fallback; }
+// PiP double pass: the scope viewport renders into its own target at its own size, so while it is
+// the active target the upscaler steps aside (no render-size viewport, own depth, no jitter)
+bool ScopeTarget() { return Device.m_SecondViewport.m_render_pass_is_svp; }
 void ResetHistory() { backend.ResetHistory(); fsrBackend.ResetHistory(); }
 }
 
-unsigned RenderScreenWidth() { return inScene ? dlss::RenderWidth() : Device.dwWidth; }
-unsigned RenderScreenHeight() { return inScene ? dlss::RenderHeight() : Device.dwHeight; }
+unsigned RenderScreenWidth() { return inScene && !ScopeTarget() ? dlss::RenderWidth() : Device.dwWidth; }
+unsigned RenderScreenHeight() { return inScene && !ScopeTarget() ? dlss::RenderHeight() : Device.dwHeight; }
 
 namespace dlss
 {
@@ -189,10 +192,11 @@ void ShutdownDevice() { ReleaseTargets(); backend.Shutdown(); }
 unsigned RenderWidth() { return renderSize.Valid() ? renderSize.width : Device.dwWidth; }
 unsigned RenderHeight() { return renderSize.Valid() ? renderSize.height : Device.dwHeight; }
 bool Configured() { return configured; }
-bool Active() { return configured && inScene && mainView && (useFsr ? fsrBackend.Ready() : backend.Ready()); }
-Offset RasterJitter() { return rasterJitter; }
+bool Active() { return configured && inScene && mainView && !ScopeTarget() && (useFsr ? fsrBackend.Ready() : backend.Ready()); }
+Offset RasterJitter() { return ScopeTarget() ? Offset{} : rasterJitter; }
+bool ScopePass() { return ScopeTarget(); }
 Offset PreviousRasterJitter() { return previousJitter; }
-ID3DDepthStencilView* SceneDepth() { return inScene && configured ? sceneDepthView.Get() : HW.pBaseZB; }
+ID3DDepthStencilView* SceneDepth() { return inScene && configured && !ScopeTarget() ? sceneDepthView.Get() : HW.pBaseZB; }
 ID3D11Texture2D* SceneDepthTexture() { return sceneDepth.Get(); }
 ID3D11Texture2D* Output() { return useFsr ? fsrBackend.Output() : backend.Output(); }
 

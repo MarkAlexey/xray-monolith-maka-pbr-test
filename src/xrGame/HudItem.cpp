@@ -87,6 +87,10 @@ void CHudItem::Load(LPCSTR section)
 	m_nearwall_target_hud_fov = READ_IF_EXISTS(pSettings, r_float, section, "nearwall_target_hud_fov", 0.27f);
 	m_nearwall_speed_mod = READ_IF_EXISTS(pSettings, r_float, section, "nearwall_speed_mod", 10.f);
 	m_base_fov = READ_IF_EXISTS(pSettings, r_float, section, "hud_fov", 0.f);
+	// Both trajectories start at the same loaded, unobstructed native FOV.
+	// Never seed the counterfactual from an uninitialized smoothing accumulator.
+	m_hud_fov = m_hud_fov_without_nearwall = GetBaseHudFov();
+	m_hud_fov_baseline_initialized = true;
 
 	// Rezy - Custom Script 3D UI
 	script_ui_funct = READ_IF_EXISTS(pSettings, r_string, section, "custom_ui_func", nullptr);
@@ -504,6 +508,11 @@ static float lerp(float a, float b, float t)
 	return a * (1 - t) + b * t;
 }
 
+float CHudItem::GetTargetHudFovWithoutNearWall()
+{
+	return GetBaseHudFov();
+}
+
 float CHudItem::GetTargetHudFov()
 {
 	float target_fov = GetBaseHudFov();
@@ -716,6 +725,7 @@ extern float g_end_modif;
 
 u32 CHudItem::PlayHUDMotion(shared_str M, BOOL bMixIn, CHudItem* W, u32 state, float speed, float end, bool bMixIn2)
 {
+    const shared_str requestedMotion=M;
 	if (IsAttachedToHUD())
 	{
 		::luabind::functor<::luabind::object> funct;
@@ -755,9 +765,13 @@ u32 CHudItem::PlayHUDMotion(shared_str M, BOOL bMixIn, CHudItem* W, u32 state, f
 			Msg("!Missing hud animation %s", *M);
 			return 0;
 		}
+		// Sprint-entry probe: only an authored transition swapped in by a script
+		// plays now; the plain sprint clip waits for full sprint.
+		if (m_bodycam_entry_probe && M == requestedMotion)
+			return 0;
 	}
 
-	u32 anim_time = PlayHUDMotion_noCB(M, bMixIn, speed, bMixIn2);
+    u32 anim_time = PlayHUDMotion_noCB(M, bMixIn, speed, bMixIn2);
 	if (anim_time > 0)
 	{
 		m_bStopAtEndAnimIsRunning = true;
@@ -785,6 +799,11 @@ u32 CHudItem::PlayHUDMotion(shared_str M, BOOL bMixIn, CHudItem* W, u32 state, f
 	else
 		m_bStopAtEndAnimIsRunning = false;
 
+	if (m_bodycam_entry_probe)
+	{
+		m_bodycam_entry_clip = anim_time > 0;
+		m_bodycam_entry_motion = m_current_motion;
+	}
 	return anim_time;
 }
 
@@ -858,7 +877,12 @@ bool CHudItem::TryPlayAnimIdle()
 
 			CEntity::SEntityState st;
 			pActor->g_State(st);
-			if (st.bSprint)
+			// Reference owns the sprint pose. Keep the native idle grip underneath it;
+			// playing anm_idle_sprint as well introduces a second, immediate raise.
+			// Walk/crouch clips, actions and Classic keep their native selection.
+			if (st.bSprint && g_player_hud && g_player_hud->ReferenceOwnsMotion(this))
+				return false;
+			if (st.bSprint && pActor->BodycamSprintAnimReady())
 			{
 				PlayAnimIdleSprint();
 				return true;
@@ -1109,7 +1133,26 @@ void CHudItem::Ray(SPickParam& pp)
 		);
 
 		// Transform from non-offset HUD space to world space
-		Device.hud_to_world(matrix, proj);
+		// the pick remaps through the actor's real eye under demo_record
+		if (Level().Cameras().GetCamEffector(cefDemo))
+		{
+			CCameraBase* c = const_cast<CActor*>(pActor)->cam_FirstEye();
+			Fmatrix view;
+			view.build_camera_dir(c->vPosition, c->vDirection, c->vNormal);
+			Fmatrix inv_view;
+			inv_view.invert(view);
+			Fmatrix mproj;
+			mproj.build_projection(
+				deg2rad(c->f_fov),
+				Device.fASPECT,
+				R_VIEWPORT_NEAR,
+				g_pGamePersistent->Environment().CurrentEnv->far_plane);
+			Fmatrix inv_proj;
+			inv_proj.invert(mproj);
+			Device.hud_to_world(matrix, proj, view, inv_view, inv_proj);
+		}
+		else
+			Device.hud_to_world(matrix, proj);
 	}
 
 	// Detect wall penetration
@@ -1196,6 +1239,11 @@ void CHudItem::OnFrame()
 	float t = m_nearwall_speed_mod * Device.fTimeDelta;
 
 	float target_fov = GetTargetHudFov();
+	if (!m_hud_fov_baseline_initialized) {
+		m_hud_fov_without_nearwall = m_hud_fov;
+		m_hud_fov_baseline_initialized = true;
+	}
+	m_hud_fov_without_nearwall = lerp(m_hud_fov_without_nearwall, GetTargetHudFovWithoutNearWall(), t);
 	m_hud_fov = lerp(m_hud_fov, target_fov, t);
 
 	float target_ofs = GetTargetNearWallOffset();

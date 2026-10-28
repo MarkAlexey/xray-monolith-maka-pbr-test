@@ -1,5 +1,6 @@
 #include "pch_script.h"
 #include "actor.h"
+#include "player_hud.h"
 #include "hudmanager.h"
 #include "Actor_Flags.h"
 #include "inventory.h"
@@ -722,6 +723,7 @@ void CActor::net_Destroy()
 {
 	m_bone_springs.detach();
 
+    if(g_player_hud&&g_player_hud->ReferenceActor()==this)g_player_hud->ResetReferenceHost();
 	inherited::net_Destroy();
 
 	if (m_holder_id != ALife::_OBJECT_ID(-1))

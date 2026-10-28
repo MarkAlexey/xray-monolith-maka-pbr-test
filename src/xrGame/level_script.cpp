@@ -995,6 +995,9 @@ bool getCamEffectorTransformData(::luabind::object& t, LPCSTR animationFile)
 // demonized: Set custom camera position and direction with movement smoothing (for cutscenes, etc)
 void set_cam_position_direction(Fvector& position, Fvector& direction, unsigned int smoothing, bool hudEnabled, bool hudAffect)
 {
+	if (!g_pGameLevel || !Actor())
+		return;
+
 	CActor* actor = Actor();
 	actor->initFPCam();
 	actor->m_FPCam->m_HPB.set(direction);
@@ -1002,6 +1005,7 @@ void set_cam_position_direction(Fvector& position, Fvector& direction, unsigned 
 	actor->m_FPCam->m_customSmoothing = _max(1, smoothing);
 	actor->m_FPCam->hudEnabled = hudEnabled;
 	actor->m_FPCam->SetHudAffect(hudAffect);
+	actor->m_FPCam->m_releasing = false;
 }
 
 void set_cam_position_direction(Fvector& position, Fvector& direction)
@@ -1021,8 +1025,108 @@ void set_cam_position_direction(Fvector& position, Fvector& direction, unsigned 
 
 void remove_cam_position_direction() 
 {
+	if (!g_pGameLevel || !Actor())
+		return;
+
 	CActor* actor = Actor();
 	actor->removeFPCam();
+}
+
+// Smoothed release, hands the camera back to the base pose over smoothing ema steps then self-removes
+void remove_cam_position_direction(float smoothing)
+{
+	if (!g_pGameLevel || !Actor())
+		return;
+
+	CActor* actor = Actor();
+	if (!actor->m_FPCam)
+		return;
+
+	actor->m_FPCam->m_customSmoothing = _max(1, (unsigned int)smoothing);
+	actor->m_FPCam->m_releasing = true;
+}
+
+// fov clamp bounds match the fov console command, console_commands.cpp line 2664
+const float g_cam_custom_fov_min = 5.0f;
+const float g_cam_custom_fov_max = 180.0f;
+
+// Override fov on the active FPCam effector, <=0 clears it
+void set_cam_custom_fov(float fov)
+{
+	CActor* actor = Actor();
+	if (!actor || !actor->m_FPCam)
+		return;
+
+	if (fov <= 0.0f)
+	{
+		actor->m_FPCam->SetFov(-1.0f);
+		return;
+	}
+
+	clamp(fov, g_cam_custom_fov_min, g_cam_custom_fov_max);
+	actor->m_FPCam->SetFov(fov);
+}
+
+void remove_cam_custom_fov()
+{
+	CActor* actor = Actor();
+	if (!actor || !actor->m_FPCam)
+		return;
+
+	actor->m_FPCam->SetFov(-1.0f);
+}
+
+bool is_cam_custom_active()
+{
+	CActor* actor = Actor();
+	return actor && actor->m_FPCam;
+}
+
+// Toggle exclusive positioning, when it flips on a live effector reposition it in the manager list
+void set_cam_custom_exclusive(bool exclusive)
+{
+	if (!g_pGameLevel || !Actor())
+		return;
+
+	CActor* actor = Actor();
+	if (!actor->m_FPCam || actor->m_FPCam->m_exclusive == exclusive)
+		return;
+
+	actor->m_FPCam->m_exclusive = exclusive;
+	actor->Cameras().RepositionCamEffector(actor->m_FPCam);
+}
+
+// Current FPCam target position, symmetric with the setter, zero vector when inactive
+Fvector get_cam_custom_position()
+{
+	CActor* actor = Actor();
+	if (!actor || !actor->m_FPCam)
+		return Fvector().set(0, 0, 0);
+
+	return actor->m_FPCam->m_Position;
+}
+
+// Current FPCam target head/pitch/roll, symmetric with the setter, zero vector when inactive
+Fvector get_cam_custom_direction()
+{
+	CActor* actor = Actor();
+	if (!actor || !actor->m_FPCam)
+		return Fvector().set(0, 0, 0);
+
+	return actor->m_FPCam->m_HPB;
+}
+
+// Pin freezes the viewmodel anchor at the base pose captured on enable, pin wins over hud affect motion
+// disabling clears the capture so a later enable snapshots fresh, no-op without an active FPCam
+void set_cam_custom_hud_pin(bool enable)
+{
+	CActor* actor = Actor();
+	if (!actor || !actor->m_FPCam)
+		return;
+
+	actor->m_FPCam->m_hud_pin = enable;
+	if (!enable)
+		actor->m_FPCam->m_hud_pin_captured = false;
 }
 
 void remove_cam_effector(int id)
@@ -1047,6 +1151,54 @@ float get_cam_effector_length(int id)
 {
 	CAnimatorCamEffectorScriptCB* e = smart_cast<CAnimatorCamEffectorScriptCB*>(Actor()->Cameras().GetCamEffector((ECamEffectorType)id));
 	return e ? e->GetAnimatorLength() : 0.0f;
+}
+
+// drives the effector fov live without forcing absolute positioning, 0 clears
+void set_cam_effector_fov(int id, float fov)
+{
+	CAnimatorCamEffectorScriptCB* e = smart_cast<CAnimatorCamEffectorScriptCB*>(Actor()->Cameras().GetCamEffector((ECamEffectorType)id));
+	if (e)
+		e->m_fov = clampr(fov, 0.f, 170.f);
+}
+
+float get_cam_effector_fov(int id)
+{
+	CAnimatorCamEffectorScriptCB* e = smart_cast<CAnimatorCamEffectorScriptCB*>(Actor()->Cameras().GetCamEffector((ECamEffectorType)id));
+	return e ? e->m_fov : 0.0f;
+}
+
+u32 queue_actor_camera_delta(float yaw_delta, float pitch_delta)
+{
+	CActor* actor = Actor();
+	return actor ? actor->cam_QueueScriptCameraDelta(yaw_delta, pitch_delta) : 0;
+}
+
+// Angular mouse look for script-only motion tests; shares queue/ack/cancellation.
+u32 queue_actor_mouse_look(float yaw_delta, float pitch_delta)
+{
+	CActor* actor = Actor();
+	return actor ? actor->cam_QueueScriptCameraDelta(yaw_delta, pitch_delta, true) : 0;
+}
+
+u32 poll_actor_camera_delta(u32 request_id, float& yaw, float& pitch)
+{
+	CActor* actor = Actor();
+	CActor::EScriptCameraDeltaStatus status;
+	Fvector2 applied = { 0.f, 0.f };
+	yaw = 0.f;
+	pitch = 0.f;
+	if (!actor || !actor->cam_PollScriptCameraDelta(request_id, status, applied))
+		return 0;
+
+	yaw = applied.x;
+	pitch = applied.y;
+	return status + 1;
+}
+
+bool cancel_actor_camera_delta(u32 request_id)
+{
+	CActor* actor = Actor();
+	return actor && actor->cam_CancelScriptCameraDelta(request_id);
 }
 
 
@@ -1752,6 +1904,11 @@ u32 PlayHudMotion(u8 hand, LPCSTR itm_name, LPCSTR anm_name, bool bMixIn = true,
 	return g_player_hud->script_anim_play(hand, itm_name, anm_name, bMixIn, speed);
 }
 
+u32 PlayHudMotionBodycam(u8 hand, LPCSTR itm_name, LPCSTR anm_name, bool bMixIn, float speed, float lowering_influence)
+{
+	return g_player_hud->script_anim_play(hand, itm_name, anm_name, bMixIn, speed, lowering_influence);
+}
+
 void StopHudMotion()
 {
 	g_player_hud->StopScriptAnim();
@@ -1782,6 +1939,12 @@ bool MotionExists(LPCSTR model_path, LPCSTR motion_name)
 void PlayBlendAnm(LPCSTR name, u8 part, float speed, float power, bool bLooped, bool no_restart, LPCSTR pivot_bone)
 {
 	g_player_hud->PlayBlendAnm(name, part, speed, power, bLooped, no_restart, pivot_bone);
+}
+
+void PlayBlendAnmBodycam(LPCSTR name, u8 part, float speed, float power, bool bLooped, bool no_restart,
+	LPCSTR pivot_bone, float lowering_influence)
+{
+	g_player_hud->PlayBlendAnm(name, part, speed, power, bLooped, no_restart, pivot_bone, lowering_influence);
 }
 
 void StopBlendAnm(LPCSTR name, bool bForce)
@@ -2248,6 +2411,12 @@ bool actor_safemode()
 
 void actor_set_safemode(bool status)
 {
+	// Classic sprint transition: lowering asked for during the sprint start
+	// waits for full sprint speed; a raise cancels a waiting lowering.
+	if (!status)
+		Actor()->BodycamCancelSprintLowering();
+	else if (Actor()->BodycamDeferSprintLowering())
+		return;
 	if (Actor()->is_safemode() != status)
 	{
 		CWeapon* wep = smart_cast<CWeapon*>(Actor()->inventory().ActiveItem());
@@ -2825,7 +2994,17 @@ void CLevel::script_register(lua_State* L)
 			def("set_cam_custom_position_direction", ((void (*)(Fvector&, Fvector&, unsigned int, bool))&set_cam_position_direction)),
 			def("set_cam_custom_position_direction", ((void (*)(Fvector&, Fvector&, unsigned int))&set_cam_position_direction)),
 			def("set_cam_custom_position_direction", ((void (*)(Fvector&, Fvector&))&set_cam_position_direction)),
-			def("remove_cam_custom_position_direction", &remove_cam_position_direction),
+			def("remove_cam_custom_position_direction", ((void (*)())&remove_cam_position_direction)),
+			def("remove_cam_custom_position_direction", ((void (*)(float))&remove_cam_position_direction)),
+
+			// Override fov on the active FPCam effector, <=0 clears it
+			def("set_cam_custom_fov", &set_cam_custom_fov),
+			def("remove_cam_custom_fov", &remove_cam_custom_fov),
+			def("is_cam_custom_active", &is_cam_custom_active),
+			def("set_cam_custom_exclusive", &set_cam_custom_exclusive),
+			def("get_cam_custom_position", &get_cam_custom_position),
+			def("get_cam_custom_direction", &get_cam_custom_direction),
+			def("set_cam_custom_hud_pin", &set_cam_custom_hud_pin),
 
             def("add_cam_effector", ((float (*)(LPCSTR, int, bool, LPCSTR))& add_cam_effector)),
             def("add_cam_effector", ((float (*)(LPCSTR, int, bool, LPCSTR, float))& add_cam_effector)),
@@ -2837,6 +3016,13 @@ void CLevel::script_register(lua_State* L)
 			def("set_cam_effector_factor", &set_cam_effector_factor),
 			def("get_cam_effector_factor", &get_cam_effector_factor),
 			def("get_cam_effector_length", &get_cam_effector_length),
+			def("set_cam_effector_fov", &set_cam_effector_fov),
+			def("get_cam_effector_fov", &get_cam_effector_fov),
+			def("queue_actor_camera_delta", &queue_actor_camera_delta),
+			def("queue_actor_mouse_look", &queue_actor_mouse_look),
+			def("poll_actor_camera_delta", &poll_actor_camera_delta,
+				pure_out_value<2>() + pure_out_value<3>()),
+			def("cancel_actor_camera_delta", &cancel_actor_camera_delta),
 			def("check_cam_effector", &check_cam_effector),
 
 			def("add_pp_effector", &add_pp_effector),
@@ -3033,11 +3219,13 @@ void CLevel::script_register(lua_State* L)
 		def("reload_language", &reload_language),
 		def("get_resolutions", &vid_modes_string),
 		def("play_hud_motion", PlayHudMotion),
+		def("play_hud_motion_bodycam", PlayHudMotionBodycam),
 		def("stop_hud_motion", StopHudMotion),
 		def("get_motion_length", MotionLength),
 		def("hud_motion_allowed", AllowHudMotion),
 		def("motion_exists", MotionExists),
 		def("play_hud_anm", PlayBlendAnm),
+		def("play_hud_anm_bodycam", PlayBlendAnmBodycam),
 		def("stop_hud_anm", StopBlendAnm),
 		def("stop_all_hud_anms", StopAllBlendAnms),
 		def("set_hud_anm_time", SetBlendAnmTime),

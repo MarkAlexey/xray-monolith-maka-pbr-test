@@ -126,6 +126,7 @@ void CStepManager::on_animation_start(MotionID motion_id, CBlend* blend)
 		m_object->character_ik_controller()->PlayLegs(blend);
 
 	m_time_anim_started = Device.dwTimeGlobal;
+    m_reference_phase_valid=false;
 
 	// искать текущую анимацию в STEPS_MAP
 	STEPS_MAP_IT it = m_steps_map.find(motion_id);
@@ -172,6 +173,7 @@ void CStepManager::update(bool b_hud_view)
 		// получить параметры шага
 		SStepParam& step = m_step_info.params;
 		u32 cur_time = Device.dwTimeGlobal;
+        const bool reference=m_reference_phase_valid && m_reference_phase_frame==Device.dwFrame;
 
 		// время одного цикла анимации
 		float cycle_anim_time = get_blend_time() / step.cycles;
@@ -183,13 +185,13 @@ void CStepManager::update(bool b_hud_view)
 		for (u32 i = 0; i < m_legs_count; i++)
 		{
 			// если событие уже обработано для этой ноги, то skip
-			if (m_step_info.activity[i].handled && (m_step_info.activity[i].cycle == m_step_info.cur_cycle))
+			if (!reference && m_step_info.activity[i].handled && (m_step_info.activity[i].cycle == m_step_info.cur_cycle))
 				continue;
 
 			// вычислить смещённое время шага в соответствии с параметрами анимации ходьбы
 			u32 offset_time = m_time_anim_started + u32(
 				1000 * (cycle_anim_time * (m_step_info.cur_cycle - 1) + cycle_anim_time * step.step[i].time));
-			if (offset_time <= cur_time)
+			if (reference ? (m_reference_contacts & (1u<<i))!=0 : offset_time <= cur_time)
 			{
 				if (!material_picked)
 				{
@@ -256,12 +258,12 @@ void CStepManager::update(bool b_hud_view)
 		}
 
 		// определить текущий цикл
-		if (m_step_info.cur_cycle < step.cycles)
+		if (!reference && m_step_info.cur_cycle < step.cycles)
 			m_step_info.cur_cycle = 1 + u8(float(cur_time - m_time_anim_started) / (1000.f * cycle_anim_time));
 
 		// если анимация циклическая...
 		u32 time_anim_end = m_time_anim_started + u32(get_blend_time() * 1000); // время завершения работы анимации
-		if (!m_blend->stop_at_end && (time_anim_end < cur_time))
+		if (!reference && !m_blend->stop_at_end && (time_anim_end < cur_time))
 		{
 			m_time_anim_started = time_anim_end;
 			m_step_info.cur_cycle = 1;

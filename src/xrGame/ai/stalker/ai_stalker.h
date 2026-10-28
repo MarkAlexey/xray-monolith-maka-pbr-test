@@ -443,7 +443,7 @@ private:
 public:
 	virtual void on_weapon_shot_start(CWeapon* weapon);
 	virtual void on_weapon_shot_update();
-	virtual void on_weapon_shot_stop();
+	virtual void on_weapon_shot_stop(CWeapon* weapon);
 	virtual void on_weapon_shot_remove(CWeapon* weapon);
 	virtual void on_weapon_hide(CWeapon* weapon);
 	IC CWeaponShotEffector& weapon_shot_effector() const;

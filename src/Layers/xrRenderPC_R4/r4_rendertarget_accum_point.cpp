@@ -32,10 +32,18 @@ void CRenderTarget::accum_point_impl(Light* L, u32& marker)
 	RCache.set_xform_world(L->m_xform);
 	RCache.set_xform_view(RenderCameraView());
 	RCache.set_xform_project(RenderCameraProjection());
+	// built per call so the svp replay of this light clips to its own viewport (the recorded
+	// worker path gets its scissor from the recording and is left as it was)
+	Irect scissor_rect;
+	BOOL scissored = FALSE;
     if constexpr (!Recorded)
     {
-        enable_scissor(L);
-        enable_dbt_bounds(L);
+        const BOOL near_intersect = enable_scissor(L);
+        if (ps_r__light_scissor && compute_light_scissor(L, near_intersect, scissor_rect))
+        {
+            RCache.set_Scissor(&scissor_rect);
+            scissored = TRUE;
+        }
     }
 
 	// *****************************	Mask by stencil		*************************************
@@ -209,12 +217,13 @@ void CRenderTarget::accum_point_impl(Light* L, u32& marker)
 	}
 
 	//CHK_DX		(HW.pDevice->SetRenderState(D3DRS_SCISSORTESTENABLE,FALSE));
-	RCache.set_Scissor(0);
+	// later passes must not inherit this light's rect
+	if (scissored)
+		RCache.set_Scissor(nullptr);
 
 	//dwLightMarkerID					+=	2;	// keep lowest bit always setted up
 	increment_light_marker(marker);
 
-	u_DBT_disable();
 }
 
 void CRenderTarget::accum_point(light* L)

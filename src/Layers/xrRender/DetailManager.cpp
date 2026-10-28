@@ -95,6 +95,7 @@ CDetailManager::CDetailManager()
     m_frame_calc = 0;
     m_visible_bounds.invalidate();
     m_frame_rendered.store(0, std::memory_order_relaxed);
+    m_mt_calc_registration_tid = 0;
 
 #ifdef DETAIL_RADIUS
 	// KD: variable detail radius
@@ -271,6 +272,7 @@ void CDetailManager::Load()
 	{
 		// MT-details (@front)
 		Device.seqParallelRender.push_back(xr_make_delegate(this, &CDetailManager::MT_CALC));
+		m_mt_calc_registration_tid = GetCurrentThreadId(); // the thread that queues the worker call
 	}
 }
 #endif
@@ -330,7 +332,9 @@ void CDetailManager::UpdateVisibleM()
 	float r_ssaCHEAP = 16 * ssa_discard;
     float fade_start_ssa = ssa_discard * ps_r__ssaDISCARD_fade_k;
 
-	const bool fill_bounds = ps_r__detail_shadow_cull != 0;
+	// pip the scope pass culls its spans by the same slot spheres, a frame without them draws unculled
+	const bool fill_bounds = ps_r__detail_shadow_cull != 0 ||
+		(ps_r__svp_grass_cull != 0 && RDEVICE.true_pip_on && RDEVICE.m_SecondViewport.IsSVPActive());
 	if (fill_bounds)
 	{
 		for (u32 k = 0; k < 3; k++)
@@ -409,9 +413,16 @@ void CDetailManager::UpdateVisibleM()
 					}
 				}
 #ifndef _EDITOR
-				if (!RImplementation.HOM.visible(S.vis))
 				{
-					continue; // invisible-occlusion
+					extern int ps_r__svp_stats;
+					extern u32 svp_stats_hom_tested;
+					extern u32 svp_stats_hom_rejected;
+					if (ps_r__svp_stats) ++svp_stats_hom_tested;
+					if (!RImplementation.HOM.visible(S.vis))
+					{
+						if (ps_r__svp_stats) ++svp_stats_hom_rejected;
+						continue; // invisible-occlusion
+					}
 				}
 #endif
 				// Add to visibility structures
@@ -429,7 +440,7 @@ void CDetailManager::UpdateVisibleM()
 					float alpha_i = 1.f - alpha;
 					float dist_sq_rcp = 1.f / dist_sq;
 
-					if(ps_r2_ls_flags.test(R2FLAG_FAST_DETAILS_UPDATE))
+					if(ps_r2_ls_flags_ext.test(R2FLAGEXT_FAST_DETAILS_UPDATE))
 						S.frame			= RDEVICE.dwFrame+1;
 					else
 						S.frame			= RDEVICE.dwFrame+Random.randI(15,30);
@@ -683,6 +694,11 @@ void __stdcall CDetailManager::MT_CALC()
 
 	if (frame_calc != current_frame && (frame_rendered + 1) == current_frame)
 	{
+		extern int ps_r__svp_stats;
+		extern u32 svp_stats_detail_main_thread;
+		if (ps_r__svp_stats && GetCurrentThreadId() == m_mt_calc_registration_tid)
+			++svp_stats_detail_main_thread; // ran on the queuing thread, the worker task never picked it up
+
 		Fvector EYE = RDEVICE.vCameraPosition_saved;
 
 		int s_x = iFloor(EYE.x / dm_slot_size + .5f);

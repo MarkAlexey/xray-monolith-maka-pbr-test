@@ -15,6 +15,10 @@
 
 #include "StateManager/dx10ShaderResourceStateCache.h"
 
+#if RENDER == R_R4
+#include "../xrRenderPC_R4/r4_reticle_vector.h"
+#endif
+
 #define		PRIORITY_HIGH	12
 #define		PRIORITY_NORMAL	8
 #define		PRIORITY_LOW	4
@@ -67,7 +71,7 @@ CTexture::~CTexture()
 
 void CTexture::surface_set(ID3DBaseTexture* surf)
 {
-	while (flags.bLoading)
+	while (IsLoading())
 	{
 		SwitchToThread();
 	}
@@ -148,7 +152,7 @@ void CTexture::surface_set(ID3DBaseTexture* surf)
 
 ID3DBaseTexture* CTexture::surface_get()
 {
-	while (flags.bLoading)
+	while (IsLoading())
 	{
 		SwitchToThread();
 	}
@@ -178,7 +182,7 @@ void CTexture::apply_load(u32 dwStage)
         // loading-screen thread during level load - neither is safe in the MT build).
         // Queue the (re)load the same way _CreateTexture() does for new textures instead;
         // bLoading guards against re-queuing every call while that's in flight.
-        if (!flags.bLoading)
+        if (!IsLoading())
         {
 #ifdef DEBUG
             Msg("* [TexReload] queued: %s", cName.c_str());
@@ -298,7 +302,7 @@ void CTexture::ProcessStaging()
 
 void CTexture::Apply(u32 dwStage)
 {
-	while (flags.bLoading)
+	while (IsLoading())
 	{
 		SwitchToThread();
 	}
@@ -355,7 +359,7 @@ void CTexture::Apply(u32 dwStage)
 
 void CTexture::apply_theora(u32 dwStage)
 {
-	while (flags.bLoading)
+	while (IsLoading())
 	{
 		SwitchToThread();
 	}
@@ -398,7 +402,7 @@ void CTexture::apply_theora(u32 dwStage)
 
 void CTexture::apply_avi(u32 dwStage)
 {
-	while (flags.bLoading)
+	while (IsLoading())
 	{
 		SwitchToThread();
 	}
@@ -434,7 +438,7 @@ void CTexture::apply_avi(u32 dwStage)
 
 void CTexture::apply_seq(u32 dwStage)
 {
-	while (flags.bLoading)
+	while (IsLoading())
 	{
 		SwitchToThread();
 	}
@@ -460,7 +464,7 @@ void CTexture::apply_seq(u32 dwStage)
 
 void CTexture::apply_gif(u32 dwStage)
 {
-	while (flags.bLoading)
+	while (IsLoading())
 	{
 		SwitchToThread();
 	}
@@ -477,7 +481,7 @@ void CTexture::apply_gif(u32 dwStage)
 
 void CTexture::apply_normal(u32 dwStage)
 {
-	while (flags.bLoading)
+	while (IsLoading())
 	{
 		SwitchToThread();
 	}
@@ -694,6 +698,14 @@ void CTexture::Load()
 	{
 		// Normal texture
 		u32 mem = 0;
+#if RENDER == R_R4
+		// Vector reticle: built from <name>.svg when that is the texture's source (r4_reticle_vector.cpp)
+		float glow_size = 0.f;
+		pSurface = reticle_vector_texture_load(*cName, mem, glow_size);
+		if (pSurface)
+			reticle_glow_size = glow_size;
+		else
+#endif
 		//pSurface = ::RImplementation.texture_load	(*cName,mem);
 		pSurface = ::RImplementation.texture_load(*cName, mem, true);
 
@@ -720,12 +732,16 @@ void CTexture::Load()
 
 void CTexture::Unload()
 {
-	while (flags.bLoading)
+	while (IsLoading())
 	{
 		SwitchToThread();
 	}
 
-	// Already unloaded or never loaded: nothing to do.
+#if RENDER == R_R4
+	// Reticle atlas: read the glow size again if this texture is loaded again.
+	reticle_glow_size = -1.f;
+#endif
+	// Already unloaded or never loaded: no GPU resources to release.
 	if (!flags.bLoaded)
 		return;
 #ifdef DEBUG
@@ -771,7 +787,7 @@ void CTexture::Unload()
 
 void CTexture::desc_update()
 {
-	while (flags.bLoading)
+	while (IsLoading())
 	{
 		SwitchToThread();
 	}
@@ -835,7 +851,7 @@ D3D_USAGE CTexture::GetUsage()
 
 void CTexture::video_Play(BOOL looped, u32 _time)
 {
-	while (flags.bLoading)
+	while (IsLoading())
 	{
 		SwitchToThread();
 	}
@@ -844,7 +860,7 @@ void CTexture::video_Play(BOOL looped, u32 _time)
 
 void CTexture::video_Pause(BOOL state)
 {
-	while (flags.bLoading)
+	while (IsLoading())
 	{
 		SwitchToThread();
 	}
@@ -853,7 +869,7 @@ void CTexture::video_Pause(BOOL state)
 
 void CTexture::video_Stop()
 {
-	while (flags.bLoading)
+	while (IsLoading())
 	{
 		SwitchToThread();
 	}
@@ -862,7 +878,7 @@ void CTexture::video_Stop()
 
 BOOL CTexture::video_IsPlaying()
 {
-	while (flags.bLoading)
+	while (IsLoading())
 	{
 		SwitchToThread();
 	}

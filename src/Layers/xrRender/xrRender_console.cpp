@@ -5,6 +5,7 @@
 #include	"dxRenderDeviceRender.h"
 
 #include "../../build_config_defines.h"
+#include "Debug/renderdoc_app.h" // r__rdc_capture
 
 u32 ps_Preset = 2;
 u32 ps_r_dlss_quality = 0;
@@ -148,9 +149,8 @@ float ps_r__Detail_l_ambient = 0.9f;
 float ps_r__Detail_l_aniso = 0.25f;
 float ps_r__Detail_density = 0.3f;
 float ps_r__Detail_height = 1.0f;
-float ps_r__Detail_rainbow_hemi = 0.75f;
-int ps_r__detail_rows = 1;
 int ps_r__detail_shadow_cull = 1;
+int ps_r__detail_rows = 1;
 int ps_r__detail_inst = 1;
 int ps_r__detail_inst_res = 1;
 int ps_r__detail_merge = 1;
@@ -160,12 +160,15 @@ int ps_r__detail_thin = 0;
 float ps_r__detail_thin_start = 50.f;
 float ps_r__detail_thin_keep = 0.25f;
 float ps_r__detail_thin_band = 4.f;
+float ps_r__Detail_rainbow_hemi = 0.75f;
 
 float ps_r__Tree_w_rot = 10.0f;
 float ps_r__Tree_w_speed = 1.00f;
 float ps_r__Tree_w_amp = 0.005f;
 Fvector ps_r__Tree_Wave = {.1f, .01f, .11f};
 float ps_r__Tree_SBC = 1.5f; // scale bias correct
+// vertex cache plus overdraw reorder of the tree index ranges, read once at level load
+int ps_r__tree_ib_reorder = 1;
 
 float ps_r__WallmarkTTL = 50.f;
 float ps_r__WallmarkSHIFT = 0.0001f;
@@ -355,6 +358,12 @@ Fvector4 heat_vision_args_2 = { .0f, .0f, .0f, .0f };
 //crookr
 int scope_fake_enabled = 1;
 int scope_3D_fake_enabled = 0; // Redotix99: for 3D Shader Based Scopes
+Fvector4 scope_objective_lens_offset = { .0f, .0f, .0f, .0f };
+// RenderDoc instrumentation, default off
+// r__gpu_markers: per-batch GPU events + resource naming, runtime-toggleable
+// r__shader_debug: HLSL debug build (D3DCOMPILE_DEBUG, no optimization), needs a shaders_cache clear + reload
+int r__gpu_markers = 0;
+int r__shader_debug = 0;
 //string32 scope_fake_texture = "wpn\\wpn_crosshair_pso1";
 
 float ps_r2_ss_sunshafts_length = 1.f;
@@ -390,6 +399,7 @@ float ps_r4_sun_shadow_cache_shift = 0.05f; // re-render when the needed box mov
 int ps_r4_spot_shadow_cache = 0;
 int ps_r4_spot_shadow_cache_mb = 128;
 
+
 float ps_r2_img_exposure = 1.0f; // r2-only
 float ps_r2_img_gamma = 1.0f; // r2-only
 float ps_r2_img_saturation = 1.0f; // r2-only
@@ -424,6 +434,11 @@ Fvector4 ps_s3ds_param_1 = { 0, 0, 0, 0 };
 Fvector4 ps_s3ds_param_2 = { 0, 0, 0, 0 };
 Fvector4 ps_s3ds_param_3 = { 0, 0, 0, 0 };
 Fvector4 ps_s3ds_param_4 = { 0, 0, 0, 0 };
+Fvector4 ps_shader_scope_params = { 0, 0, 0, 0 }; // scope magnification (curMag/minMag/maxMag/fov), set by the 3DSS Lua
+float g_pip_scope_magnification = 0.f; // engine fallback magnification when the Lua has not set the cvar
+float g_pip_scope_min_mag = 0.f; // fallback min magnification (least zoom, widest fov) from hud_fov_params
+float g_pip_scope_max_mag = 0.f; // fallback max magnification (most zoom, narrowest fov)
+float g_pip_scope_ratio = 1.f; // eyepiece-fit factor, effective on-screen magnification = ratio * scope mag
 
 float hud_fov_aim_factor = 0;
 
@@ -534,6 +549,17 @@ int ps_r__tex_evict_interval   = 600;
 int ps_r__alpha_ref_live = 1;
 // 1 hashes the alpha-test threshold per pixel so TAA resolves a soft edge.
 int ps_r__alpha_dither = 1;
+int ps_r__swapchain_buffers = 2;
+int ps_r__max_frame_latency = 0;
+int ps_r__sun_minmax_lean = 1;
+int ps_r__dsgraph_sort_memo = 1;
+int ps_r__dx11_layout_memo = 1;
+int ps_r__light_scissor = 0;
+int ps_r__light_lean = 0;
+int ps_r__device_state_interval = 1;
+int ps_r__smap_null_ps = 1;
+int ps_r__sun_lod_skip = 1;
+int ps_r__cb_dirty_list = 1;
 
 //AVO: detail draw radius
 Flags32 ps_common_flags = {0}; // r1-only
@@ -576,6 +602,7 @@ int opt_static = 2;
 int opt_dynamic = 2;
 
 int ps_pfx_volumetric_mode = 0;
+int ps_pfx_volumetric_debug = 0;
 int ps_r__portal_traverse_stats = 0;
 
 float r_rain_exp = 1.f;
@@ -767,6 +794,46 @@ public:
 	void Execute(LPCSTR) override { RImplementation.spot_shadow_cache_stats(); }
 };
 #endif
+
+// RenderDoc in-application capture trigger, no-op when RenderDoc is not attached
+// renderdoc.dll is only present in the process when the game is launched under RenderDoc
+static void rdc_trigger_capture(u32 frames)
+{
+	HMODULE mod = GetModuleHandleA("renderdoc.dll");
+	if (!mod)
+	{
+		Msg("~ r__rdc_capture: RenderDoc not attached (renderdoc.dll not loaded)");
+		return;
+	}
+
+	pRENDERDOC_GetAPI getApi = (pRENDERDOC_GetAPI)GetProcAddress(mod, "RENDERDOC_GetAPI");
+	if (!getApi)
+		return;
+
+	RENDERDOC_API_1_1_2* api = nullptr;
+	if (getApi(eRENDERDOC_API_Version_1_1_2, (void**)&api) != 1 || !api)
+		return;
+
+	if (frames > 1)
+		api->TriggerMultiFrameCapture(frames);
+	else
+		api->TriggerCapture();
+
+	Msg("~ r__rdc_capture: queued capture of %u frame(s)", frames > 1 ? frames : 1);
+}
+
+class CCC_RdcCapture : public IConsole_Command
+{
+public:
+	CCC_RdcCapture(LPCSTR N) : IConsole_Command(N) { bEmptyArgsHandled = TRUE; };
+
+	virtual void Execute(LPCSTR args)
+	{
+		u32 frames = 0;
+		sscanf(args, "%u", &frames);
+		rdc_trigger_capture(frames);
+	}
+};
 
 class CCC_Screenshot : public IConsole_Command
 {
@@ -1372,6 +1439,7 @@ void xrRender_initconsole()
 
 	// Common
 	CMD1(CCC_Screenshot, "screenshot");
+	CMD1(CCC_RdcCapture, "r__rdc_capture"); // trigger a RenderDoc frame capture, no-op without RenderDoc
 
 	//	Igor: just to test bug with rain/particles corruption
 	CMD1(CCC_RestoreQuadIBData, "r_restore_quad_ib_data");
@@ -1410,6 +1478,7 @@ void xrRender_initconsole()
 	CMD4(CCC_Float, "r__detail_thin_start", &ps_r__detail_thin_start, 1.f, 250.f);
 	CMD4(CCC_Float, "r__detail_thin_keep", &ps_r__detail_thin_keep, 0.f, 1.f);
 	CMD4(CCC_Float, "r__detail_thin_band", &ps_r__detail_thin_band, 1.f, 250.f);
+	CMD4(CCC_Integer, "r__tree_ib_reorder", &ps_r__tree_ib_reorder, 0, 1);
 
 #ifdef DEBUG
 	CMD4(CCC_Float,		"r__detail_l_ambient",	&ps_r__Detail_l_ambient,	.5f,	.95f	);
@@ -1622,6 +1691,15 @@ void xrRender_initconsole()
 
 	CMD4(CCC_Integer, "r__fakescope", &scope_fake_enabled, 0, 1); //crookr for fake scope
 	CMD4(CCC_Integer, "r__3Dfakescope", &scope_3D_fake_enabled, 0, 1); // Redotix99: for 3D Shader Based Scopes
+#if defined(USE_DX11)
+	extern void reticle_3dss_console_init();
+	reticle_3dss_console_init(); // 3DSS reticle cvars (xrRenderPC_R4/r4_3dss_reticle.cpp)
+#endif
+	svp_console_init(); // true PiP cvars register in svp_console.cpp, DX11-gated inside
+	CMD4(CCC_Integer, "r__gpu_markers", &r__gpu_markers, 0, 1); // per-batch events + resource names
+	CMD4(CCC_Integer, "r__shader_debug", &r__shader_debug, 0, 1); // HLSL debug build, clear shaders_cache + reload
+	// -gpu_markers / -shader_debug are forced on in execUserScript() after user.ltx loads
+	// forcing them at registration would be pointless, the config runs later and resets them
 
 	CMD4(CCC_Integer, "r__heatvision", &ps_r2_heatvision, 0, 1); //--DSR-- HeatVision
 	CMD3(CCC_Mask, "r2_terrain_z_prepass", &ps_r2_ls_flags, R2FLAG_TERRAIN_PREPASS); //Terrain Z Prepass @Zagolski
@@ -1671,6 +1749,13 @@ void xrRender_initconsole()
 	CMD4(CCC_Vector4Legacy, "s3ds_param_2", &ps_s3ds_param_2, tw2_min, tw2_max);
 	CMD4(CCC_Vector4Legacy, "s3ds_param_3", &ps_s3ds_param_3, tw2_min, tw2_max);
 	CMD4(CCC_Vector4Legacy, "s3ds_param_4", &ps_s3ds_param_4, tw2_min, tw2_max);
+	CMD4(CCC_Vector4, "shader_scope_params", &ps_shader_scope_params, tw2_min, tw2_max); // scope magnification
+	// per-scope objective geometry x,y lateral, z forward, w radius (eyepiece-radius units), pushed by
+	// zzz_extra_scope_features on aim change. registering the command un-bails that script, which is now
+	// a zoom-neutral pusher (the zoom hijack was stripped), so smooth scroll + the Godis controllers stay
+	Fvector4 sol_min = { -8.f, -8.f, -8.f, -8.f }; // authored envelope, ltx z [2.2,57.8] w [0.325,1.8] x/y [-1.8,2.66]
+	Fvector4 sol_max = { 64.f, 64.f, 64.f, 64.f };
+	CMD4(CCC_Vector4, "scope_objective_lens_offset", &scope_objective_lens_offset, sol_min, sol_max);
 
 	CMD4(CCC_Float, "hud_fov_aim_factor", &hud_fov_aim_factor, 0.0f, 1.0f);
 
@@ -1876,7 +1961,7 @@ void xrRender_initconsole()
 	CMD3(CCC_Token, "r3_msaa_alphatest", &ps_r3_msaa_atest, qmsaa__atest_token);
 	CMD3(CCC_Token, "r3_minmax_sm", &ps_r3_minmax_sm, qminmax_sm_token);
 
-	CMD3(CCC_Mask, "r__fast_details_update" ,&ps_r2_ls_flags, R2FLAG_FAST_DETAILS_UPDATE);
+	CMD3(CCC_Mask, "r__fast_details_update", &ps_r2_ls_flags_ext, R2FLAGEXT_FAST_DETAILS_UPDATE);
 
 #ifdef DETAIL_RADIUS
 	CMD4(CCC_detail_radius, "r__detail_radius", &ps_r__detail_radius, 0, 250);
@@ -1889,6 +1974,17 @@ void xrRender_initconsole()
 	// Both need a shader cache clear and a restart: they change the served headers.
 	CMD4(CCC_Integer, "r__alpha_ref_live", &ps_r__alpha_ref_live, 0, 1);
 	CMD4(CCC_Integer, "r__alpha_dither", &ps_r__alpha_dither, 0, 1);
+	CMD4(CCC_Integer, "r__swapchain_buffers", &ps_r__swapchain_buffers, 2, 3);
+	CMD4(CCC_Integer, "r__max_frame_latency", &ps_r__max_frame_latency, 0, 4);
+	CMD4(CCC_Integer, "r__sun_minmax_lean", &ps_r__sun_minmax_lean, 0, 1);
+	CMD4(CCC_Integer, "r__dsgraph_sort_memo", &ps_r__dsgraph_sort_memo, 0, 1);
+	CMD4(CCC_Integer, "r__dx11_layout_memo", &ps_r__dx11_layout_memo, 0, 1);
+	CMD4(CCC_Integer, "r__light_scissor", &ps_r__light_scissor, 0, 1);
+	CMD4(CCC_Integer, "r__light_lean", &ps_r__light_lean, 0, 1);
+	CMD4(CCC_Integer, "r__device_state_interval", &ps_r__device_state_interval, 1, 30);
+	CMD4(CCC_Integer, "r__smap_null_ps", &ps_r__smap_null_ps, 0, 1);
+	CMD4(CCC_Integer, "r__sun_lod_skip", &ps_r__sun_lod_skip, 0, 1);
+	CMD4(CCC_Integer, "r__cb_dirty_list", &ps_r__cb_dirty_list, 0, 2);
 	CMD3(CCC_Mask, "r__use_precompiled_shaders", &psDeviceFlags2, rsPrecompiledShaders); //Alundaio
 	CMD3(CCC_Mask, "r__enable_grass_shadow", &psDeviceFlags2, rsGrassShadow); //Alundaio
 	CMD3(CCC_Mask, "r__no_scale_on_fade", &psDeviceFlags2, rsNoScale); //Alundaio
@@ -1912,6 +2008,7 @@ void xrRender_initconsole()
 	CMD4(CCC_Vector4, "vignette_control", &ps_vignette_control, Fvector4().set(0.0f, 0.0f, 0.0f, 0.0f), Fvector4().set(1.0f, 1.0f, 1.0f, 1.0f));
 
 	CMD4(CCC_Integer, "pfx_volumetric_mode", &ps_pfx_volumetric_mode, 0, 1);
+	CMD4(CCC_Integer, "pfx_volumetric_debug", &ps_pfx_volumetric_debug, 0, 1);
 
     CMD4(CCC_Float, "r__ssa_discard", &ps_r__ssaDISCARD, 0.f, 50.0f);
     CMD4(CCC_Float, "r__ssa_discard_exp", &ps_r__ssaDISCARD_exp, 0.1f, 3.0f);

@@ -15,6 +15,7 @@ class CWeaponRPG7;
 class CWeaponRG6;
 class CWeapon;
 class CMissile;
+namespace Bodycam { enum class SprintEntryDrive; }
 class CBolt;
 class CGrenade;
 class CPhysicsShellHolder;
@@ -192,6 +193,13 @@ public:
 	virtual void PlayAnimIdle();
 	virtual bool TryPlayAnimBore();
 	virtual bool TryPlayAnimIdle();
+	// Classic sprint start. Requests the sprint clip once: if a script swaps in
+	// an authored transition one-shot it plays, driven by sprint progress.
+	void BodycamPlaySprintEntryClip();
+	void BodycamDriveSprintEntry(float progress, Bodycam::SprintEntryDrive drive);
+	bool m_bodycam_entry_probe = false;
+	bool m_bodycam_entry_clip = false;
+	shared_str m_bodycam_entry_motion;
 	virtual bool MovingAnimAllowedNow() { return true; }
 
 	virtual bool NeedBlendAnm();
@@ -220,6 +228,8 @@ public:
 	virtual float GetNearWallRange();
 	virtual float GetBaseHudFov();
 	virtual float GetTargetHudFov();
+	virtual float GetTargetHudFovWithoutNearWall();
+	float GetHudFovWithoutNearWall() { return m_hud_fov_baseline_initialized ? m_hud_fov_without_nearwall : GetHudFov(); }
 	virtual float GetTargetNearWallOffset();
 	void UpdateNearWall();
 	float GetNearWallOffset();
@@ -297,6 +307,8 @@ public:
 	float m_nearwall_speed_mod;
 	float m_base_fov;
 	float m_hud_fov;
+	float m_hud_fov_without_nearwall = 0.f;
+	bool m_hud_fov_baseline_initialized = false;
 	float m_nearwall_ofs;
 
 	virtual CHudItem* cast_hud_item() { return this; }

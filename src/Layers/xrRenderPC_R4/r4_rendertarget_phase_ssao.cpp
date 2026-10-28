@@ -209,7 +209,9 @@ void CRenderTarget::phase_ssfx_ao()
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 
 	// Save AO frame
+	svp_copy_begin(SVP_CP_HIST, rt_copy_bytes(rt_ssfx_ao));
 	HW.pContext->CopyResource(rt_ssfx_ao->pTexture->surface_get(), rt_ssfx_temp->pTexture->surface_get());
+	svp_copy_end(SVP_CP_HIST);
 
 	//scale_X = w / (ScaleFactor * 2.0f);
 	//scale_Y = h / (ScaleFactor * 2.0f);
@@ -310,7 +312,26 @@ void CRenderTarget::phase_ssfx_il()
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 
 	// Save AO frame
-	HW.pContext->CopyResource(rt_ssfx_il->pTexture->surface_get(), rt_ssfx_temp2->pTexture->surface_get());
+	// the il pass writes a scaled box, the history copy can carry that box plus a bilinear edge margin
+	const u32 il_w = rt_ssfx_il->dwWidth, il_h = rt_ssfx_il->dwHeight;
+	const bool il_region = ps_r__cp_scale_region != 0 && ScaleFactor > 1.0f && il_w && il_h;
+	u32 box_w = il_w, box_h = il_h;
+	if (il_region)
+	{
+		box_w = std::min(il_w, (u32)iCeil(w / ScaleFactor) + 8);
+		box_h = std::min(il_h, (u32)iCeil(h / ScaleFactor) + 8);
+	}
+	const u32 il_px = il_w * il_h;
+	const u32 il_bpp = il_px ? rt_copy_bytes(rt_ssfx_il) / il_px : 0;
+	svp_copy_begin(SVP_CP_HIST, box_w * box_h * il_bpp);
+	if (il_region)
+	{
+		D3D11_BOX il_box = { 0, 0, 0, box_w, box_h, 1 };
+		HW.pContext->CopySubresourceRegion(rt_ssfx_il->pSurface, 0, 0, 0, 0, rt_ssfx_temp2->pSurface, 0, &il_box);
+	}
+	else
+		HW.pContext->CopyResource(rt_ssfx_il->pTexture->surface_get(), rt_ssfx_temp2->pTexture->surface_get());
+	svp_copy_end(SVP_CP_HIST);
 
 	//scale_X = w / ScaleFactor;
 	//scale_Y = h / ScaleFactor;

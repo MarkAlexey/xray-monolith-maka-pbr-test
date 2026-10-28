@@ -1,0 +1,10 @@
+// The captured sky's display colour as raw radiance, for the Reference capture target.
+#include "common.h"
+#include "scope_reference_scene_tone.h"
+Texture2D scope_reference_sky_display;
+float4 scope_reference_transfer; // x: tone map input gamma
+float4 main(float4 position : SV_Position) : SV_Target0
+{
+    float3 display = scope_reference_sky_display.Load(int3(position.xy, 0)).rgb;
+    return float4(scope_reference_scene_tone_inverse(display, scope_reference_transfer.x, scope_reference_meter()), 1);
+}

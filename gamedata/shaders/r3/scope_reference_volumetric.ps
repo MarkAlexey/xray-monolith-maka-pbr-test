@@ -1,0 +1,19 @@
+// combine_volumetric.ps with the colour taken before exposure and tone mapping.
+#include "common.h"
+float4 scope_reference_transfer;
+static float3 scope_reference_volume_raw;
+void scope_reference_volume_tonemap(out float4 low, out float4 high, float3 rgb, float scale)
+{
+    scope_reference_volume_raw = pow(max(rgb,0),scope_reference_transfer.x);
+    low=high=0;
+}
+#define tonemap scope_reference_volume_tonemap
+#define main combine_volumetric_main
+#include "combine_volumetric.ps"
+#undef main
+#undef tonemap
+float4 main(_input I) : SV_Target
+{
+    _out combined=combine_volumetric_main(I);
+    return float4(scope_reference_volume_raw,0);
+}

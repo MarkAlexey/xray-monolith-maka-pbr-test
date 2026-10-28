@@ -17,6 +17,7 @@
 
 #include "SkeletonX.h"
 #include "SkeletonCustom.h"
+#include "../../xrServerEntities/smart_cast.h"
 #include "../../xrEngine/fmesh.h"
 #include "../../xrCPU_Pipe/xrCPU_Pipe.h"
 
@@ -27,25 +28,17 @@ shared_str s_bones_array_prev_const;
 std::shared_ptr<const SkeletonRenderSnapshot> CSkeletonX::SnapshotShadow(const Fmatrix& world)
 {
     xrCriticalSectionGuard guard(&Parent->UCalc_Mutex);
-    if (RImplementation.o.ssfx_motionvectors && Device.dwFrame > Parent->CurrentFrame)
-    {
-        Parent->CurrentFrame = Device.dwFrame;
-        Parent->Matrix_Prev = Parent->Matrix_Temp;
-        Parent->Matrix_Temp = world;
-        for (u16 b = 0; b < Parent->LL_BoneCount(); ++b)
-        {
-            auto& bone = Parent->LL_GetBoneInstance(b);
-            bone.mRenderTransform_prev = bone.mRenderTransform_temp;
-            bone.mRenderTransform_temp = bone.mRenderTransform;
-        }
-    }
+    // Shadow maps take no motion vectors: the snapshot only reads last frame's main-view history.
+    // The G-buffer pass owns advancing it (per viewport, keyed on Device.dwViewport, _Render), so
+    // a shadow recorded before the G-buffer must not step it (that zeroed skinned motion vectors).
+    (void)world;
     Fmatrix single = Fidentity, previous = Fidentity;
-    if (RImplementation.o.ssfx_motionvectors) previous = Parent->Matrix_Prev;
+    if (RImplementation.o.ssfx_motionvectors) previous = Parent->Matrix_Prev[0];
     if (RenderMode == RM_SINGLE)
     {
         single = Parent->LL_GetTransform_R(u16(RMS_boneid));
         if (RImplementation.o.ssfx_motionvectors)
-            previous.mul_43(Parent->Matrix_Prev, Parent->LL_GetBoneInstance(u16(RMS_boneid)).mRenderTransform_prev);
+            previous.mul_43(Parent->Matrix_Prev[0], Parent->LL_GetBoneInstance(u16(RMS_boneid)).mRenderTransform_prev[0]);
     }
     const u32 count = RenderMode == RM_SINGLE ? 0 : RenderMode == RM_SKINNING_SOFT ? Parent->LL_BoneCount() : RMS_bonecount;
     const Fvector4* rows = count ? Parent->RenderPalette(count, false) : nullptr;
@@ -76,8 +69,8 @@ void CSkeletonX::RenderSnapshot(const SkeletonRenderSnapshot& pose, ref_geom& ge
     if (RImplementation.o.ssfx_motionvectors)
     {
         Fmatrix view, projection;
-        view.mul_43(RCache.xforms.m_v_prev, pose.previous_world);
-        projection.mul(RCache.xforms.m_p_prev, view);
+        view.mul_43(RCache.xforms.m_v_prev[0], pose.previous_world);
+        projection.mul(RCache.xforms.m_p_prev[0], view);
         RCache.set_c("m_wvp_prev", projection);
     }
     RCache.stat.r.s_dynamic.add(vertices);
@@ -130,6 +123,143 @@ void CSkeletonX::RenderSnapshot(const SkeletonRenderSnapshot& pose, ref_geom& ge
 }
 #endif
 
+#if RENDER == R_R4
+struct SSvpHudBoneSnapshot
+{
+	CKinematics* parent = nullptr;
+	xr_vector<CBoneInstance> bones;
+	u64 visible = 0;
+};
+
+static xr_vector<SSvpHudBoneSnapshot> s_svp_hud_bones;
+static u32 s_svp_hud_bone_frame = u32(-1);
+bool g_svp_hud_frozen_pass = false;
+bool g_svp_hud_history_write = false;
+
+static SSvpHudBoneSnapshot* svp_hud_bones_of(CKinematics* parent)
+{
+	for (auto& snapshot : s_svp_hud_bones)
+		if (snapshot.parent == parent)
+			return &snapshot;
+	return nullptr;
+}
+#endif
+
+void svp_hud_bone_snapshot_begin()
+{
+#if RENDER == R_R4
+	s_svp_hud_bones.clear();
+	s_svp_hud_bone_frame = Device.dwFrame;
+#endif
+}
+
+bool CSkeletonX::SVP_CaptureBoneSnapshot()
+{
+#if RENDER == R_R4
+	if (!Parent)
+		return false;
+	xrCriticalSectionGuard guard(&Parent->UCalc_Mutex);
+	if (s_svp_hud_bone_frame != Device.dwFrame)
+		svp_hud_bone_snapshot_begin();
+	SSvpHudBoneSnapshot* snapshot = svp_hud_bones_of(Parent);
+	if (!snapshot)
+	{
+		s_svp_hud_bones.emplace_back();
+		snapshot = &s_svp_hud_bones.back();
+		snapshot->parent = Parent;
+		snapshot->bones.assign(Parent->bone_instances,
+			Parent->bone_instances + Parent->LL_BoneCount());
+		snapshot->visible = Parent->LL_GetBonesVisible();
+	}
+	return snapshot->bones.size() == Parent->LL_BoneCount();
+#else
+	return false;
+#endif
+}
+
+bool CSkeletonX::SVP_BoneSnapshotReady() const
+{
+#if RENDER == R_R4
+	SSvpHudBoneSnapshot* snapshot = svp_hud_bones_of(Parent);
+	return Parent && s_svp_hud_bone_frame == Device.dwFrame && snapshot
+		&& snapshot->bones.size() == Parent->LL_BoneCount();
+#else
+	return false;
+#endif
+}
+
+bool CSkeletonX::SVP_RigidBoneSnapshotXform(Fmatrix& out)
+{
+#if RENDER == R_R4
+	if (RenderMode != RM_SINGLE)
+		return false;
+	return SVP_BoneSnapshotXform((u16)RMS_boneid, out);
+#else
+	return false;
+#endif
+}
+
+bool CSkeletonX::SVP_BoneSnapshotXform(Fmatrix& out)
+{
+#if RENDER == R_R4
+	u16 bone;
+	if (RenderMode == RM_SINGLE)
+		bone = (u16)RMS_boneid;
+	else if (BonesUsed.size())
+		bone = BonesUsed[0];
+	else
+		return false;
+	return SVP_BoneSnapshotXform(bone, out);
+#else
+	return false;
+#endif
+}
+
+bool CSkeletonX::SVP_BoneSnapshotXform(u16 bone, Fmatrix& out)
+{
+#if RENDER == R_R4
+	SSvpHudBoneSnapshot* snapshot = svp_hud_bones_of(Parent);
+	if (!Parent || s_svp_hud_bone_frame != Device.dwFrame || !snapshot
+		|| bone >= snapshot->bones.size())
+		return false;
+	out = snapshot->bones[bone].mRenderTransform;
+	return true;
+#else
+	return false;
+#endif
+}
+
+bool CSkeletonX::SVP_BoneSnapshotXform(const IKinematics* owner, u16 bone, Fmatrix& out)
+{
+#if RENDER == R_R4
+	if (static_cast<const IKinematics*>(Parent) != owner)
+		return false;
+	return SVP_BoneSnapshotXform(bone, out);
+#else
+	return false;
+#endif
+}
+
+bool CSkeletonX::SVP_BoneSnapshotVisible(BOOL& visible)
+{
+#if RENDER == R_R4
+	SSvpHudBoneSnapshot* snapshot = svp_hud_bones_of(Parent);
+	if (!Parent || s_svp_hud_bone_frame != Device.dwFrame || !snapshot)
+		return false;
+	u16 bone;
+	if (RenderMode == RM_SINGLE)
+		bone = (u16)RMS_boneid;
+	else if (BonesUsed.size())
+		bone = BonesUsed[0];
+	else
+		return false;
+	visible = (snapshot->visible & (u64(1) << bone)) != 0;
+	return true;
+#else
+	return false;
+#endif
+}
+
 //////////////////////////////////////////////////////////////////////
 // Body Part
 //////////////////////////////////////////////////////////////////////
@@ -146,6 +276,8 @@ void CSkeletonX::_Copy(CSkeletonX* B)
 #endif
 	Parent = NULL;
 	ChildIDX = B->ChildIDX;
+	scope_surface_cached = B->scope_surface_cached;
+	scope_surface_frames = B->scope_surface_frames;
 	Vertices1W = B->Vertices1W;
 	Vertices2W = B->Vertices2W;
 	Vertices3W = B->Vertices3W;
@@ -168,6 +300,10 @@ void CSkeletonX::_Copy(CSkeletonX* B)
 //////////////////////////////////////////////////////////////////////
 void CSkeletonX::_Render(ref_geom& hGeom, u32 vCount, u32 iOffset, u32 pCount)
 {
+    // Preserve upstream hiding of opaque parts sharing a kept glass bone.
+    // The bone itself stays animated, so the glass does not collapse or freeze.
+    if (Parent && Parent->PhysicalScopeGlassMask
+        && (ScopeGlassBoneMask() & Parent->PhysicalScopeGlassMask) && !IsPhysicalScopeGlass()) return;
 #if defined(USE_DX11) && RENDER == R_R4
     if (RenderContextId() && RCache.skeleton_snapshot)
     {
@@ -178,25 +314,41 @@ void CSkeletonX::_Render(ref_geom& hGeom, u32 vCount, u32 iOffset, u32 pCount)
 	xrCriticalSectionGuard guard(&Parent->UCalc_Mutex);
 	PROF_EVENT("CSkeletonX::_Render");
 	Fmatrix p_WV, p_WVP;
+	CBoneInstance* render_bones = Parent->bone_instances;
+
+#if RENDER == R_R4
+	const bool frozen_pose = g_svp_hud_frozen_pass;
+	const bool suppress_history = frozen_pose && !g_svp_hud_history_write;
+	if (frozen_pose && s_svp_hud_bone_frame == Device.dwFrame)
+	{
+		SSvpHudBoneSnapshot* snapshot = svp_hud_bones_of(Parent);
+		if (snapshot && snapshot->bones.size() == Parent->LL_BoneCount())
+			render_bones = snapshot->bones.data();
+	}
+	BindScopeSurfaceFrames(render_bones);
+#else
+	const bool suppress_history = false;
+#endif
 
 #ifdef USE_DX11 //
 	if (RImplementation.o.ssfx_motionvectors)
 	{
-		if (Device.dwFrame > Parent->CurrentFrame)
+		const bool svp = Device.m_SecondViewport.IsSVPFrame(); // pip this viewport's prev-matrix slot
+		if (!suppress_history && Device.dwViewport > Parent->CurrentFrame)
 		{
 			// Save current frame
-			Parent->CurrentFrame = Device.dwFrame;
+			Parent->CurrentFrame = Device.dwViewport;
 
 			// Save prev m_W and save current m_W for the next frame
-			Parent->Matrix_Prev.set(Parent->Matrix_Temp);
-			Parent->Matrix_Temp.set(RCache.xforms.m_w);
+			Parent->Matrix_Prev[svp].set(Parent->Matrix_Temp[svp]);
+			Parent->Matrix_Temp[svp].set(RCache.xforms.m_w);
 
 			// Save bone matrix to use in the next frame
 			for (u16 b = 0; b < Parent->LL_BoneCount(); b++)
 			{
 				CBoneInstance& Bone = Parent->LL_GetBoneInstance(b);
-				Bone.mRenderTransform_prev.set(Bone.mRenderTransform_temp);
-				Bone.mRenderTransform_temp.set(Bone.mRenderTransform);
+				Bone.mRenderTransform_prev[svp].set(Bone.mRenderTransform_temp[svp]);
+				Bone.mRenderTransform_temp[svp].set(render_bones[b].mRenderTransform);
 			}
 		}
 
@@ -205,15 +357,15 @@ void CSkeletonX::_Render(ref_geom& hGeom, u32 vCount, u32 iOffset, u32 pCount)
 		{
 			// RM_SINGLE
 			Fmatrix Bone_Prev;
-			Bone_Prev.mul_43(Parent->Matrix_Prev, Parent->LL_GetBoneInstance(u16(RMS_boneid)).mRenderTransform_prev);
-			p_WV.mul_43(RCache.xforms.m_v_prev, Bone_Prev);
-			p_WVP.mul(RCache.xforms.m_p_prev, p_WV);
+			Bone_Prev.mul_43(Parent->Matrix_Prev[svp], Parent->LL_GetBoneInstance(u16(RMS_boneid)).mRenderTransform_prev[svp]);
+			p_WV.mul_43(RCache.xforms.m_v_prev[svp], Bone_Prev);
+			p_WVP.mul(RCache.xforms.m_p_prev[svp], p_WV);
 		}
 		else
 		{
 			// RM_SKINNING_1B ~ RM_SKINNING_4B
-			p_WV.mul_43(RCache.xforms.m_v_prev, Parent->Matrix_Prev);
-			p_WVP.mul(RCache.xforms.m_p_prev, p_WV);
+			p_WV.mul_43(RCache.xforms.m_v_prev[svp], Parent->Matrix_Prev[svp]);
+			p_WVP.mul(RCache.xforms.m_p_prev[svp], p_WV);
 		}
 
 		RCache.set_c("m_wvp_prev", p_WVP); // Apply prev matrix
@@ -224,14 +376,14 @@ void CSkeletonX::_Render(ref_geom& hGeom, u32 vCount, u32 iOffset, u32 pCount)
 	switch (RenderMode)
 	{
 	case RM_SKINNING_SOFT:
-		_Render_soft(hGeom, vCount, iOffset, pCount);
+		_Render_soft(hGeom, vCount, iOffset, pCount, render_bones);
 		RCache.stat.r.s_dynamic_sw.add(vCount);
 		break;
 	case RM_SINGLE:
 		{
 			PROF_EVENT("RM_SINGLE");
 			Fmatrix W;
-			W.mul_43(RCache.xforms.m_w, Parent->LL_GetTransform_R(u16(RMS_boneid)));
+			W.mul_43(RCache.xforms.m_w, render_bones[u16(RMS_boneid)].mRenderTransform);
 			RCache.set_xform_world(W);
 			//
 			RCache.set_Geometry(hGeom);
@@ -253,9 +405,13 @@ void CSkeletonX::_Render(ref_geom& hGeom, u32 vCount, u32 iOffset, u32 pCount)
 				PROF_EVENT("SEND_MATRICES");
 				u32 count = RMS_bonecount;
 #if defined(USE_DX11) && RENDER == R_R4
-                const Fvector4* current_rows = Parent->RenderPalette(count, false);
+                // the cached palette mirrors bone_instances; a PiP frozen HUD pose (render_bones points
+                // at the latched snapshot) uploads through the per-bone loop below
+                const bool live_pose = render_bones == Parent->bone_instances;
+                const u32 viewport = Device.m_SecondViewport.IsSVPFrame() ? 1 : 0;
+                const Fvector4* current_rows = live_pose ? Parent->RenderPalette(count, false) : nullptr;
                 const bool previous_needed = RCache.RenderPhase(RImplementation.phase) == RImplementation.PHASE_NORMAL && RImplementation.o.ssfx_motionvectors;
-                const Fvector4* previous_rows = previous_needed ? Parent->RenderPalette(count, true) : nullptr;
+                const Fvector4* previous_rows = live_pose && previous_needed ? Parent->RenderPalette(count, true, viewport) : nullptr;
                 if (current_rows && (!previous_needed || previous_rows))
                 {
                     const bool current_block = RCache.set_vertex_array_block(array, current_rows, count * 3);
@@ -273,7 +429,7 @@ void CSkeletonX::_Render(ref_geom& hGeom, u32 vCount, u32 iOffset, u32 pCount)
 #endif
                 for (u32 mid = 0; mid < count; mid++)
 				{
-					Fmatrix& M = Parent->LL_GetTransform_R(u16(mid));
+					Fmatrix& M = render_bones[u16(mid)].mRenderTransform;
 					u32 id = mid * 3;
 					RCache.set_ca(&*array, id + 0, M._11, M._21, M._31, M._41);
 					RCache.set_ca(&*array, id + 1, M._12, M._22, M._32, M._42);
@@ -285,7 +441,7 @@ void CSkeletonX::_Render(ref_geom& hGeom, u32 vCount, u32 iOffset, u32 pCount)
 						if (RImplementation.o.ssfx_motionvectors)
 						{
 							// Save previous transform
-							Fmatrix& Mprev = Parent->LL_GetBoneInstance(u16(mid)).mRenderTransform_prev;
+							Fmatrix& Mprev = Parent->LL_GetBoneInstance(u16(mid)).mRenderTransform_prev[Device.m_SecondViewport.IsSVPFrame()];
 							RCache.set_ca(&*array_prev, id + 0, Mprev._11, Mprev._21, Mprev._31, Mprev._41);
 							RCache.set_ca(&*array_prev, id + 1, Mprev._12, Mprev._22, Mprev._32, Mprev._42);
 							RCache.set_ca(&*array_prev, id + 2, Mprev._13, Mprev._23, Mprev._33, Mprev._43);
@@ -311,7 +467,7 @@ void CSkeletonX::_Render(ref_geom& hGeom, u32 vCount, u32 iOffset, u32 pCount)
 	}
 }
 
-void CSkeletonX::_Render_soft(ref_geom& hGeom, u32 vCount, u32 iOffset, u32 pCount)
+void CSkeletonX::_Render_soft(ref_geom& hGeom, u32 vCount, u32 iOffset, u32 pCount, CBoneInstance* bones)
 {
 	PROF_EVENT("CSkeletonX::_Render_soft");
 	u32 vOffset = cache_vOffset;
@@ -349,7 +505,7 @@ void CSkeletonX::_Render_soft(ref_geom& hGeom, u32 vCount, u32 iOffset, u32 pCou
 				Dest, // dest
 				*Vertices1W, // source
 				vCount, // count
-				Parent->bone_instances // bones
+				bones
 			);
 		}
 		else if (*Vertices2W)
@@ -358,7 +514,7 @@ void CSkeletonX::_Render_soft(ref_geom& hGeom, u32 vCount, u32 iOffset, u32 pCou
 				Dest, // dest
 				*Vertices2W, // source
 				vCount, // count
-				Parent->bone_instances // bones
+				bones
 			);
 		}
 		else if (*Vertices3W)
@@ -367,7 +523,7 @@ void CSkeletonX::_Render_soft(ref_geom& hGeom, u32 vCount, u32 iOffset, u32 pCou
 				Dest, // dest
 				*Vertices3W, // source
 				vCount, // count
-				Parent->bone_instances // bones
+				bones
 			);
 		}
 		else if (*Vertices4W)
@@ -376,7 +532,7 @@ void CSkeletonX::_Render_soft(ref_geom& hGeom, u32 vCount, u32 iOffset, u32 pCou
 				Dest, // dest
 				*Vertices4W, // source
 				vCount, // count
-				Parent->bone_instances // bones
+				bones
 			);
 		}
 		else
@@ -585,6 +741,87 @@ void CSkeletonX::_Load(const char* N, IReader* data, u32& dwVertCount)
 	}
 }
 
+void CSkeletonX::BindScopeSurfaceFrames(CBoneInstance* render_bones)
+{
+#if RENDER == R_R4
+    if (!RCache.get_c("scope_glass_surface_control")) return;
+    // Always reset on the actual draw. No ADS packet or previous gun can supply
+    // a stale hip-fire frame, and unsupported assets retain native normals.
+    RCache.set_c("scope_glass_surface_control", 0.f, 0.f, 0.f, 0.f);
+    if (!Parent || !render_bones || !IsPhysicalScopeGlass()) return;
+    if (!scope_surface_cached)
+    {
+        scope_surface_cached = true;
+        std::vector<scope_surface_vertex> vertices;
+        auto add = [&](const Fvector& p,const Fvector& n,const Fvector& t,unsigned bone) {
+            vertices.push_back({{p.x,p.y,p.z},{n.x,n.y,n.z},{t.x,t.y,t.z},bone});
+        };
+        if (*Vertices1W)
+            for (u32 i=0;i<Vertices1W.size();++i) { const auto& v=Vertices1W[i]; add(v.P,v.N,v.T,v.matrix); }
+        else if (*Vertices2W)
+            for (u32 i=0;i<Vertices2W.size();++i) { const auto& v=Vertices2W[i]; if(v.matrix0!=v.matrix1)return; add(v.P,v.N,v.T,v.matrix0); }
+        else if (*Vertices3W)
+            for (u32 i=0;i<Vertices3W.size();++i) { const auto& v=Vertices3W[i]; if(v.m[0]!=v.m[1]||v.m[0]!=v.m[2])return; add(v.P,v.N,v.T,v.m[0]); }
+        else if (*Vertices4W)
+            for (u32 i=0;i<Vertices4W.size();++i) { const auto& v=Vertices4W[i]; if(v.m[0]!=v.m[1]||v.m[0]!=v.m[2]||v.m[0]!=v.m[3])return; add(v.P,v.N,v.T,v.m[0]); }
+        std::vector<unsigned> indices;
+        if (*m_Indices) for(u32 i=0;i<m_Indices.size();++i)indices.push_back(m_Indices[i]);
+        scope_surface_frames = scope_surface_fit(vertices,indices);
+        extern int ps_r__svp_cop_diag;
+        if(ps_r__svp_cop_diag)
+            Msg("[Physical glass surface] frames=%u vertices=%u triangles=%u singleBone=%u",
+                unsigned(scope_surface_frames.size()),unsigned(vertices.size()),unsigned(indices.size()/3),
+                scope_surface_frames.empty()?unsigned(-1):scope_surface_frames[0].bone);
+    }
+    static LPCSTR centers[4]={"scope_glass_surface_center0","scope_glass_surface_center1","scope_glass_surface_center2","scope_glass_surface_center3"};
+    static LPCSTR axes[4]={"scope_glass_surface_axis0","scope_glass_surface_axis1","scope_glass_surface_axis2","scope_glass_surface_axis3"};
+    static LPCSTR rights[4]={"scope_glass_surface_right0","scope_glass_surface_right1","scope_glass_surface_right2","scope_glass_surface_right3"};
+    static LPCSTR ups[4]={"scope_glass_surface_up0","scope_glass_surface_up1","scope_glass_surface_up2","scope_glass_surface_up3"};
+    unsigned count=0;
+    for(const auto& frame:scope_surface_frames)
+    {
+        if(frame.bone>=Parent->LL_BoneCount())return;
+        Fmatrix world; world.mul_43(RCache.xforms.m_w,render_bones[frame.bone].mRenderTransform);
+        auto direction=[&](const svp_v3& value){Fvector p,r;p.set(value.x,value.y,value.z);world.transform_dir(r,p);return r;};
+        Fvector c,local;local.set(frame.center.x,frame.center.y,frame.center.z);world.transform_tiny(c,local);
+        Fvector n=direction(frame.axis),t=direction(frame.right),b=direction(frame.up);
+        const float ns=n.magnitude(),ts=t.magnitude(),bs=b.magnitude();
+        // Existing HUD skinning assumes rigid/uniform transforms. Do not
+        // invent inverse-transpose/radius behavior for deformed model scales.
+        if(ns<EPS||ts<EPS||bs<EPS||_abs(ts/bs-1.f)>.01f||_abs(ns/ts-1.f)>.01f)return;
+        n.div(ns);t.div(ts);b.div(bs);
+        RCache.set_c(centers[count],c.x,c.y,c.z,frame.radius*ts);
+        RCache.set_c(axes[count],n.x,n.y,n.z,frame.halfDepth*ns);
+        RCache.set_c(rights[count],t.x,t.y,t.z,0.f);
+        RCache.set_c(ups[count],b.x,b.y,b.z,0.f);
+        ++count;
+    }
+    RCache.set_c("scope_glass_surface_control",float(count),0.f,0.f,0.f);
+#endif
+}
+
+u64 CSkeletonX::ScopeGlassBoneMask()
+{
+    if (RM_SINGLE == RenderMode) return u64(1) << RMS_boneid;
+    u64 mask = 0;
+    for (u32 i = 0; i < BonesUsed.size(); ++i) mask |= u64(1) << BonesUsed[i];
+    return mask;
+}
+
+bool CSkeletonX::IsPhysicalScopeGlass()
+{
+#if RENDER == R_R4
+    auto* visual = smart_cast<dxRender_Visual*>(this);
+    if (visual && visual->shader._get())
+        for (const auto& element : visual->shader->E)
+            if (element._get())
+                for (const auto& pass : element->passes)
+                    if (pass->constants._get() && pass->constants->get("scope_reference_physical_glass"))
+                        return true;
+#endif
+    return false;
+}
+
 BOOL CSkeletonX::has_visible_bones()
 {
 	if (RM_SINGLE == RenderMode)
@@ -659,6 +896,7 @@ void get_pos_bones(const vertBoned4W& vert, Fvector& p, CKinematics* Parent)
 	p.add(P2);
 	p.add(P3);
 }
+
 
 //-----------------------------------------------------------------------------------------------------
 // Wallmarks

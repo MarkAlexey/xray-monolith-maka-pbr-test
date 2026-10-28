@@ -126,8 +126,8 @@ protected:
 	SkeletonWMVec wallmarks;
 	u32 wm_frame;
 	u32 CurrentFrame;
-	Fmatrix	Matrix_Prev;
-	Fmatrix Matrix_Temp;
+	Fmatrix	Matrix_Prev[2]; // per viewport (main, SVP)
+	Fmatrix Matrix_Temp[2];
 
 	// Globals
 	CInifile* pUserData;
@@ -182,6 +182,11 @@ public:
 	bool PickBone(const Fmatrix& parent_xform, IKinematics::pick_result& r, float dist, const Fvector& start,
 	              const Fvector& dir, u16 bone_id);
 	virtual void EnumBoneVertices(SEnumVerticesCallback& C, u16 bone_id);
+	virtual bool GetLensDetection(SLensDetection& out);
+	virtual bool IsPhysicalScopeGlassBone(u16 bone) override;
+    virtual void SetPhysicalScopeGlassMask(u16 bone, bool enabled) override;
+    u64 PhysicalScopeGlassMask = 0;
+    u64 ScopeGlassBoneSubtree(u16 bone);
 public:
 	CKinematics();
 	virtual ~CKinematics();
@@ -346,7 +351,8 @@ public:
 	virtual void CalculateBones(BOOL bForceExact = FALSE); // Recalculate skeleton
 	void CalculateBones_Invalidate();
 #if defined(USE_DX11) && RENDER == R_R4
-    const Fvector4* RenderPalette(u32 count, bool previous);
+    // previous: last frame's transforms of viewport `viewport` (0 = main, 1 = PiP SVP)
+    const Fvector4* RenderPalette(u32 count, bool previous, u32 viewport = 0);
 #endif
 	bool CopyBonesFrom(IKinematics* from);
 

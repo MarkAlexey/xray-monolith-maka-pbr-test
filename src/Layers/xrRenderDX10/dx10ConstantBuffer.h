@@ -19,6 +19,7 @@ public:
     static void ProfileStats();
     dx10ConstantBuffer(const dx10ConstantBuffer& source, bool private_copy);
     void CopyDefaults(const dx10ConstantBuffer& source);
+	bool IsChanged() const { return m_bChanged; }
 
 	u32 GetSize() const { return m_uiBufferSize; }
 	const void* GetData() const { return m_pBufferData; }

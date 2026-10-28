@@ -1,0 +1,78 @@
+// The 3DSS reticle glow over the tone-mapped frame (r4_rendertarget_phase_3dss_reticle.cpp). The cores and their three glow
+// lobes are scaled by the glow's exposure: the eye's adaptation, read back from the game's exposure and exposed again
+// with the glow's own floor, so a reticle of fixed luminance is a hot dot with a tight fringe by day and blooms at
+// night beyond the range the game's tone map allows the scene. A hue-keeping soft clip maps the core to the display,
+// and what exceeds white turns it white; the lobes keep their colour and stay below display white, so the reticle's
+// lines still read inside its glow. Blends as (rgb, alpha) over the frame: the glow tints what is behind it. With
+// HDR10 the frame is still before the display transform, which tone maps the core like the scene. Under night vision
+// (reticle_glow_target.x) the reticle's light is added to the image the night vision pass reads, in its combine's
+// encoding; over the whole screen, where the combine encodes only inside the tube mask (lobes crossing a tube's rim
+// show at the rim).
+#include "reticle_glow.h"
+// HDR10 output is removed on this branch (no hdr10.h): the frame here is always SDR
+#define HDR10_IS_ENABLED false
+
+Texture2D s_reticle_emission; // cores (rgb, scene luminance)
+Texture2D s_glow_tight;       // the tight lobe, blurred along x at full size
+Texture2D s_glow_mid;         // the mid lobe, half size
+Texture2D s_glow_wide;        // the wide lobe, quarter size
+
+uniform float4 reticle_glow_weight;   // x tight, y mid, z wide lobe weight, w shoulder
+uniform float4 reticle_glow_tint;     // x how much the glow covers the frame behind it, y tight lobe sigma (px),
+                                      // z power of the exposure on the lobes, w the lobes' display ceiling
+uniform float4 reticle_glow_exposure; // the game's tone map: x middle grey, y adaptation weight, z its floor;
+                                      // w the glow's floor
+uniform float4 reticle_glow_target;   // x: 1 when composited into the night vision combine's encoded image
+uniform float4 shader_param_8;        // the night vision tube; y: its gain x10
+
+// The glow's exposure from the game's: the adaptation luminance the game exposed for, under the glow's floor
+float reticle_glow_exposure_of(float game)
+{
+	const float4 c = reticle_glow_exposure;
+	if (c.y <= 0.0 || game <= 1e-4)
+		return game;
+	const float adaptation = max((c.x / game - c.z) / c.y, 0.0);
+	return c.x / (adaptation * c.y + c.w);
+}
+
+float4 main(p_screen I) : SV_TARGET
+{
+	const int2 px = reticle_glow_pixel(s_reticle_emission, I.tc0);
+	float3 glow = 0;
+	if (reticle_glow_weight.x > 0.0)
+		glow += reticle_glow_weight.x * reticle_glow_gauss(s_glow_tight, px, float2(0, 1), reticle_glow_tint.y);
+	if (reticle_glow_weight.y > 0.0)
+		glow += reticle_glow_weight.y * s_glow_mid.SampleLevel(smp_rtlinear, I.tc0, 0).rgb;
+	if (reticle_glow_weight.z > 0.0)
+		glow += reticle_glow_weight.z * s_glow_wide.SampleLevel(smp_rtlinear, I.tc0, 0).rgb;
+	// the glare a dark-adapted eye sees grows with its exposure, by a power of it
+	const float exposure = reticle_glow_exposure_of(max(s_tonemap.Load(int3(0, 0, 0)).x, 0.0));
+	const float3 emission = s_reticle_emission.Load(int3(px, 0)).rgb;
+	const float3 core = emission * exposure;
+	const float3 lobes = glow * pow(exposure, reticle_glow_tint.z);
+
+	const float core_peak = max(core.r, max(core.g, core.b));
+	const float lobe_peak = max(lobes.r, max(lobes.g, lobes.b));
+	if (max(core_peak, lobe_peak) <= 1e-5)
+		return 0;
+	const float core_level = 1.0 - exp(-core_peak);
+	const float white = 1.0 - exp(-reticle_glow_weight.w * max(core_peak - 1.0, 0.0));
+	const float3 core_hue = core_peak > 0.0 ? lerp(core / core_peak, 1.0, white) : 0;
+	const float ceiling = max(reticle_glow_tint.w, 1e-3);
+	const float lobe_level = ceiling * (1.0 - exp(-lobe_peak / ceiling));
+	const float3 halo = lobe_peak > 0.0 ? lobes * (lobe_level / lobe_peak) : 0;
+	const float3 rgb = HDR10_IS_ENABLED ? core_peak * core_hue + halo
+		: 1.0 - (1.0 - core_level * core_hue) * (1.0 - halo);
+	if (reticle_glow_target.x > 0.5)
+	{
+		// As the installed night vision combine encodes a lit pixel (combine_1.ps): r the tone-mapped luminance x4,
+		// g the linear light's luminance squared x1.3, both times the tube gain and clamped, with its luminance
+		// weights (night_vision.h luma_conversion_coeff). Added: the tube adds the reticle's light.
+		const float3 weights = float3(0.299, 0.587, 0.114);
+		const float shown = dot(rgb, weights);
+		const float light = dot(emission + glow, weights);
+		const float gain = floor(shader_param_8.y) / 10.0;
+		return float4(saturate(4.0 * shown * gain), saturate(1.3 * light * light * gain), 0, 0);
+	}
+	return float4(rgb, saturate(reticle_glow_tint.x) * max(core_level, lobe_level));
+}

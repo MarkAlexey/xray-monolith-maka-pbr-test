@@ -148,6 +148,10 @@ public:
 #endif	//	USE_DX10
 
 	// R1/R2-compiler	[programmable]		- templates
+	// For this compilation only: when set, r_Pass compiles the pixel shader "<ps_prefix><ps>" if
+	// that file exists (the lens glass light pass recompiles the light blenders this way through a
+	// wrapping blender, svp_optics.cpp).
+	LPCSTR ps_prefix = nullptr;
 	void r_Pass(LPCSTR vs, LPCSTR ps, bool bFog, BOOL bZtest = TRUE, BOOL bZwrite = TRUE, BOOL bABlend = FALSE,
 	            D3DBLEND abSRC = D3DBLEND_ONE, D3DBLEND abDST = D3DBLEND_ZERO, BOOL aTest = FALSE, u32 aRef = 0);
 	void r_Constant(LPCSTR name, R_constant_setup* s);

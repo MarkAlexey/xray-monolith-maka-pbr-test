@@ -1,0 +1,20 @@
+// Emission-only variant of the PiP reticle phase: the glow of an atlas reticle (reticle_atlas.h), nothing else.
+// It evaluates only the reticle, so it compiles without the lens's image and glass code.
+#define RETICLE_ATLAS_EMISSION_PASS
+#define main scope_color_write_main
+#include "scope_color_write.ps"
+#undef main
+#include "reticle_emission_out.h"
+
+ReticleEmissionOut main(v_out I)
+{
+	ReticleEmissionOut o = (ReticleEmissionOut)0;
+#ifdef RETICLE_ATLAS_H
+	scope = new_Scope(I);
+	o.core = scope_custom_reticle(scope);
+	o.glow = reticle_atlas_glow_source;
+#else
+	discard;
+#endif
+	return o;
+}

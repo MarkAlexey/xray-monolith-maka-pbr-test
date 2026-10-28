@@ -101,7 +101,18 @@ public:
 
 	enum
 	{
-		MaxCBuffers = 14
+		MaxCBuffers = 14,
+		MaxCBStages = 6
+	};
+
+	enum CBStage
+	{
+		CBStage_Vertex = 0,
+		CBStage_Pixel,
+		CBStage_Geometry,
+		CBStage_Hull,
+		CBStage_Domain,
+		CBStage_Compute
 	};
 #else	//	USE_DX10
 	enum MaxTextures
@@ -141,6 +152,11 @@ public:
 	ref_cbuffer m_aDomainConstants[MaxCBuffers];
 	ref_cbuffer m_aComputeConstants[MaxCBuffers];
 #	endif
+
+	// which constant buffer slots the current table left bound per stage
+	u8 m_cb_slots[MaxCBStages][MaxCBuffers];
+	u8 m_cb_slot_count[MaxCBStages] = {};
+
 	D3D_PRIMITIVE_TOPOLOGY m_PrimitiveTopology;
 	ID3DInputLayout* m_pInputLayout;
 	DWORD dummy0; //	Padding to avoid warning	
@@ -166,6 +182,9 @@ private:
 	ALIGN(16) R_constants constants;
 	R_constant_table* ctable;
     u64 ctable_serial = 0;
+	// s_base resolved for the active ctable, known says the lookup already ran and the result stands
+	R_constant* m_sbase_c;
+	bool m_sbase_known;
 
 	// Shaders/State
 	ID3DState* state;
@@ -228,7 +247,6 @@ private:
 	CMatrix*						matrices	[8	];	// matrices are supported only for FFP
 #endif
 
-	void Invalidate();
 public:
 
 #if defined(USE_DX11) && RENDER == R_R4
@@ -243,6 +261,7 @@ public:
         return source == shadow_texture_source ? shadow_texture_view : view;
     }
 #endif
+	void Invalidate(); // pip: SetActive needs a full cache reset per viewport (was private)
 	struct _stats
 	{
 		u32 polys;
@@ -433,6 +452,17 @@ public:
 		else return nullptr;
 	}
 
+	// s_base is asked for on every draw and only moves with the constant table, so resolve it once
+	ICF R_constant* get_c_sbase(shared_str& n)
+	{
+		if (!m_sbase_known)
+		{
+			m_sbase_c = get_c(n);
+			m_sbase_known = true;
+		}
+		return m_sbase_c;
+	}
+
 	// constants - direct (fast)
 	ICF void set_c(R_constant* C, const Fmatrix& A) { if (C) constants.set(C, A); }
 	ICF void set_c(R_constant* C, const Fvector4& A) { if (C) constants.set(C, A); }
@@ -540,6 +570,34 @@ public:
 	void dbg_DrawLINE				(Fmatrix& T, Fvector& p1, Fvector& p2, u32 C);
 	void dbg_DrawEllipse			(Fmatrix& T, u32 C);
 
+#if defined(USE_DX10) || defined(USE_DX11)
+	// drops the input layout memo, for when a declaration or a vertex shader layout is released
+	IC void invalidate_layout_memo() { m_layout_cached = false; }
+
+	// looks up the dims u_setrt's zb-only overload last recovered via GetDesc for this view
+	IC bool get_smapsize_memo(ID3DDepthStencilView* zb, u32& w, u32& h)
+	{
+		if (!zb || zb != m_smapsize_zb) return false;
+		w = m_smapsize_w;
+		h = m_smapsize_h;
+		return true;
+	}
+	IC void set_smapsize_memo(ID3DDepthStencilView* zb, u32 w, u32 h)
+	{
+		m_smapsize_zb = zb;
+		m_smapsize_w = w;
+		m_smapsize_h = h;
+	}
+
+	// arms the depth only substitution for the sun cascade opaque caster raster
+	IC void arm_smap_null_ps(bool on)
+	{
+		m_smap_null_ps = on;
+		if (on && !m_smap_null_ps_name)
+			m_smap_null_ps_name = "dumb";
+	}
+#endif
+
     explicit CBackend(bool initialize = true) { if (initialize) Invalidate(); }
     void ResetBindings() { Invalidate(); }
 
@@ -564,8 +622,29 @@ private:
 	void ApplyPrimitieTopology(D3D_PRIMITIVE_TOPOLOGY Topology);
 	bool CBuffersNeedUpdate(ref_cbuffer buf1[MaxCBuffers], ref_cbuffer buf2[MaxCBuffers], u32& uiMin, u32& uiMax);
 
+	// records a slot the current table bound at this stage
+	IC void cb_slot_push(u32 stage, u32 slot)
+	{
+		VERIFY(m_cb_slot_count[stage] < MaxCBuffers);
+		m_cb_slots[stage][m_cb_slot_count[stage]++] = (u8)slot;
+	}
+
 private:
 	ID3DBlob* m_pInputSignature;
+
+	// the declaration and signature pair ApplyVertexLayout last resolved, valid while m_layout_cached
+	SDeclaration* m_layout_decl;
+	ID3DBlob* m_layout_sig;
+	bool m_layout_cached;
+
+	// the depth-stencil view and dims u_setrt's zb-only overload last recovered via GetDesc
+	ID3DDepthStencilView* m_smapsize_zb;
+	u32 m_smapsize_w;
+	u32 m_smapsize_h;
+
+	// set while the sun cascade rasters opaque casters, with the interned shadow shader name
+	bool m_smap_null_ps;
+	shared_str m_smap_null_ps_name;
 
 	bool m_bChangedRTorZB;
 #endif	//	USE_DX10

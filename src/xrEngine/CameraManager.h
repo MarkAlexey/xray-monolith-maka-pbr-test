@@ -125,6 +125,8 @@ class ENGINE_API CCameraManager
 {
 protected:
 	SCamEffectorInfo m_cam_info;
+	SCamEffectorInfo m_base_cam_info;
+	bool m_base_cam_info_valid;
 
 	BENCH_SEC_SCRAMBLEMEMBER1
 
@@ -135,6 +137,8 @@ protected:
 	bool m_bAutoApply;
 	SPPInfo pp_affected;
 	void UpdateDeffered();
+	void UpdateInternal(const Fvector& P, const Fvector& D, const Fvector& N, float fFOV_Dest,
+		float fASPECT_Dest, float fFAR_Dest, u32 flags, bool reference);
 
 	BENCH_SEC_SCRAMBLEVTBL1
 	virtual void UpdateCamEffectors();
@@ -157,6 +161,9 @@ public:
 	// demonized: removecameffector by pointer
 	void RemoveCamEffector(CEffectorCam* ef);
 
+	// move a live effector between front and back per its AbsolutePositioning without releasing it
+	void RepositionCamEffector(CEffectorCam* ef);
+
 	void RemoveHudMotionEffectors();
 
 	ECamEffectorType RequestCamEffectorId();
@@ -171,13 +178,24 @@ public:
 	IC Fvector Right() const { return m_cam_info.r; }
 	IC float Fov() const { return m_cam_info.fFov; }
 	IC float Aspect() const { return m_cam_info.fAspect; }
+	IC Fvector BasePosition() const { return m_base_cam_info_valid ? m_base_cam_info.p : m_cam_info.p; }
+	IC Fvector BaseDirection() const { return m_base_cam_info_valid ? m_base_cam_info.d : m_cam_info.d; }
+	IC Fvector BaseUp() const { return m_base_cam_info_valid ? m_base_cam_info.n : m_cam_info.n; }
+	IC Fvector BaseRight() const { return m_base_cam_info_valid ? m_base_cam_info.r : m_cam_info.r; }
+	IC float BaseFov() const { return m_base_cam_info_valid ? m_base_cam_info.fFov : m_cam_info.fFov; }
+	IC float BaseAspect() const { return m_base_cam_info_valid ? m_base_cam_info.fAspect : m_cam_info.fAspect; }
 
 	IC void camera_Matrix(Fmatrix& M) { M.set(m_cam_info.r, m_cam_info.n, m_cam_info.d, m_cam_info.p); }
 	void Update(const Fvector& P, const Fvector& D, const Fvector& N, float fFOV_Dest, float fASPECT_Dest,
 	            float fFAR_Dest, u32 flags);
 	void UpdateFromCamera(const CCameraBase* C);
+	// Layers native effectors/PP over the solved base without automatically publishing.
+	virtual void UpdateReference(const Fmatrix& cameraWorld, float fFOV, float fASPECT, float fFAR);
+	void ApplyDeviceOverride(const Fvector& P, const Fvector& D, const Fvector& N, float fFOV, float fASPECT,
+		float fFAR, float viewport_near);
 
 	void ApplyDevice(float _viewport_near);
+	void ApplyPP();
 	static void ResetPP();
 
 	CCameraManager(bool bApplyOnUpdate);

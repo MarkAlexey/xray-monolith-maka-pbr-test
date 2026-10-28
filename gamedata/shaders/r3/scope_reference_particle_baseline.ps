@@ -1,0 +1,6 @@
+#include "common.h"
+Texture2D scope_reference_particle_display_source;
+float4 main(p_screen I) : SV_Target
+{
+    return float4(scope_reference_particle_display_source.Load(int3(I.hpos.xy, 0)).rgb, 1);
+}

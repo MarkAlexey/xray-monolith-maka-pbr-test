@@ -48,6 +48,7 @@
 #include "cameralook.h"
 #include "character_hit_animations_params.h"
 #include "inventory_upgrade_manager.h"
+#include "bodycam_camera.h"
 
 #include "ai_debug_variables.h"
 #include "../xrphysics/console_vars.h"
@@ -2650,6 +2651,8 @@ void CCC_RegisterCommands()
 {
 	//Not needed for a singleplayer-only mod
 	//g_OptConCom.Init();
+
+	Bodycam::RegisterConsoleCommands();
 
 	CMD1(CCC_MemStats, "stat_memory");
 	CMD1(CCC_MemStatsAsync, "stat_memory_async");

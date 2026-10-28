@@ -23,6 +23,7 @@ void CBlender_accum_reflected::Compile(CBlender_Compile& C)
 	C.r_dx10Texture("s_position", r2_RT_P);
 	C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
 	C.r_dx10Texture("s_diffuse", r2_RT_albedo);
+		C.r_dx10Texture("s_scope_glass_motion", r2_RT_ssfx_motion_vectors);
 
 	C.r_dx10Texture("s_material", r2_material);
 	C.r_dx10Texture("s_accumulator", r2_RT_accum);
@@ -58,6 +59,7 @@ void CBlender_accum_reflected_msaa::Compile(CBlender_Compile& C)
 	C.r_dx10Texture("s_position", r2_RT_P);
 	C.r_dx10Texture("s_surface", r2_RT_surface); // IX-Ray PBR
 	C.r_dx10Texture("s_diffuse", r2_RT_albedo);
+		C.r_dx10Texture("s_scope_glass_motion", r2_RT_ssfx_motion_vectors);
 
 	C.r_dx10Texture("s_material", r2_material);
 	C.r_dx10Texture("s_accumulator", r2_RT_accum);

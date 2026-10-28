@@ -184,7 +184,9 @@ public:
     std::unique_ptr<LocalLightShadows> local_light_shadows;
     std::unique_ptr<SunShadows> sun_shadows;
     std::unique_ptr<RainShadows> rain_shadows;
-	CRenderTarget* Target; // Render-target
+	CRenderTarget* Target; // Render-target (currently active, set by SetActive)
+	CRenderTarget* TargetMain; // full-screen main viewport
+	CRenderTarget* TargetSVP; // second viewport (square) for true PiP, created lazily on first SVP use
 
 	CLight_DB Lights;
 	SMAP_Allocator LP_smap_pool;
@@ -282,6 +284,16 @@ public:
 	IC void occq_end(u32& ID) { HWOCC.occq_end(ID); }
 	IC R_occlusion::occq_result occq_get(u32& ID) { return HWOCC.occq_get(ID); }
 
+	// pip zero the lens lighting constants for an object without lighting
+	ICF void svp_clear_lens_object_light()
+	{
+		RCache.set_c("svp_lens_object_light", 0.f, 0.f, 0.f, 0.f);
+		RCache.set_c("scope_glass_probe_positive", 0.f, 0.f, 0.f, 0.f);
+		RCache.set_c("scope_glass_probe_negative", 0.f, 0.f, 0.f, 0.f);
+		RCache.set_c("svp_lens_probe_positive", 0.f, 0.f, 0.f, 0.f);
+		RCache.set_c("svp_lens_probe_negative", 0.f, 0.f, 0.f, 0.f);
+	}
+
 	ICF void apply_object(IRenderable* O)
 	{
         if (RenderContextId() && RCache.recording_object)
@@ -296,13 +308,32 @@ public:
             return;
         }
 		RCache.bus_object.apply(O);
-		if (0 == O) return;
-		if (0 == O->renderable_ROS()) return;
+		if (0 == O || 0 == O->renderable_ROS())
+		{
+			svp_clear_lens_object_light();
+			return;
+		}
 		CROS_impl& LT = *((CROS_impl*)O->renderable_ROS());
 		if (!RenderContextId()) LT.update_smooth(O);
 		RCache.object_hemi = 0.75f * LT.get_hemi();
 		//RCache.object_hemi						= 0.5f*LT.get_hemi			()	;
 		RCache.object_sun = 0.75f * LT.get_sun();
+		// PiP lens lighting (svp_lens_lighting.cpp, scope glass shaders)
+		const float lens_hemi = 0.75f * LT.get_hemi_target();
+		// The smoothed sun: the raw one is a 0/1 ray test that flickers under partial cover.
+		const float lens_sun = 0.75f * LT.get_sun();
+		RCache.set_c("svp_lens_object_light", lens_hemi, lens_sun, 1.f, 0.f);
+		const float* lens_cube = LT.get_hemi_cube_target();
+        RCache.set_c("scope_glass_probe_positive",
+            lens_cube[CROS_impl::CUBE_FACE_POS_X],lens_cube[CROS_impl::CUBE_FACE_POS_Y],lens_cube[CROS_impl::CUBE_FACE_POS_Z],0.f);
+        RCache.set_c("scope_glass_probe_negative",
+            lens_cube[CROS_impl::CUBE_FACE_NEG_X],lens_cube[CROS_impl::CUBE_FACE_NEG_Y],lens_cube[CROS_impl::CUBE_FACE_NEG_Z],0.f);
+		RCache.set_c("svp_lens_probe_positive",
+			lens_cube[CROS_impl::CUBE_FACE_POS_X], lens_cube[CROS_impl::CUBE_FACE_POS_Y],
+			lens_cube[CROS_impl::CUBE_FACE_POS_Z], 0.f);
+		RCache.set_c("svp_lens_probe_negative",
+			lens_cube[CROS_impl::CUBE_FACE_NEG_X], lens_cube[CROS_impl::CUBE_FACE_NEG_Y],
+			lens_cube[CROS_impl::CUBE_FACE_NEG_Z], 0.f);
 		//--DSR-- HeatVision_start
 		float hotness = O->GetHotness();
 		RCache.object_hotness_own = ShaderBus::object_hotness(O->renderable.bus_values, hotness);
@@ -321,7 +352,7 @@ public:
 		// an object's own obj_hotness skips the hot texture check, only for the draw right after apply_object
 		const bool hotness_own = RCache.object_hotness_own;
 		RCache.object_hotness_own = false;
-		R_constant* C = RCache.get_c(c_sbase); // get sampler
+		R_constant* C = RCache.get_c_sbase(c_sbase); // get sampler
 		if (0 == C) return;
 		VERIFY(RC_dest_sampler == C->destination);
 		VERIFY(RC_dx10texture == C->type);
@@ -362,6 +393,20 @@ public:
 	virtual void level_Unload();
 
 	ID3DBaseTexture* texture_load(LPCSTR fname, u32& msize, bool bStaging = false);
+	// the defines every shader compiles with and the shader cache name they make (shader_compile and the shader
+	// warm-up, r4_shader_warmup.cpp)
+	struct ShaderCompileOptions
+	{
+		D3D_SHADER_MACRO defines[128];
+		char sh_name[MAX_PATH];
+		char c_smapsize[32], c_sun_shafts[32], c_ssao[32], c_sun_quality[32], c_smaa_quality[32];
+		char c_ssfx_sss_dir_quality[32], c_ssfx_sss_omni_quality[32], c_ssfx_terrain_pom_refine[32];
+		char c_ssfx_pom_refine[32], c_ssfx_il[32], c_ssfx_ao[32], c_ssfx_water[32], c_ssfx_water_parallax[32];
+		char c_ssr_quality[32], c_rain_quality[32], c_inter_grass[32], c_shader_bus[32];
+		char samples[2];
+	};
+	void shader_compile_options(ShaderCompileOptions& options, int skinning) const;
+	LPCSTR shader_compile_target(LPCSTR entry, LPCSTR target) const;
 	virtual HRESULT shader_compile(
 		LPCSTR name,
 		DWORD const* pSrcData,
@@ -379,6 +424,8 @@ public:
 	virtual IRenderVisual* getVisual(int id);
 	virtual IRender_Sector* detectSector(const Fvector& P);
 	virtual IRender_Target* getTarget();
+	void SetMatrices(Fmatrix view, Fmatrix projection, Fmatrix projection_hud);
+	void EnsureTargetSVP(); // pip: lazy-alloc TargetSVP on the first SVP pass (never when off)
 
 	// Main
 	virtual void flush();
@@ -470,6 +517,13 @@ public:
 	// Main
 	virtual void Calculate();
 	virtual void Render();
+	void renderViewports(BOOL bSUN); // pip main/scope pass scheduling
+	void renderGBuffer(bool clearGraph); // pip per-viewport gbuffer fill, clearGraph false keeps the graph for the SVP pass
+	void drainKeptGraph(); // pip drop the graph the main pass kept when the SVP pass is skipped
+	void renderSceneLighting(BOOL bSUN, bool svp); // pip shared lighting, generate shadows once, accumulate per viewport
+	void ResetSVPHistory(); // pip reset temporal resources after an SVP camera domain change
+	void share_main_smaps(); // pip: re-point the shadow atlas textures at the main maps for the SVP accumulate
+	void deriveScopeLens(); // pip extract the eyepiece/objective lens from the captured scope meshes
 	virtual void Screenshot(ScreenshotMode mode = SM_NORMAL, LPCSTR name = 0);
 	virtual void Screenshot(ScreenshotMode mode, CMemoryWriter& memory_writer);
 	virtual void ScreenshotAsyncBegin();

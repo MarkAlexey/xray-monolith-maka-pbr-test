@@ -2,6 +2,7 @@
 
 //#include "Actor.h"
 #include "actorcameracollision.h"
+#include "camera_collision_sweep.h"
 
 #include "../xrEngine/CameraBase.h"
 #include "../xrEngine/gamemtllib.h"
@@ -27,6 +28,20 @@ BOOL dbg_draw_camera_collision = FALSE;
 XRPHYSICS_API BOOL g_clamp_actor_camera_collision = FALSE;
 static bool cam_collided = false;
 static bool cam_step = false;
+// Reference sweeps solve the eye/near-plane volume. The actor's native body
+// controller already owns body-vs-NPC separation. Neither camera collider may
+// solve that same controller contact again and lift the eye above its actor.
+static unsigned camera_viewport_query_depth = 0;
+static unsigned camera_ignored_character_proxy_contacts = 0;
+static unsigned camera_viewport_character_contacts = 0;
+static unsigned camera_ignored_viewport_character_contacts = 0;
+struct CameraViewportQueryScope
+{
+    CameraViewportQueryScope() { ++camera_viewport_query_depth; }
+    ~CameraViewportQueryScope() { --camera_viewport_query_depth; }
+    CameraViewportQueryScope(const CameraViewportQueryScope&) = delete;
+    CameraViewportQueryScope& operator=(const CameraViewportQueryScope&) = delete;
+};
 extern dJointGroupID ContactGroup;
 static const float camera_collision_sckin_depth = 0.04f;
 float camera_collision_character_skin_depth = 0.4f;
@@ -83,7 +98,15 @@ static void cammera_shell_collide_callback(bool& do_collide, bool bo1, dContact&
 	dxGeomUserData* oposite_data = retrieveGeomUserData(bo1 ? c.geom.g2 : c.geom.g1);
 
 	if (oposite_data && oposite_data->ph_object && oposite_data->ph_object->CastType() == CPHObject::tpCharacter)
-		c.surface.soft_cfm = soft_cfm_for_controllers;
+    {
+        c.surface.soft_cfm = soft_cfm_for_controllers;
+        if(camera_viewport_query_depth)++camera_viewport_character_contacts;
+        if(NativeCameraSweep::IgnoreCharacterControllerContact(camera_viewport_query_depth!=0,true)){
+            ++camera_ignored_viewport_character_contacts;
+            do_collide=false;
+            return; // The actor controller owns NPC separation, not the eye rig.
+        }
+    }
 
 	cammera_shell_collide_callback_common(do_collide, bo1, c, material_1, material_2);
 }
@@ -99,6 +122,10 @@ static void cammera_shell_character_collide_callback(bool& do_collide, bool bo1,
 	if (!oposite_data->ph_ref_object || !(oposite_data->ph_ref_object->IsStalker()))
 		return;
 
+    if(NativeCameraSweep::IgnoreCharacterControllerContact(camera_viewport_query_depth!=0,true)){
+        ++camera_ignored_character_proxy_contacts;
+        return; // Same policy as the viewport; Classic retains both colliders.
+    }
 	do_collide = true;
 	c.surface.soft_cfm = soft_cfm_for_controllers;
 	cammera_shell_collide_callback_common(do_collide, bo1, c, material_1, material_2);
@@ -389,4 +416,105 @@ void collide_camera(CCameraBase& camera, float _viewport_near, IPhysicsShellHold
 #endif
 	roote->GetGlobalPositionDynamic(&camera.vPosition);
 	camera.vPosition.mad(camera.Direction(), -_viewport_near / 2.f);
+}
+
+void collide_camera_swept(CCameraBase& camera, float viewport_near, IPhysicsShellHolder* actor, const Fvector& start,
+	const Fvector& localAnchor, Fvector* releaseOffset, float delta, bool diagnostics)
+{
+	const CameraViewportQueryScope viewportQuery;
+	const Fvector requested = camera.vPosition;
+	const NativeCameraSweep::Point desired = { requested.x, requested.y, requested.z };
+	// Use the actual eye-relative native world-box support, including its local
+	// shift. This permits corner continuity without storing meters of actor
+	// travel as a collision correction. Classic's solver and box are unchanged.
+	Fvector size;
+	Fmatrix transform;
+	get_camera_box(size, transform, camera, viewport_near);
+	float bx = size.x, by = size.y * 1.5f;
+	if (g_clamp_actor_camera_collision)
+	{
+		bx = std::min(bx, .10f);
+		by = std::min(by, .23f);
+	}
+	const float supportY = by + size.y * .5f, supportZ = size.z * 2.f + camera_collision_sckin_depth;
+	const float allowance = std::sqrt(bx * bx + supportY * supportY + supportZ * supportZ);
+	// Resolve today's anchor independently. An old safe eye must never become
+	// the spatial authority for a moving actor, even if it remains unoccupied.
+	camera.vPosition = localAnchor;
+	collide_camera(camera, viewport_near, actor);
+	const NativeCameraSweep::Point localSafe = { camera.vPosition.x, camera.vPosition.y, camera.vPosition.z };
+	const auto clampedStart = NativeCameraSweep::ClampToRig({ start.x, start.y, start.z }, localSafe, desired, allowance);
+	camera.vPosition.set(clampedStart[0], clampedStart[1], clampedStart[2]);
+	collide_camera(camera, viewport_near, actor);
+	NativeCameraSweep::Point safe = { camera.vPosition.x, camera.vPosition.y, camera.vPosition.z };
+	bool rebased = NativeCameraSweep::DistanceSquared(clampedStart, { start.x, start.y, start.z }) > 1e-10f;
+	if (!NativeCameraSweep::InRig(safe, localSafe, desired, allowance))
+	{
+		safe = localSafe;
+		rebased = true;
+	}
+	const auto released = releaseOffset
+		? NativeCameraSweep::ReleaseTarget(desired, { releaseOffset->x, releaseOffset->y, releaseOffset->z }, delta)
+		: desired;
+	const auto target = NativeCameraSweep::ClampToRig(released, localSafe, desired, allowance);
+	const auto overlap = [&](const NativeCameraSweep::Point& point)
+	{
+		camera.vPosition.set(point[0], point[1], point[2]);
+		Fvector size;
+		Fmatrix transform;
+		get_camera_box(size, transform, camera, viewport_near);
+		CPhysicsShell* shell = actor_camera_shell;
+		auto* element = shell->get_ElementByStoreOrder(0);
+		auto* box = smart_cast<CBoxGeom*>(element->geometry(0));
+		// Feed unexpanded half extents each query. test_camera_box's restore
+		// wrapper would expand its already-expanded old dimensions repeatedly.
+		set_camera_collision(size, transform, element, box);
+		return do_collide_not_move(transform, actor, shell, element);
+	};
+	auto result = NativeCameraSweep::Sweep(safe, target, overlap, camera_collision_sckin_depth * .5f);
+	if (result.anchorBlocked && NativeCameraSweep::DistanceSquared(safe, localSafe) > 1e-10f)
+	{
+		result = NativeCameraSweep::Sweep(localSafe, target, overlap, camera_collision_sckin_depth * .5f);
+		rebased = true;
+	}
+	camera.vPosition.set(result.position[0], result.position[1], result.position[2]);
+	// Publish the final shape through the ordinary native contact solver.
+	collide_camera(camera, viewport_near, actor);
+	const NativeCameraSweep::Point resolved = { camera.vPosition.x, camera.vPosition.y, camera.vPosition.z };
+	if (!NativeCameraSweep::InRig(resolved, localSafe, desired, allowance))
+	{
+		// A contact solver may choose another obstacle face. Keep its current
+		// native-anchor solution rather than letting temporal history escape.
+		overlap(localSafe);
+		rebased = true;
+	}
+	if (releaseOffset)
+		releaseOffset->sub(camera.vPosition, requested);
+	static u32 lastReport = 0, calls = 0, queries = 0, blocked = 0, invalidAnchors = 0, limited = 0, maxQueries = 0, rebases = 0;
+	if (!diagnostics)
+	{
+		lastReport = inl_ph_world().Device().dwFrame;
+		calls = queries = blocked = invalidAnchors = limited = maxQueries = rebases = 0;
+		camera_ignored_character_proxy_contacts = camera_viewport_character_contacts = camera_ignored_viewport_character_contacts = 0;
+		return;
+	}
+	++calls;
+	queries += result.queries;
+	blocked += result.blocked;
+	invalidAnchors += result.anchorBlocked;
+	limited += result.budgetLimited;
+	maxQueries = std::max(maxQueries, u32(result.queries));
+	rebases += rebased;
+	const u32 frame = inl_ph_world().Device().dwFrame;
+	if (frame - lastReport >= 120)
+	{
+		Msg("[REFERENCE-CAMERA-SWEEP] frame=%u calls=%u queries=%u max_queries=%u blocked=%u anchor_blocked=%u limited=%u requested_y=%.6f resolved_y=%.6f release_offset=%.6f rig_radius=%.6f rig_rebases=%u requested_xz=%.6f,%.6f resolved_xz=%.6f,%.6f anchor_xyz=%.6f,%.6f,%.6f ignored_character_proxy=%u viewport_character_contacts=%u ignored_viewport_character=%u",
+			frame, calls, queries, maxQueries, blocked, invalidAnchors, limited, requested.y, camera.vPosition.y,
+			releaseOffset ? releaseOffset->magnitude() : 0.f, allowance, rebases, requested.x, requested.z, camera.vPosition.x,
+			camera.vPosition.z, localAnchor.x, localAnchor.y, localAnchor.z, camera_ignored_character_proxy_contacts,
+			camera_viewport_character_contacts, camera_ignored_viewport_character_contacts);
+		camera_ignored_character_proxy_contacts = camera_viewport_character_contacts = camera_ignored_viewport_character_contacts = 0;
+		lastReport = frame;
+		calls = queries = blocked = invalidAnchors = limited = maxQueries = rebases = 0;
+	}
 }

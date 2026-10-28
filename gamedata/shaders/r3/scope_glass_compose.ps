@@ -1,0 +1,23 @@
+// Lens glass after the installed deferred combine, at glass pixels: the glass's own radiance
+// (scope_glass_compose.h) through the display transfer the combine applies to every pixel,
+// LinearTosRGB and tonemap at the scene's adaptation. Fog is left out: the glass is a few centimetres
+// from the eye.
+#include "common.h"
+#include "scope_glass_compose.h"
+struct _out
+{
+ float4 low:SV_Target0;
+ float4 high:SV_Target1;
+};
+_out main(float4 pos2d:SV_Position)
+{
+ ScopeGlassPixel g;
+ if(!scope_glass_load(pos2d.xy,g)) discard;
+ float3 color=LinearTosRGB(max(scope_glass_radiance(g,pos2d.xy,true),0));
+ _out o;
+ tonemap(o.low,o.high,color,s_tonemap.Load(int3(0,0,0)).x);
+ // No sky blend at the glass.
+ o.low.a=0;
+ o.high.a=0;
+ return o;
+}

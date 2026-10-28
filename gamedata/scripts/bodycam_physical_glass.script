@@ -1,0 +1,115 @@
+-- Keeps the scope glass bone visible when the 3DSS lens hider asks to hide it,
+-- and passes the request to the engine as a glass mask instead.
+local upstream_set
+local hider
+
+-- 3DSS 5.x renamed the lens hider (lewd_lens_hider -> z_3dss_lens_hider) and its
+-- config keys (lewd_lens_hide_* -> lens_hide_*, the old keys still read).
+local function lens_hider()
+    return z_3dss_lens_hider or lewd_lens_hider
+end
+
+local function hide_key(section, key)
+    return ini_sys:r_string_ex(section, key) ~= nil and key or "lewd_" .. key
+end
+local owned_id, owned_bone
+local last_id, last_bone, last_enabled, last_hide
+
+local function active_item()
+    return db.actor and db.actor:active_item()
+end
+
+local function enabled()
+    if not bodycam.get_bool("scope_effects_enable", true) then return false end
+    local console = get_console()
+    return console:get_integer("r__svpscope") > 0
+        and console:get_integer("r__scope_glass") > 0
+        and not console:get_bool("r__heatvision")
+end
+
+-- The configured bone per section; false when the section hides no lens.
+local configured_bones = {}
+
+local function configured_bone(section)
+    local bone = configured_bones[section]
+    if bone == nil then
+        bone = ini_sys:r_bool_ex(section, hide_key(section, "lens_hide_enabled"), false)
+            and ini_sys:r_string_ex(section, hide_key(section, "lens_hide_bone")) or false
+        configured_bones[section] = bone
+    end
+    return bone
+end
+
+local function glass_bone(obj)
+    if not obj or not hider then return nil end
+    -- Use the installed weapon configuration, including inherited scope data.
+    local bone = configured_bone(obj:section())
+    return bone and obj:is_physical_scope_glass_bone(bone) and bone or nil
+end
+
+local function upstream_hidden(obj, bone)
+    if not axr_main.weapon_is_zoomed then return false end
+    local _, configured, should_hide = hider.get_information(obj:id())
+    return configured == bone and should_hide == true
+end
+
+local function keep_visible(obj, bone)
+    local active = active_item()
+    return active and active:id() == obj:id() and glass_bone(obj) == bone and enabled()
+end
+
+local function release_previous(id, bone)
+    if owned_id and (owned_id ~= id or owned_bone ~= bone) then
+        local previous = level.object_by_id(owned_id)
+        if previous then
+            previous:set_physical_scope_glass_mask(owned_bone, false)
+            upstream_set(previous, owned_bone, true)
+        end
+        owned_id, owned_bone = nil, nil
+    end
+end
+
+function actor_on_update()
+    if not upstream_set then return end
+    local obj = active_item()
+    local bone = glass_bone(obj)
+    local id = bone and obj:id() or nil
+    release_previous(id, bone)
+    if not bone then
+        last_id, last_bone, last_enabled, last_hide = nil, nil, nil, nil
+        return
+    end
+    local on = enabled()
+    local hide = upstream_hidden(obj, bone)
+    if on then
+        if last_id ~= id or last_bone ~= bone or last_enabled ~= on or last_hide ~= hide then
+            obj:set_physical_scope_glass_mask(bone, hide)
+            upstream_set(obj, bone, true)
+        end
+        owned_id, owned_bone = id, bone
+    elseif owned_id == id then
+        -- Reconcile a feature/thermal change even while ADS is held: there may
+        -- be no new zoom callback for the upstream lens hider to consume.
+        obj:set_physical_scope_glass_mask(bone, false)
+        upstream_set(obj, bone, not hide)
+        owned_id, owned_bone = nil, nil
+    end
+    last_id, last_bone, last_enabled, last_hide = id, bone, on, hide
+end
+
+function on_game_start()
+    hider = lens_hider()
+    if upstream_set or not hider or not hider.set_bone_visibility or not rawget(_G, "bodycam") then return end
+    upstream_set = hider.set_bone_visibility
+    hider.set_bone_visibility = function(obj, bone, visibility)
+        if keep_visible(obj, bone) then
+            release_previous(obj:id(), bone)
+            owned_id, owned_bone = obj:id(), bone
+            obj:set_physical_scope_glass_mask(bone, not visibility)
+            return upstream_set(obj, bone, true)
+        end
+        if owned_id == obj:id() and owned_bone == bone then obj:set_physical_scope_glass_mask(bone, false) end
+        return upstream_set(obj, bone, visibility)
+    end
+    RegisterScriptCallback("actor_on_update", actor_on_update)
+end

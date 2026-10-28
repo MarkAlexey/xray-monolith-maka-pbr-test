@@ -114,16 +114,19 @@ struct TL_2c3uv
 
 ref_rt& CRenderTarget::PostprocessColor()
 {
-	return dlss::Configured() ? rt_dlss_post_color : (RImplementation.o.dx10_msaa ? rt_Generic : rt_Color);
+	return dlss::Configured() && !dlss::ScopePass() ? rt_dlss_post_color : (RImplementation.o.dx10_msaa ? rt_Generic : rt_Color);
 }
 
 ref_rt& CRenderTarget::PostprocessSource()
 {
-	return dlss::Configured() ? rt_dlss_post_source : rt_Generic_0;
+	return dlss::Configured() && !dlss::ScopePass() ? rt_dlss_post_source : rt_Generic_0;
 }
 
 void CRenderTarget::phase_dlss_postprocess()
 {
+    // PiP scope viewport: its combine runs mid-frame at its own resolution; the main scene is still
+    // open (inScene) and is evaluated/closed by the main combine that follows
+    if (dlss::ScopePass()) return;
     if (!dlss::Configured())
     {
         dlss::EndScene();
@@ -194,7 +197,8 @@ void CRenderTarget::phase_dlss_postprocess()
 	}
 	if (ps_r2_nightvision > 0) phase_nightvision();
 	if (ps_r2_heatvision > 0) phase_heatvision();
-	if (scope_fake_enabled) phase_fakescope();
+	// pip the physical scope renders the sight while the true-PiP SVP is live
+	if (scope_fake_enabled && !(Device.true_pip_on && Device.m_SecondViewport.IsSVPActive())) phase_fakescope();
 }
 
 void CRenderTarget::phase_pp()

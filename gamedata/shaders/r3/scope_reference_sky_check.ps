@@ -1,0 +1,23 @@
+// Compares the Reference capture's sky (scope_reference_sky2.ps) with the installed sky box in the
+// PiP view on a 4x4 grid of pixels. Writes 1 when at least 12 samples agree within 1.5/255 per
+// channel, so a single stray pixel does not decide the frame.
+Texture2D scope_reference_sky_display; // the capture's sky, display values
+Texture2D scope_reference_sky_scene;   // the PiP view's colour target after the installed sky
+float4 scope_reference_sky_phase;      // xy: offset of the grid inside its cells, in [0, 1)
+float4 main(float4 position : SV_Position) : SV_Target0
+{
+    uint width, height;
+    scope_reference_sky_display.GetDimensions(width, height);
+    uint agreeing = 0;
+    [unroll] for (uint row = 0; row < 4; ++row)
+    [unroll] for (uint column = 0; column < 4; ++column)
+    {
+        const float2 cell = (float2(column, row) + scope_reference_sky_phase.xy) * 0.25;
+        const int3 pixel = int3(min(uint2(cell * float2(width, height)), uint2(width - 1, height - 1)), 0);
+        const float3 captured = scope_reference_sky_display.Load(pixel).rgb;
+        const float3 installed = scope_reference_sky_scene.Load(pixel).rgb;
+        if (all(isfinite(captured)) && all(abs(saturate(captured) - installed) <= 1.5 / 255.0))
+            ++agreeing;
+    }
+    return agreeing >= 12 ? 1 : 0;
+}

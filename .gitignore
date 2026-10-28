@@ -33,7 +33,11 @@ src/3rd party/luajit-2/src/host/*.exe
 
 # compressor runtime artifacts
 compressor/engine.log
+
+# local build logs
+/build_*.log
 compressor/mod/
+compressor/mod.db0
 
 # emacs temp file
 \#*\#
@@ -52,3 +56,6 @@ __pycache__/
 !/sdk/libraries/x64/tbb12.lib
 !/sdk/libraries/x64/tbbmalloc.lib
 !/sdk/libraries/x64/tbbmalloc_proxy.lib
+
+# the vector reticle command-line tool (PiP), built by tools/reticle_vector/build-linux.sh
+tools/reticle_vector/svg_to_vector

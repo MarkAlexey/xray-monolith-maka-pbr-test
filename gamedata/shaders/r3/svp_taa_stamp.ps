@@ -1,0 +1,8 @@
+// writes taa alpha 1 so the main resolve leaves the composited lens untouched
+
+#include "scope_common.h"
+
+float4 main(v_out I) : SV_Target
+{
+	return float4(0.0, 0.0, 0.0, 1.0);
+}

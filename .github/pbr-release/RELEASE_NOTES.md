@@ -15,6 +15,13 @@ from [brodrigz's xray-monolith](https://github.com/brodrigz/xray-monolith) (0.5,
 implementation by the OGSR team and xrSimpAI). Upscaling needs Screen Space Shaders 23.5 (its
 motion vectors) and brodrigz's shader compatibility patch, which is attached to this release.
 
+**Bodycam build:** asuparabekon's [Bodycam](https://github.com/asuparabekon/xray-monolith-bodycam)
+V0.3.1 is merged in: the bodycam camera and weapon handling, true picture-in-picture scopes
+(`r__svpscope 2`), vector reticles and scope glass. On G.A.M.M.A. or with 3D Shader Scopes, install
+the matching **Bodycam GAMMA Patch** (2.0.x) above the PBR shaders. **Bodycam Grass Optimisation is
+not needed** (the PBR shaders already turn the instanced grass on) and should not be installed over
+them. No frame generation and no HDR10 in this build.
+
 Demonized's Modded Exes (multithreaded build) with physically based materials ported from IX-Ray,
 IX-Ray screen-space reflections (SSLR), single-pass cascaded sun shadows (CSM) and HDR reflections,
 plus engine support for Screen Space Shaders. DX11 only.

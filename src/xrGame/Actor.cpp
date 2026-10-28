@@ -1,6 +1,7 @@
 #include "pch_script.h"
 #include "Actor_Flags.h"
 #include "hudmanager.h"
+#include "../xrCore/svp_log.h"
 #ifdef DEBUG
 
 #	include "PHDebug.h"
@@ -29,8 +30,10 @@
 
 // breakpoints
 #include "../xrEngine/xr_input.h"
+#include "../xrEngine/svp_gameplay_cvars.h" // pip the 75 base for the through-scope sens fov
 //
 #include "Actor.h"
+#include "bodycam_reference_frame.h"
 #include "ActorAnimation.h"
 #include "actor_anim_defs.h"
 #include "HudItem.h"
@@ -437,6 +440,7 @@ void CActor::Load(LPCSTR section)
 	m_fRun_StrafeFactor = READ_IF_EXISTS(pSettings, r_float, section, "run_strafe_coef", 1.0f);
 	m_fSprint_StrafeFactor = READ_IF_EXISTS(pSettings, r_float, section, "sprint_strafe_coef", 1.0f);
 
+	m_reference_loaded_speed = BodycamSpeedCoefficients();
 	m_fCamHeightFactor = pSettings->r_float(section, "camera_height_factor");
 	character_physics_support()->movement()->SetJumpUpVelocity(m_fJumpSpeed);
 	float AirControlParam = pSettings->r_float(section, "air_control_param");
@@ -1098,7 +1102,7 @@ void CActor::g_Physics(Fvector& _accel, float jump, float dt)
 float g_fov = 55.0f;
 extern float g_ironsights_factor;
 
-float CActor::currentFOV()
+float CActor::currentFOV(bool wantSVPFov)
 {
 	if (!psHUD_Flags.is(HUD_WEAPON | HUD_WEAPON_RT | HUD_WEAPON_RT2))
 		return g_fov;
@@ -1110,8 +1114,16 @@ float CActor::currentFOV()
 		(!pWeapon->ZoomTexture() || (!pWeapon->IsRotatingToZoom() && pWeapon->ZoomTexture()))
 	)
 	{
+		const bool svp_owns_main_view = Device.true_pip_on && pWeapon->OwnsSvpMainView();
 		if (pWeapon->GetZoomFactor() == 0)
 			return atan(tan(g_fov * (0.5 * PI / 180)) / g_ironsights_factor) / (0.5 * PI / 180);
+		// pip when the SVP renders the zoom, the main view stays wide (the zoom lives in the scope image),
+		// wantSVPFov asks for the real zoomed fov (svpCamera, mouse sensitivity)
+		else if (svp_owns_main_view && !wantSVPFov)
+			return g_fov;
+		else if (svp_owns_main_view && wantSVPFov)
+			// pip the true through-scope fov, config factors ride the 75 base and rescale to the live fov
+			return svp_factor_to_fov(pWeapon->GetZoomFactor(), pWeapon->IsScriptedZoom() ? 1.f : g_fov / SVP_ZOOM_BASE_FOV);
 		else
 			return pWeapon->GetZoomFactor() * (0.75f);
 	}
@@ -1126,6 +1138,7 @@ float CActor::currentFOV()
 void CActor::UpdateCL()
 {
 	PROF_EVENT("CActor UpdateCL");
+
 	if (g_Alive() && Level().CurrentViewEntity() == this)
 	{
 		if (CurrentGameUI() && (!CurrentGameUI()->TopInputReceiver() || (CurrentGameUI()->TopInputReceiver() && !CurrentGameUI()->TopInputReceiver()->StopAnyMove())) && !m_holder)
@@ -1177,7 +1190,9 @@ void CActor::UpdateCL()
 	SetZoomAimingMode(false);
 	CWeapon* pWeapon = smart_cast<CWeapon*>(inventory().ActiveItem());
 
-	cam_Update(float(Device.dwTimeDelta) / 1000.0f, currentFOV());
+    const bool reference_frame = BodycamReference::EngineFrameAdapter::Update(*this,pWeapon);
+    if (!reference_frame)
+	    cam_Update(float(Device.dwTimeDelta) / 1000.0f, currentFOV());
     m_legs_controller.update(this);
 
 #ifdef STATIONARYMGUN_NEW
@@ -1238,6 +1253,27 @@ void CActor::UpdateCL()
 
 			g_pGamePersistent->m_pGShaderConstants->hud_fov_params.x = pWeapon->CurrentZoomFactor();
 			g_pGamePersistent->m_pGShaderConstants->hud_fov_params.y = pWeapon->GetMinScopeZoomFactor();
+
+			// dial telemetry, the three inputs the scope zoom mapping divides, prints in any mode
+			{
+				extern int ps_r__svp_diag;
+				extern int scope_svp_enabled;
+				if (ps_r__svp_diag && pWeapon->IsZoomed())
+				{
+					static u32 s_dial_ms = 0;
+					if (Device.dwTimeGlobal - s_dial_ms > 1000)
+					{
+						s_dial_ms = Device.dwTimeGlobal;
+						const float F = pWeapon->GetZoomFactor();
+						const float Fmin = pWeapon->GetMinScopeZoomFactor();
+						const float Ftop = pWeapon->CurrentZoomFactor();
+						const float part = (_abs(Ftop - Fmin) > EPS) ? (F - Fmin) / (Ftop - Fmin) : 0.f;
+						PipMsg("[SVP-DIAL] %s scope=%s F=%.3f Fmin=%.3f Ftop=%.3f part=%.4f svp=%d",
+							pWeapon->cNameSect().c_str(), pWeapon->GetScopeName().c_str(),
+							F, Fmin, Ftop, part, scope_svp_enabled);
+					}
+				}
+			}
 		}
 	}
 #ifdef STATIONARYMGUN_NEW
@@ -1247,6 +1283,9 @@ void CActor::UpdateCL()
 		HUD().ShowCrosshair(true);
 		g_pGamePersistent->m_pGShaderConstants->hud_params.set(0.f, 0.f, 0.f, 0.f);
 		g_pGamePersistent->m_pGShaderConstants->m_blender_mode.set(0.f, 0.f, 0.f, 0.f);
+		// pip a mount right after ads left the svp rendering a dead second pass all mount long
+		if (Device.true_pip_on)
+			Device.m_SecondViewport.SetSVPActive(false);
 	}
 #endif
 	else
@@ -1262,7 +1301,8 @@ void CActor::UpdateCL()
 			g_pGamePersistent->m_pGShaderConstants->m_blender_mode.set(0.f, 0.f, 0.f, 0.f);
 
 			// Turn off SecondVP
-			Device.m_SecondViewport.SetSVPActive(false);
+			Device.m_SecondViewport.svp_eye_tracking_suspended.store(false, std::memory_order_release);
+			Device.m_SecondViewport.SetSVPActive(false);			
 		}
 	}
 
@@ -1287,9 +1327,21 @@ void CActor::UpdateCL()
 	}
 	Fmatrix trans;
 	Cameras().hud_camera_Matrix(trans);
+	// The HUD camera is the effector camera; carry the footstep head motion
+	// so the weapon rides with the eye instead of staying behind.
+	Fvector footstep_offset;
+	Fmatrix footstep_roll;
+	if (cam_BodycamFootstepOffset(footstep_offset, footstep_roll))
+	{
+		trans.mulB_43(footstep_roll);
+		trans.c.add(footstep_offset);
+	}
 
-	if (IsFocused())
+	if (IsFocused() && !reference_frame)
+	{
 		g_player_hud->update(trans);
+		cam_BodycamApplyRegrip();
+	}
 
 	if (psActorFlags.test(AF_MULTI_ITEM_PICKUP))
 		m_bPickupMode = false;
@@ -3113,11 +3165,18 @@ void CActor::initFPCam()
 {
 	if (!m_FPCam) {
 		m_FPCam = xr_new<CFPCamEffector>();
+		m_FPCam->m_on_b_remove_callback = SBaseEffector::CB_ON_B_REMOVE(this, &CActor::OnFPCamReleased);
 		Cameras().AddCamEffector(m_FPCam);
 	}
 }
 
-void CActor::removeFPCam()
+// clears the dangling pointer when the effector self-removes during a smoothed release
+void CActor::OnFPCamReleased()
+{
+	m_FPCam = NULL;
+}
+
+void CActor::removeFPCam() 
 {
 	if (m_FPCam) {
 		Cameras().RemoveCamEffector(m_FPCam);

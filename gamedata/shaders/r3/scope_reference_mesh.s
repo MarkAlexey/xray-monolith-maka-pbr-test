@@ -1,0 +1,13 @@
+function normal(shader, t_base, t_second, t_detail)
+    shader:begin("scope_reference_mesh", "scope_reference_image")
+        :zb(true, true)
+        :blend(false, blend.one, blend.zero)
+    shader:dx10texture("scope_reference_t2", "$user$svp_reference_capture")
+    shader:dx10texture("scope_reference_t3", "$user$svp_reference_dispersion")
+    shader:dx10texture("scope_reference_t4", "$user$svp_reference_high_blur")
+    shader:dx10texture("scope_reference_t6", "$user$svp_reference_translucent")
+    shader:dx10texture("scope_reference_t7", "$user$svp_reference_opaque")
+    shader:dx10texture("scope_reference_inside", "$user$svp_reference_inside")
+    shader:dx10sampler("smp_rtlinear")
+    shader:dx10sampler("smp_linear")
+end

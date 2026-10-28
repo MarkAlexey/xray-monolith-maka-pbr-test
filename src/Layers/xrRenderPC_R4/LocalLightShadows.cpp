@@ -771,7 +771,10 @@ void LocalLightShadows::BeginFrame(light_Package& package)
     EndFrame();
     PROF_EVENT("Render.LocalShadows.PrepareFrame");
     const bool enabled = ps_r4_mt_local_shadows || ps_r4_smapvis;
-    if (!enabled || RImplementation.o.Tshadows || !state->Initialize())
+    // PiP: the scope viewport re-accumulates every shadowed light through the dual_accum hook on the
+    // owner thread, which the recorded worker accumulation can't replay, so keep the owner path then
+    const bool pip_dual_accum = Device.true_pip_on && Device.m_SecondViewport.IsSVPActive();
+    if (!enabled || pip_dual_accum || RImplementation.o.Tshadows || !state->Initialize())
     {
         for (auto& cache : state->caches) cache.second->ResetVisibility();
         for (auto* light : package.v_shadowed)

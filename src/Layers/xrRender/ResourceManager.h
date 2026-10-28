@@ -124,6 +124,10 @@ public:
     void PrefetchTexture(LPCSTR name);
     // creationGuard must protect the map entry while acquiring a live reference.
     static ref_texture AcquireTexture(CTexture* texture);
+#if defined(USE_DX10) || defined(USE_DX11)
+    // Reload through the background loader (PiP optics, svp_optics.cpp)
+    void QueueTextureLoad(const ref_texture& texture);
+#endif
 	CTexture* _FindTexture(LPCSTR Name);
 	void _DeleteTexture(const CTexture* T);
 

@@ -1,0 +1,50 @@
+// Runs the installed deferred combine and keeps the colour it passes to
+// tonemap, before exposure and clipping.
+#include "anomaly_shaders.h"
+#include "common.h"
+static float3 scope_reference_scene_color = 0;
+Texture2D scope_reference_sky_raw;
+float4 scope_reference_transfer;
+void scope_reference_capture_tonemap(out half4 low, out half4 high, half3 rgb, half scale)
+{
+    scope_reference_scene_color = max(rgb, 0);
+    tonemap(low, high, rgb, scale);
+}
+#define tonemap scope_reference_capture_tonemap
+// Combines that tone map linear colour (Atmospherics 2.69 RC7.6: tonemap(x) is tonemap_linear(SRGBToLinear(x))):
+// the colour is stored as the sRGB tone map input they would have formed, as the readers decode it.
+void scope_reference_capture_linear(out float4 low, out float4 high, float3 rgb)
+{
+    scope_reference_scene_color = LinearTosRGB(max(rgb, 0));
+    low = 0;
+    high = 0;
+}
+#define tonemap_linear(low, high, rgb, scale) scope_reference_capture_linear(low, high, rgb)
+#define SCOPE_REFERENCE_RAW_CAPTURE 1
+#define main scope_reference_deferred_main
+#include "combine_1_nomsaa.ps"
+#undef main
+#undef tonemap_linear
+#undef tonemap
+#include "scope_reference_scene_tone.h"
+float4 main(_input input) : SV_Target0
+{
+    _out combined = scope_reference_deferred_main(input);
+    const float fogSky = saturate(combined.low.a);
+    const float gamma = scope_reference_transfer.x;
+    // Without fog the raw value needs no trip through the tone curve.
+    if (fogSky <= 1e-6)
+        return float4(pow(scope_reference_scene_color, gamma), 1);
+    float3 skyRaw = max(scope_reference_sky_raw.Load(int3(input.pos2d.xy, 0)).rgb, 0);
+    if (fogSky >= 1.0 - 1e-6)
+        return float4(skyRaw, 1);
+
+    // The combine blends fog and sky after tone mapping. Blending raw values
+    // instead would let sky show through fogged silhouettes, so blend the
+    // display values and invert the curve.
+    const float meter = scope_reference_meter();
+    float3 sceneDisplay = scope_reference_tone_display(scope_reference_scene_color, meter);
+    float3 skyDisplay = scope_reference_scene_tone(skyRaw, gamma, meter);
+    float3 display = lerp(sceneDisplay, skyDisplay, fogSky);
+    return float4(scope_reference_scene_tone_inverse(display, gamma, meter), 1);
+}

@@ -976,7 +976,7 @@ void CAI_Stalker::on_weapon_shot_update()
 {
 }
 
-void CAI_Stalker::on_weapon_shot_stop()
+void CAI_Stalker::on_weapon_shot_stop(CWeapon*)
 {
 	{
 		::luabind::functor<void> funct;

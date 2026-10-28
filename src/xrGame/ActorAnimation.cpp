@@ -406,6 +406,19 @@ void CActor::g_SetAnimation(u32 mstate_rl)
 	else if (mstate_rl & mcBack) M_legs = AS->legs_back;
 	else if (mstate_rl & mcLStrafe) M_legs = AS->legs_ls;
 	else if (mstate_rl & mcRStrafe) M_legs = AS->legs_rs;
+	else if (m_bodycam_brake.active)
+	{
+		// Braking stride: the legs keep stepping while inertia carries the body.
+		const SAnimState& brake = m_bodycam_brake.run ? ST->m_run : ST->m_walk;
+		switch (m_bodycam_brake.dir)
+		{
+		case Bodycam::BrakeDirection::Forward: M_legs = brake.legs_fwd; break;
+		case Bodycam::BrakeDirection::Back: M_legs = brake.legs_back; break;
+		case Bodycam::BrakeDirection::Left: M_legs = brake.legs_ls; break;
+		case Bodycam::BrakeDirection::Right: M_legs = brake.legs_rs; break;
+		}
+		is_standing = true;
+	}
 	else is_standing = true;
 	if (g_player_hud && is_standing && IsFocused() && m_legs_controller.is_active()) {
 		is_standing = false;
@@ -419,23 +432,24 @@ void CActor::g_SetAnimation(u32 mstate_rl)
 
 	if (this == Level().CurrentViewEntity())
 	{
+		const bool sprint_callback_sent = BodycamSprintHudChangedThisFrame();
+
 		if (mstate_rl & mcAnyMove)
 		{
-			if ((mstate_rl & mcSprint) != (mstate_old & mcSprint))
-			{
-				g_player_hud->OnMovementChanged(mcSprint);
-			}
-			else if ((mstate_rl & mcCrouch) != (mstate_old & mcCrouch))
+			if (!sprint_callback_sent &&
+				(mstate_rl & mcCrouch) != (mstate_old & mcCrouch))
 			{
 				g_player_hud->OnMovementChanged(mcCrouch);
 			}
-			else if ((mstate_rl & mcAccel) != (mstate_old & mcAccel) && !Actor()->IsZoomAimingMode())
+			else if (!sprint_callback_sent &&
+				(mstate_rl & mcAccel) != (mstate_old & mcAccel) && !Actor()->IsZoomAimingMode())
 			{
 				g_player_hud->OnMovementChanged(mcAccel);
 			}
 		}
 
-		if (!(mstate_old & mcAnyMove) && (mstate_rl & mcAnyMove) || (mstate_old & mcAnyMove) && !(mstate_rl & mcAnyMove))
+		const bool movement_changed = !!(mstate_old & mcAnyMove) != !!(mstate_rl & mcAnyMove);
+		if (movement_changed && !sprint_callback_sent)
 			g_player_hud->OnMovementChanged(mcAnyMove);
 	};
 
@@ -686,7 +700,7 @@ void CActor::g_SetAnimation(u32 mstate_rl)
 	{
 		float pos = 0.f;
 		VERIFY(!m_current_legs_blend || !fis_zero(m_current_legs_blend->timeTotal));
-		if ((mstate_real & mcAnyMove) && (mstate_old & mcAnyMove) && m_current_legs_blend)
+		if ((((mstate_real & mcAnyMove) && (mstate_old & mcAnyMove)) || m_bodycam_brake.active) && m_current_legs_blend)
 			pos = fmod(m_current_legs_blend->timeCurrent, m_current_legs_blend->timeTotal) / m_current_legs_blend->
 				timeTotal;
 

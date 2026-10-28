@@ -1,0 +1,11 @@
+#include "common.h"
+#include "scope_reference_fog_transfer.h"
+Texture2D scope_reference_scene_source;
+float4 scope_reference_transfer;
+
+float4 main(p_screen I) : SV_Target
+{
+    const int3 pixel = int3(I.hpos.xy, 0);
+    const float4 raw = scope_reference_scene_source.Load(pixel);
+    return float4(scope_reference_scene_tone(raw.rgb, scope_reference_transfer.x, scope_reference_meter()), 1);
+}

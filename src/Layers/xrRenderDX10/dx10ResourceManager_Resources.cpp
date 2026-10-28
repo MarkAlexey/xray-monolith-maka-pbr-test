@@ -252,6 +252,7 @@ void CResourceManager::_DeleteVS(const SVS* vs)
 				(*iDecl)->vs_to_layout.erase(iLayout);
 			}
 		}
+		RCache.invalidate_layout_memo(); // a released layout must not survive as a memo hit
 		return;
 	}
 	Msg("! ERROR: Failed to find compiled vertex-shader '%s'", *vs->cName);
@@ -661,6 +662,23 @@ ref_texture CResourceManager::_CreateTexture(LPCSTR _Name)
 		}
 		return texture;
 	}
+}
+
+// PiP (svp_optics.cpp) reloads a texture through the same background loader as _CreateTexture.
+// loadQueued keeps CTexture::IsLoading() true from now until the worker has run, so readers wait
+// for the new data instead of reading the old one. A load already queued is not queued twice.
+void CResourceManager::QueueTextureLoad(const ref_texture& texture)
+{
+    if (!texture) return;
+    bool expected = false;
+    if (!texture->loadQueued.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) return;
+    const DWORD owner_thread = GetCurrentThreadId();
+    textures_load_tasks.run([texture, owner_thread]()
+    {
+        if (owner_thread != GetCurrentThreadId()) { PROF_THREAD("X-Ray PPL Thread") }
+        struct Clear { const ref_texture& t; ~Clear() { t->loadQueued.store(false, std::memory_order_release); } } clear{texture};
+        texture->Load();
+    });
 }
 
 void CResourceManager::_DeleteTexture(const CTexture* T)

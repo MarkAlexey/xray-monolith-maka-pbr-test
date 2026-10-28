@@ -88,6 +88,7 @@ public:
 	u32							indirect_photons;
 
 	ref_shader		s_spot;
+	shared_str		s_spot_texture; // projector texture of s_spot, empty for the default
 	ref_shader		s_point;
 	ref_shader		s_volumetric;
 

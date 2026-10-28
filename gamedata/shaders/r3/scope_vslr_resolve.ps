@@ -1,0 +1,51 @@
+// Scope reflection capture: one cube face of the static scene. Where a surface was drawn, colour is
+// its light from scope_vslr_light.ps (the installed light model) plus one bounce of the published
+// capture's direct light, distance is radial and coverage is one; distance fog is left out within the
+// capture radius. Elsewhere colour is the installed sky drawn into vslr_sky (scope_vslr_sky2.ps), distance
+// is zero, and coverage is where the sky box was drawn, so the consumer supplies the rest. Direct is
+// colour without the bounce, and is what the next capture bounces: bouncing the full colour would
+// compound each bounce into the next capture and run bright walls under little sky light to white.
+#include "common.h"
+#include "vslr_trace.h"
+Texture2D vslr_lit;
+float4x4 vslr_inv_view;
+Texture2D vslr_sky;
+TextureCube<float3> vslr_direct;
+float4 vslr_capture_params; // inverse face size, radial limit, indirect light scale
+
+struct CaptureOutput
+{
+    float3 colour : SV_Target0;
+    float distance : SV_Target1;
+    float coverage : SV_Target2;
+    float3 direct : SV_Target3;
+};
+
+CaptureOutput main(float4 pixel : SV_Position)
+{
+    gbuffer_data material = gbuffer_load_data(pixel.xy * vslr_capture_params.x, pixel.xy);
+    float radial = length(material.P);
+    CaptureOutput output;
+    float4 sky = vslr_sky.Load(int3(pixel.xy, 0));
+    output.colour = sky.rgb;
+    output.distance = 0;
+    output.coverage = sky.a;
+    output.direct = sky.rgb;
+    if (material.P.z > 0 && radial < vslr_capture_params.y)
+    {
+        // Light bounced from the surroundings, which the installed combine adds in screen space (indirect
+        // light): the published capture's direct radiance about the normal, from a mip a few texels per face
+        // wide, onto the surface's albedo where the sky does not light it, scaled by r__scope_vslr_indirect
+        // (the installed indirect light is stronger than one physical bounce).
+        uint size, height, levels;
+        vslr_direct.GetDimensions(0, size, height, levels);
+        float3 normal = normalize(mul((float3x3)vslr_inv_view, material.N));
+        float3 around = vslr_direct.SampleLevel(vslr_linear, normal, max(float(levels) - 3, 0));
+        float3 bounce = SRGBToLinear(max(material.C, 0)) * around * (1 - saturate(material.hemi)) * vslr_capture_params.z;
+        output.direct = vslr_lit.Load(int3(pixel.xy, 0)).rgb;
+        output.colour = output.direct + bounce;
+        output.distance = radial;
+        output.coverage = 1;
+    }
+    return output;
+}

@@ -27,6 +27,11 @@
 #include "GamePersistent.h"
 #include "player_hud.h"
 #include "Missile.h"
+#include "WeaponKnife.h"
+#include "bodycam_camera.h"
+#include "first_person_transform.h"
+#include "bodycam_math.h"
+#include "bodycam_settings.h"
 
 #include "EffectorBobbing.h"
 class CFPCamEffector;
@@ -35,8 +40,174 @@ ENGINE_API extern float psHUD_FOV;
 ENGINE_API extern float psHUD_FOV_def;
 BOOL g_freelook_while_reloading = 1;
 
+namespace
+{
+constexpr float kMaxScriptLookDelta = PI_DIV_2;
+
+u32 NextScriptCameraDeltaId()
+{
+	static u32 next_id = 1;
+	const u32 id = next_id++;
+	if (next_id == 0)
+		next_id = 1;
+	return id;
+}
+
+}
+
+u32 CActor::cam_QueueScriptCameraDelta(float yaw_delta, float pitch_delta, bool mouse_look)
+{
+	if (!_valid(yaw_delta) || !_valid(pitch_delta) || this != Level().CurrentControlEntity() ||
+		!g_Alive() || m_holder || cam_active != eacFirstEye || cam_freelook != eflDisabled ||
+		!cam_CanQueueScriptCameraDelta())
+	{
+		return 0;
+	}
+
+	SScriptCameraDeltaRequest& request = m_script_camera_delta_pending[m_script_camera_delta_pending_count++];
+	request.id = NextScriptCameraDeltaId();
+	request.mouse_look = mouse_look;
+	request.delta.set(
+		clampr(yaw_delta, -kMaxScriptLookDelta, kMaxScriptLookDelta),
+		clampr(pitch_delta, -kMaxScriptLookDelta, kMaxScriptLookDelta));
+	return request.id;
+}
+
+bool CActor::cam_PollScriptCameraDelta(
+	u32 request_id, EScriptCameraDeltaStatus& status, Fvector2& applied)
+{
+	if (request_id == 0)
+		return false;
+
+	for (u32 i = 0; i < m_script_camera_delta_pending_count; ++i)
+	{
+		if (m_script_camera_delta_pending[i].id != request_id)
+			continue;
+
+		status = eScriptCameraDeltaPending;
+		applied.set(0.f, 0.f);
+		return true;
+	}
+
+	for (u32 i = 0; i < m_script_camera_delta_result_count; ++i)
+	{
+		SScriptCameraDeltaResult& result = m_script_camera_delta_results[i];
+		if (result.id != request_id)
+			continue;
+
+		status = result.status;
+		applied = result.applied;
+		for (u32 j = i + 1; j < m_script_camera_delta_result_count; ++j)
+			m_script_camera_delta_results[j - 1] = m_script_camera_delta_results[j];
+		m_script_camera_delta_results[--m_script_camera_delta_result_count] = {};
+		return true;
+	}
+
+	return false;
+}
+
+bool CActor::cam_CanQueueScriptCameraDelta() const
+{
+	if (m_script_camera_delta_pending_count >= kScriptCameraDeltaPendingCapacity)
+		return false;
+
+	return m_script_camera_delta_pending_count + m_script_camera_delta_result_count <
+		kScriptCameraDeltaResultCapacity;
+}
+
+bool CActor::cam_CancelScriptCameraDelta(u32 request_id)
+{
+	for (u32 i = 0; i < m_script_camera_delta_pending_count; ++i)
+	{
+		if (m_script_camera_delta_pending[i].id != request_id)
+			continue;
+
+		Fvector2 applied = { 0.f, 0.f };
+		if (!cam_StoreScriptCameraDeltaResult(request_id, eScriptCameraDeltaCancelled, applied))
+			return false;
+		for (u32 j = i + 1; j < m_script_camera_delta_pending_count; ++j)
+			m_script_camera_delta_pending[j - 1] = m_script_camera_delta_pending[j];
+		m_script_camera_delta_pending[--m_script_camera_delta_pending_count] = {};
+		return true;
+	}
+
+	return false;
+}
+
+bool CActor::cam_StoreScriptCameraDeltaResult(
+	u32 request_id, EScriptCameraDeltaStatus status, const Fvector2& applied)
+{
+	if (m_script_camera_delta_result_count >= kScriptCameraDeltaResultCapacity)
+		return false;
+
+	SScriptCameraDeltaResult& result =
+		m_script_camera_delta_results[m_script_camera_delta_result_count++];
+	result.id = request_id;
+	result.status = status;
+	result.applied = applied;
+	return true;
+}
+
+void CActor::cam_CancelScriptCameraDeltas()
+{
+	Fvector2 applied = { 0.f, 0.f };
+	for (u32 i = 0; i < m_script_camera_delta_pending_count; ++i)
+	{
+		const bool stored = cam_StoreScriptCameraDeltaResult(
+			m_script_camera_delta_pending[i].id, eScriptCameraDeltaCancelled, applied);
+		R_ASSERT2(stored, "Script camera delta result capacity exhausted");
+		m_script_camera_delta_pending[i] = {};
+	}
+	m_script_camera_delta_pending_count = 0;
+}
+
+void CActor::cam_ApplyScriptCameraDeltas(CCameraBase* camera)
+{
+	if (m_script_camera_delta_pending_count == 0)
+		return;
+
+	if (!camera || this != Level().CurrentControlEntity() || !g_Alive() || m_holder ||
+		cam_active != eacFirstEye || cam_freelook != eflDisabled)
+	{
+		cam_CancelScriptCameraDeltas();
+		return;
+	}
+
+	for (u32 i = 0; i < m_script_camera_delta_pending_count; ++i)
+	{
+		const SScriptCameraDeltaRequest& request = m_script_camera_delta_pending[i];
+		const float old_yaw = camera->yaw;
+		const float old_pitch = camera->pitch;
+		if (!fis_zero(request.delta.x))
+			camera->Move(request.delta.x > 0.f ? kRIGHT : kLEFT, _abs(request.delta.x));
+		if (!fis_zero(request.delta.y))
+			camera->Move(request.delta.y > 0.f ? kUP : kDOWN, _abs(request.delta.y));
+
+		Fvector2 applied;
+		applied.set(
+			angle_difference_signed(camera->yaw, old_yaw),
+			angle_difference_signed(camera->pitch, old_pitch));
+		if (request.mouse_look)
+		{
+			// Same angular camera Move + mouse observer as IR_OnMouseMove,
+			// after sensitivity conversion. Preserve follow/spring history.
+			m_bodycam.AddMouseLookDelta(request.delta.x, request.delta.y);
+		}
+		else
+			m_bodycam.RebaseLookDelta(applied.x, applied.y);
+		const bool stored =
+			cam_StoreScriptCameraDeltaResult(request.id, eScriptCameraDeltaApplied, applied);
+		R_ASSERT2(stored, "Script camera delta result capacity exhausted");
+		m_script_camera_delta_pending[i] = {};
+	}
+	m_script_camera_delta_pending_count = 0;
+
+}
+
 void CActor::cam_Set(EActorCameras style)
 {
+	if (style != cam_active)
+		cam_CancelScriptCameraDeltas();
 	CCameraBase* old_cam = cam_Active();
 	cam_active = style;
 	old_cam->OnDeactivate();
@@ -111,6 +282,7 @@ void CActor::cam_UnsetLadder()
 
 void CActor::cam_SetFreelook()
 {
+	cam_CancelScriptCameraDeltas();
 	cam_freelook = eflEnabling;
 }
 
@@ -478,7 +650,26 @@ float firstPersonDeathHeadScale = 3.f;
 
 void CActor::cam_Update(float dt, float fFOV)
 {
-	if (m_holder) return;
+	PreparedCamera frame;
+	if (cam_Prepare(dt, fFOV, frame))
+		cam_Finalize(frame);
+}
+
+bool CActor::cam_Prepare(float dt, float fFOV, PreparedCamera& frame, bool reference)
+{
+	if (m_holder)
+	{
+		cam_CancelScriptCameraDeltas();
+		return false;
+	}
+
+	CWeapon* bodycam_weapon = inventory().ActiveItem() ? inventory().ActiveItem()->cast_weapon() : nullptr;
+	Bodycam::PipInput pip_input;
+	pip_input.weapon_zoomed = bodycam_weapon && bodycam_weapon->IsZoomed();
+	pip_input.primary_sight = bodycam_weapon && bodycam_weapon->GetZoomType() == 0;
+	pip_input.requested_fov = fFOV;
+	const Bodycam::PipView pip = m_bodycam.UpdatePipView(pip_input);
+	fFOV = pip.main_fov;
 
 	// HUD FOV Update
 	if (this == Level().CurrentControlEntity())
@@ -499,6 +690,7 @@ void CActor::cam_Update(float dt, float fFOV)
 		}
 		else
 			psHUD_FOV = psHUD_FOV_def;
+		psHUD_FOV /= Bodycam::ReticleInspectZoom(); // the Reticle Editor's inspect zoom (bodycam_console.cpp)
 	}
 
 	if (cam_freelook != eflDisabled && cam_active != eacFreeLook)
@@ -511,7 +703,9 @@ void CActor::cam_Update(float dt, float fFOV)
 		camUpdateLadder(dt);
 	}
 		
-	on_weapon_shot_update();
+	// Reference supplies its own recoil; script look requests below remain native input.
+	if (!reference)
+		on_weapon_shot_update();
 	float y_shift = 0;
 
 	if (GamePersistent().GameType() != eGameIDSingle && ik_cam_shift && character_physics_support() &&
@@ -587,6 +781,7 @@ void CActor::cam_Update(float dt, float fFOV)
 
 	CCameraBase* C = cam_Active();
 
+	cam_ApplyScriptCameraDeltas(C);
 	C->Update(point, dangle);
 	C->f_fov = fFOV;
 
@@ -595,7 +790,7 @@ void CActor::cam_Update(float dt, float fFOV)
 		cameras[eacFirstEye]->Update(point, dangle);
 		cameras[eacFirstEye]->f_fov = fFOV;
 	}
-	if (Level().CurrentEntity() == this)
+	if (!reference && Level().CurrentEntity() == this)
 	{
 		collide_camera(*cameras[eacFirstEye], _viewport_near, this);
 	}
@@ -659,16 +854,15 @@ void CActor::cam_Update(float dt, float fFOV)
         firstPersonDeathDied = firstPersonDeathDiedNow;
 	}
 
-	//Alundaio -psp always
-	//if( psActorFlags.test(AF_PSP) )
-	//{
-	Cameras().UpdateFromCamera(C);
-	//}else
-	//{
-	//	Cameras().UpdateFromCamera			(cameras[eacFirstEye]);
-	//}
-	//-Alundaio
+	frame.camera = C;
+	frame.delta = dt;
+	frame.viewport_near = _viewport_near;
+	frame.freeze_world_pose = pip.freeze_world_pose;
+	return true;
+}
 
+void CActor::cam_UpdateAngularBookkeeping()
+{
 	fCurAVelocity = vPrevCamDir.sub(cameras[eacFirstEye]->vDirection).magnitude() / Device.fTimeDelta;
 	vPrevCamDir = cameras[eacFirstEye]->vDirection;
 
@@ -687,6 +881,16 @@ void CActor::cam_Update(float dt, float fFOV)
 	cam_yaw_prev = cam_yaw_cur;
 	cam_pitch_prev = cam_pitch_cur;
 	//--#SM+ End#--
+}
+
+void CActor::cam_Finalize(const PreparedCamera& frame)
+{
+	CCameraBase* C = frame.camera;
+	const float dt = frame.delta;
+	const float _viewport_near = frame.viewport_near;
+
+	Cameras().UpdateFromCamera(C);
+	cam_UpdateAngularBookkeeping();
 
 #ifdef DEBUG
 	if( dbg_draw_camera_collision )
@@ -699,10 +903,20 @@ void CActor::cam_Update(float dt, float fFOV)
 	if (Level().CurrentEntity() == this)
 	{
 		Level().Cameras().UpdateFromCamera(C);
-		if (eacFirstEye == cam_active && !Level().Cameras().GetCamEffector(cefDemo) && !Device.m_SecondViewport.IsSVPActive())
+		if (eacFirstEye == cam_active && !Level().Cameras().GetCamEffector(cefDemo) && !frame.freeze_world_pose)
 		{
-			Cameras().ApplyDevice(_viewport_near);
+			if (!cam_BodycamVisualUpdate(C, dt, _viewport_near, true))
+				Cameras().ApplyDevice(_viewport_near);
 		}
+		else if (frame.freeze_world_pose && eacFirstEye == cam_active &&
+			!Level().Cameras().GetCamEffector(cefDemo))
+		{
+			cam_BodycamVisualUpdate(C, dt, _viewport_near, false);
+			Cameras().ApplyPP();
+		}
+		else
+			cam_BodycamVisualReset(nullptr); // Third person or demo camera: reseed on the next first-eye frame.
+		FirstPerson::PublishCamera();
 	}
 }
 

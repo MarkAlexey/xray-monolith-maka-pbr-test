@@ -561,7 +561,7 @@ void CInventoryOwner::on_weapon_shot_update()
 {
 }
 
-void CInventoryOwner::on_weapon_shot_stop()
+void CInventoryOwner::on_weapon_shot_stop(CWeapon*)
 {
 }
 

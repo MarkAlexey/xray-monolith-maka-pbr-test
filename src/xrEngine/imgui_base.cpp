@@ -4,6 +4,9 @@
 #include <imgui/IconsFontAwesome6.h>
 #include "device.h"
 #include "IGame_Persistent.h"
+#include "peak_volumetric_debug.h"
+
+PeakVolumetricDebug::State g_peak_volumetric_debug;
 
 static const char* GetCustomCompressedFontDataTTF(int* out_size);
 static const char* GetIconCompressedFontDataTTF(int* out_size);
@@ -166,6 +169,11 @@ namespace xr_imgui
             if (imgui_metrics)  ImGui::ShowMetricsWindow(&imgui_metrics);
         }
 
+        // Unique group draws every frame here, main thread inside the open frame
+        // replaces the script side AddUniqueCall pump which races render with mt_level_call
+        if (g_pGamePersistent)
+            g_pGamePersistent->ImGui_OnRender("Unique");
+
         if (io.WantSetMousePos)
         {
             POINT pos = { (int)io.MousePos.x, (int)io.MousePos.y };
@@ -183,6 +191,33 @@ namespace xr_imgui
 
     void ide::OnRender()
     {
+        // After level rendering: both views share a device-frame ledger.
+        if(ps_pfx_volumetric_debug){
+            auto& debug=g_peak_volumetric_debug;debug.Begin(Device.dwFrame);
+            ImGui::SetNextWindowPos(ImVec2(16,70),ImGuiCond_Always);
+            ImGui::SetNextWindowBgAlpha(.85f);
+            const auto flags=ImGuiWindowFlags_NoInputs|ImGuiWindowFlags_NoSavedSettings|
+                ImGuiWindowFlags_AlwaysAutoResize|ImGuiWindowFlags_NoFocusOnAppearing;
+            if(ImGui::Begin(".peak Volumetrics submissions",nullptr,flags)){
+                ImGui::Text("Frame %u | selected mode: %d (%s)",debug.frame,ps_pfx_volumetric_mode,
+                    ps_pfx_volumetric_mode==1?"Peak":"standard");
+                if(!debug.dx11Seen)ImGui::TextUnformatted("DX11 render path not observed this frame");
+                for(unsigned i=0;i<2;++i){
+                    const auto& v=debug.views[i];
+                    ImGui::Separator();
+                    ImGui::Text("%s: %s",i?"PiP / scope":"Main view",PeakVolumetricDebug::Status(ps_pfx_volumetric_mode,v.submissions));
+                    ImGui::Text("Draw submissions: %u | skipped: %u | dispatch candidates: %u",
+                        v.submissions,v.Skipped(),v.candidates);
+                    for(unsigned reason=0;reason<unsigned(PeakVolumetricDebug::Skip::Count);++reason)
+                        if(v.skipped[reason])ImGui::Text("  %s: %u",PeakVolumetricDebug::Reason(PeakVolumetricDebug::Skip(reason)),v.skipped[reason]);
+                }
+                ImGui::Separator();
+                ImGui::TextUnformatted("Candidates: shadowed-light volumetric dispatch / scope-cone filter.");
+                ImGui::TextUnformatted("Earlier light visibility/shadow culling is not counted.");
+                ImGui::TextUnformatted("Submission does not prove visible pixels. No GPU timing measured.");
+            }
+            ImGui::End();
+        }
         ImGui::Render();
         m_render->Render(ImGui::GetDrawData());
 

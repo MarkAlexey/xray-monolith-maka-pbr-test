@@ -22,6 +22,7 @@ class NativeConstantSetup : public R_constant_setup
 public:
     bool parallel_safe() const override { return true; }
 };
+#include "svp_constants.h"
 
 // matrices
 #define	BIND_DECLARE(xf)	\
@@ -438,12 +439,44 @@ extern Fvector4 ps_s3ds_param_1;
 extern Fvector4 ps_s3ds_param_2;
 extern Fvector4 ps_s3ds_param_3;
 extern Fvector4 ps_s3ds_param_4;
+extern float g_pip_scope_magnification;
+extern float g_pip_scope_min_mag;
+extern float g_pip_scope_max_mag;
+extern int g_svp_crescent;
 
 static class s3ds_param_1 : public NativeConstantSetup
 {
 	virtual void setup(R_constant* C)
 	{
-		RCache.set_c(C, ps_s3ds_param_1.x, ps_s3ds_param_1.y, ps_s3ds_param_1.z, ps_s3ds_param_1.w);
+		// the crescent swing envelope runs only when g_svp_crescent is on, off (default) the 3DSS
+		// exit-pupil value passes through raw so a non-crescent pip scope stays stock 3DSS faithful
+		float z = ps_s3ds_param_1.z;
+		const bool scoped = Device.true_pip_on && Device.m_SecondViewport.IsSVPActive();
+		if (g_svp_crescent && scoped && z > 0.001f)
+		{
+			// aggressiveness tracks absolute magnification, loose at 1x and snug at high power
+			float t = (g_pip_scope_magnification > 0.01f) ? (g_pip_scope_magnification - 1.f) / 7.f : 0.f;
+			clamp(t, 0.f, 1.f);
+			const float snug = 1.3f + (0.55f - 1.3f) * t;
+			// geometry snaps snug early and holds through the drain, the alpha fade in the
+			// shader finishes before the pupil reopens so the crescent never pops out
+			float gp = Device.m_SecondViewport.svp_shadow_gain * 4.f;
+			clamp(gp, 0.f, 1.f);
+			z *= 3.0f + (snug - 3.0f) * gp;
+			if (z < 0.08f) z = 0.08f;
+		}
+		// pip execution proof, at crescent 0 final tracks raw so the ledger sees the passthrough
+		if (ps_r__svp_cop_diag && scoped)
+		{
+			static u32 s_pupil_ms = 0;
+			if (Device.dwTimeGlobal - s_pupil_ms > 1000)
+			{
+				s_pupil_ms = Device.dwTimeGlobal;
+				PipMsg("[SVP-PUPIL] crescent=%d raw=%.3f final=%.3f gain=%.2f",
+					g_svp_crescent, ps_s3ds_param_1.z, z, Device.m_SecondViewport.svp_shadow_gain);
+			}
+		}
+		RCache.set_c(C, ps_s3ds_param_1.x, ps_s3ds_param_1.y, z, ps_s3ds_param_1.w);
 	}
 }    s3ds_param_1;
 
@@ -451,7 +484,8 @@ static class s3ds_param_2 : public NativeConstantSetup
 {
 	virtual void setup(R_constant* C)
 	{
-		RCache.set_c(C, ps_s3ds_param_2.x, ps_s3ds_param_2.y, ps_s3ds_param_2.z, ps_s3ds_param_2.w);
+		RCache.set_c(C, ps_s3ds_param_2.x, ps_s3ds_param_2.y,
+			ps_s3ds_param_2.z, ps_s3ds_param_2.w);
 	}
 }    s3ds_param_2;
 
@@ -931,14 +965,31 @@ static class dev_param_8 : public NativeConstantSetup
 {
 	virtual void setup(R_constant* C)
 	{
-		RCache.set_c(C, ps_dev_param_8.x, ps_dev_param_8.y, ps_dev_param_8.z, ps_dev_param_8.w);
+		float x = ps_dev_param_8.x;
+		// svp render keeps the gen digit but draws the centered tube class so
+		// the wearer mask never bakes into the scope image
+		if (ps_r__svp_nvg_objective && Device.true_pip_on && x >= 1.f
+			&& Device.m_SecondViewport.m_render_pass_is_svp)
+			x = floorf(x) + 0.10f;
+		RCache.set_c(C, x, ps_dev_param_8.y, ps_dev_param_8.z, ps_dev_param_8.w);
 	}
 }    dev_param_8;
+
+// pip sss weapon dof while scoped rides r__svp_wpn_dof, 0 zeroes the constants
+static bool svp_wpn_dof_off()
+{
+	return !ps_r__svp_wpn_dof && Device.true_pip_on && Device.m_SecondViewport.IsSVPActive();
+}
 
 static class ssfx_wpn_dof_1 : public NativeConstantSetup
 {
 	virtual void setup(R_constant* C)
 	{
+		if (svp_wpn_dof_off())
+		{
+			RCache.set_c(C, 0.f, 0.f, 0.f, 0.f);
+			return;
+		}
 		RCache.set_c(C, ps_ssfx_wpn_dof_1.x, ps_ssfx_wpn_dof_1.y, ps_ssfx_wpn_dof_1.z, ps_ssfx_wpn_dof_1.w);
 	}
 }    ssfx_wpn_dof_1;
@@ -947,6 +998,11 @@ static class ssfx_wpn_dof_2 : public NativeConstantSetup
 {
 	virtual void setup(R_constant* C)
 	{
+		if (svp_wpn_dof_off())
+		{
+			RCache.set_c(C, 0.f, 0, 0, 0);
+			return;
+		}
 		RCache.set_c(C, ps_ssfx_wpn_dof_2, 0, 0, 0);
 	}
 }    ssfx_wpn_dof_2;
@@ -1167,14 +1223,6 @@ static class ssfx_hud_hemi : public NativeConstantSetup
 	}
 }    ssfx_hud_hemi;
 
-static class ssfx_issvp : public NativeConstantSetup
-{
-	virtual void setup(R_constant* C)
-	{
-		RCache.set_c(C, Device.m_SecondViewport.IsSVPFrame(), 0, 0, 0);
-	}
-}    ssfx_issvp;
-
 static class ssfx_bloom_1 : public NativeConstantSetup
 {
 	virtual void setup(R_constant* C)
@@ -1229,9 +1277,11 @@ static class ssfx_jitter : public NativeConstantSetup
 		float JitterY = 0;
 
 #if defined(USE_DX11)
-		if (ps_ssfx_taa.x > 0 && RImplementation.o.ssfx_taa)
+		// the svp is rendered unjittered (svp jitter only under r__svp_dlss), so skip the main jitter
+		// on the svp pass or its gbuffer decode over-corrects a jitter that was never applied
+		if (ps_ssfx_taa.x > 0 && RImplementation.o.ssfx_taa && !(Device.true_pip_on && Device.m_SecondViewport.m_render_pass_is_svp))
 		{
-			static Fvector2 TAA_Offset[4] = 
+			static Fvector2 TAA_Offset[4] =
 			{
 				{  0.0f, -1.0f },
 				{ -1.0f,  0.0f },
@@ -1478,6 +1528,8 @@ void CBlender_Compile::SetMapping()
 #endif
 
 	r_Constant("screen_res", &binder_screen_res);
+	// beef nvg rework declares this alias, unbound it reads (0,0) and its depth taps collapse to texel 0
+	r_Constant("screen_res_real", &binder_screen_res);
 	r_Constant("ogse_c_screen", &binder_screen_params);
 	r_Constant("near_far_plane", &binder_near_far_plane);
 	// misc
@@ -1522,7 +1574,6 @@ void CBlender_Compile::SetMapping()
 	r_Constant("ssfx_bloom_1", &ssfx_bloom_1);
 	r_Constant("ssfx_bloom_2", &ssfx_bloom_2);
 
-	r_Constant("ssfx_issvp", &ssfx_issvp);
 	r_Constant("ssfx_hud_hemi", &ssfx_hud_hemi);
 	r_Constant("ssfx_il_setup", &ssfx_il);
 	r_Constant("ssfx_il_setup2", &ssfx_il_setup1);
@@ -1575,6 +1626,11 @@ void CBlender_Compile::SetMapping()
 	r_Constant("s3ds_param_2", &s3ds_param_2);
 	r_Constant("s3ds_param_3", &s3ds_param_3);
 	r_Constant("s3ds_param_4", &s3ds_param_4);
+#if defined(USE_DX11)
+	extern void RegisterReticle3DSSConstants(CBlender_Compile& dst);
+	RegisterReticle3DSSConstants(*this); // 3DSS reticle constants (xrRenderPC_R4/r4_3dss_reticle.cpp)
+#endif
+	RegisterSvpConstants(*this); // pip binders and their names live in svp_constants.cpp
 
 	// crookr
 	r_Constant("fakescope_params1", &binder_fakescope_params);

@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "../../xrEngine/environment.h"
 
 void CRenderTarget::phase_nightvision()
 {
@@ -23,6 +24,15 @@ void CRenderTarget::phase_nightvision()
 
 	//Set pass
 	RCache.set_Element(s_nightvision->E[ps_r2_nightvision]);
+#if defined(USE_DX11)
+
+	// Optical focus is admitted only after this frame's actual lens and image.
+	RCache.set_c("scope_glass_nvg_focus", (this == RImplementation.TargetMain
+		&& !RImplementation.o.dx10_msaa && scope_glass_deferred_current()
+		&& scope_reference_current() && scope_reference_composited_frame == Device.dwFrame) ? 1.f : 0.f,
+		0.f, 0.f, 0.f);
+#endif
+
 
 	//Set geometry
 	draw_fullscreen_quad(C);
@@ -131,19 +141,3 @@ void CRenderTarget::phase_heatvision()
 };
 //--DSR-- HeatVision_start
 
-#if defined(USE_DX11)	//  Redotix99: for 3D Shader Based Scopes 		(sorry for using the nightvision phase file)
-void CRenderTarget::phase_3DSSReticle()
-{
-	HW.pContext->CopyResource(rt_Generic_2->pTexture->surface_get(), RImplementation.Target->rt_Position->pTexture->surface_get());
-
-	HW.pContext->CopyResource(rt_Generic_temp->pTexture->surface_get(), rt_Generic_0->pTexture->surface_get());
-
-	u_setrt(RImplementation.Target->rt_Generic_0, RImplementation.Target->rt_Position, 0, HW.pBaseZB);
-
-	RCache.set_CullMode(CULL_CCW);
-	RCache.set_Stencil(FALSE);
-	RCache.set_ColorWriteEnable();
-
-	RImplementation.render_Reticle();
-};
-#endif

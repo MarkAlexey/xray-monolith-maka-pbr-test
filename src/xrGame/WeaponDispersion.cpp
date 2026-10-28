@@ -78,5 +78,5 @@ void CWeapon::StopShotEffector()
 {
 	CInventoryOwner* pInventoryOwner = smart_cast<CInventoryOwner*>(H_Parent());
 	if (pInventoryOwner)
-		pInventoryOwner->on_weapon_shot_stop();
+		pInventoryOwner->on_weapon_shot_stop(this);
 }

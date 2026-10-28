@@ -58,6 +58,7 @@ void CBlender_combine::Compile(CBlender_Compile& C)
 
 		jitter(C);
 
+		C.r_dx10Sampler("smp_base"); // deterministic native/source cubemap filtering
 		C.r_dx10Sampler("smp_linear");
 		C.r_dx10Sampler("smp_nofilter");
 		C.r_dx10Sampler("smp_material");

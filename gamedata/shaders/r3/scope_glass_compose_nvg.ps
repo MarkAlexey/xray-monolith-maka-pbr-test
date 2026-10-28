@@ -1,0 +1,11 @@
+// Lens glass under night vision, before the installed deferred combine: the glass's reflection, direct
+// light and optical image replace the accumulated light at glass pixels, so the combine encodes the lens
+// for night vision as it encodes the scene. The combine adds its own ambient diffuse light to the glass.
+#include "common.h"
+#include "scope_glass_compose.h"
+float4 main(float4 pos2d:SV_Position) : SV_Target
+{
+ ScopeGlassPixel g;
+ if(!scope_glass_load(pos2d.xy,g)) discard;
+ return float4(max(scope_glass_radiance(g,pos2d.xy,false),0),0);
+}

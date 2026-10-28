@@ -1423,3 +1423,91 @@ Checked: DXC compiles all new shaders on the vanilla stack and on SSS + ES + Oct
 Atmospherics with the generated overlay (no new errors); `tools/check_cpp.py` no new errors, and
 the DLSS / FSR 3 backends (outside the checker's SDK paths) compiled separately with the DLSS and
 FidelityFX headers, no errors before or after. Untested in game.
+
+## The `pbr-test-s3ds-mt-sss-lass-bodycam-dlss` branch: Bodycam / true PiP scopes (asuparabekon)
+
+`pbr-test-s3ds-mt-sss-lass-perf-dlss` with asuparabekon's
+[xray-monolith-bodycam](https://github.com/asuparabekon/xray-monolith-bodycam) (`bodycam-mt`,
+V0.3.1, `84a127c8`) merged in: the bodycam camera / weapon handling layer, true picture-in-picture
+scopes (`r__svpscope 2`, the scope rendered as a second camera at the objective lens), SVG vector
+reticles, scope glass and its reflections, the camera collision sweep, and the bodycam
+script / config / shader files in the exe's gamedata. Frame generation is not on this branch.
+
+The two histories were not linked (this branch was squash-merged from upstream `871e2491`,
+bodycam sits on upstream `f768576c`), so the merge was done between a synthetic commit of each
+tree on its real upstream base, and the result committed on top of the perf branch. 49 files
+conflicted; the decisions that are not "keep both":
+
+- **Texture loading** keeps this branch's (background TBB arena, `QueueTextureLoad`), with
+  bodycam's scope-glass material routing re-added.
+- **Grass**: bodycam's grass renderer is TheLostInPlace's, the same one this branch has; bodycam's
+  version (scope-pass culling, stats) wins, with this branch's nearest-slot cache selection.
+  `r__fast_details_update` now lives in `ps_r2_ls_flags_ext` (bodycam's fix: the old bit 32 did
+  not fit the 32-bit flags).
+- **HDR10 stays removed.** Upstream's HDR10 came back with the bodycam side in a few places
+  (render target formats, console variables, the HDR10 bloom / flare calls, one reticle shader);
+  those are taken out again, as on every PBR branch. `reticle_emission_combine.ps` defines
+  `HDR10_IS_ENABLED false` instead of including `hdr10.h`.
+- **R4 depth-bounds test**: bodycam removed the DX11 stubs (they returned FALSE); the two calls
+  left in this branch's point / spot accumulation are gone too.
+
+### What had to change for PiP to work with this branch's features
+
+- **DLSS / FSR 3.** The scope viewport renders into its own target at its own size, between the
+  main G-buffer and the main combine, while the upscaler's scene is open. While the scope target
+  is active (`m_render_pass_is_svp`), `RenderScreenWidth/Height()` return the scope size,
+  `dlss::SceneDepth()` returns the scope's own depth, the raster jitter is zero and `dlss::Active()`
+  is false; the scope combine skips `phase_dlss_postprocess`, so it neither evaluates the upscaler
+  on the scope image nor closes the main scene early. `TargetMain->SetActive()` restores the
+  render-size viewport. Bodycam's scene passes that drew with display dimensions (light scissor,
+  NVG objective split, reticle glow) use the scene size.
+- **Per-viewport targets.** PBR's third G-buffer target (`rt_Surface`), the skin SSS targets and
+  the SSLR result are created per viewport (bodycam's `createUnique` remap), so the scope pass no
+  longer overwrites the main view's. The scope skips SSLR and VSLR capture: it gets its own cleared
+  SSLR target (no hit) and samples the main VSLR capture. Skin SSS blurs the scope's skin light
+  too. Upscaler-only targets (reactive mask, post targets) belong to the main target, and only
+  the main target's destructor releases the upscaler.
+- **IX-Ray CSM.** Creating the scope target no longer turns `o.sun_csm` off (the scope has no
+  shadow atlas of its own); the scope target shares the main CSM array, and the CSM pass is
+  replayed into the scope through bodycam's `dual_accum` hook like the legacy cascades.
+- **MT shadows.** Sun / rain / local-light recording is prepared once per frame from the main
+  view (the scope's G-buffer pass no longer re-prepares it). MT local-light shadows fall back to
+  the owner path while a PiP scope is aimed: the scope re-accumulates every shadowed light on the
+  owner thread, which recorded worker accumulation cannot replay.
+- **Skinning.** Bodycam keeps motion-vector history per viewport (`Matrix_Prev[2]`,
+  `mRenderTransform_prev[2]`, keyed on `Device.dwViewport`). The cached bone palette reads the
+  viewport's history and is bypassed for the PiP frozen HUD pose; the MT shadow snapshot no longer
+  steps the history (it used to, keyed on `dwFrame`, which would zero skinned motion vectors).
+- Duplicated blocks from the automatic merge (detail rows setup, detail console variables) were
+  removed; the constant-buffer dirty-list counts start zeroed for recording contexts.
+
+### Shaders and mods
+
+- Bodycam's engine shaders (scope, reticle, SVP) ship in the exe's `00_modded_exes_gamedata.db0`
+  as before. None of them is replaced by the PBR shader packs. Bodycam's deferred scope glass
+  writes the G-buffer through `pack_gbuffer()`, so it gets PBR's zero surface (legacy lighting).
+- **Bodycam GAMMA Patch** (2.0.x): install it above the PBR shader pack. It overlaps the PBR
+  GAMMA pack only in `night_vision.h` and `depth_of_field.ps`, both GAMMA's unchanged files in the
+  pack, so the patch's versions win without losing PBR code. Its scope shaders need GAMMA's 3D
+  Shader Scopes headers (`mark_adjust.h`, `nv_utils.h`).
+- **Bodycam Grass Optimisation is not needed** with the PBR packs: they already carry the
+  instanced grass (`DT_INST`) on top of each stack. Installing it over a PBR pack replaces
+  `deffer_grass.vs`, `deffer_detail_s_flat.vs` and the tree branch shaders with SSS 23 versions.
+
+### Known limits
+
+- With DLSS / FSR 3 on, the NVG objective split (`svp_nvg_pass`) and the reticle glow before NVG
+  do not run (night vision runs after the upscaler there); the regular night vision does.
+- Not tested in game. HDR10, MSAA (bodycam turns PiP off under MSAA) and frame generation are not
+  part of this branch.
+
+### How it was checked
+
+- `tools/check_cpp.py --changed` against both parents (this branch's perf tree and bodycam); every
+  error new against both was fixed, the rest are the checker's environment (xr_vector-derived types,
+  Windows-only iterators). The checker had compared nothing past the precompiled header since the
+  profiler define pulled in the optick submodule, which `git archive` does not contain; it now
+  uses the no-op profiler backend (`PROFILER_DEFINE`).
+- DXC: all 88 bodycam and Bodycam GAMMA Patch shaders on vanilla + this exe's gamedata + the PBR
+  GAMMA pack + the patch. Only the environment fails: GAMMA's 3DSS headers absent, and DXC's
+  stricter `SV_POSITION` check that stock `fakescope.ps` hits too.

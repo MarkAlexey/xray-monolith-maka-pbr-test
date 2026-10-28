@@ -7,6 +7,7 @@
 #pragma once
 
 #include "../../xrCore/xrpool.h"
+#include "../../xrCDB/Frustum.h"
 #include "detailformat.h"
 #include "detailmodel.h"
 #include "light.h"
@@ -191,6 +192,19 @@ public:
 	xr_vector<xr_vector<Fsphere>> m_vis_bounds [3];
 	u32 m_vis_bounds_frame = u32(-1);
 	CFrustum* m_sun_cull = nullptr;
+
+	// pip the scope gbuffer pass between svp_Begin and svp_End, it reuses the main pass spans, culls
+	// them against the scope view and skips the main camera's occlusion, thinning and alpha step
+	bool m_svp_pass = false;
+	CFrustum m_svp_cull_frustum;
+	CFrustum* m_svp_cull = nullptr;
+	void svp_Begin(Fmatrix& full_xform);
+	void svp_End();
+
+	// slot spheres tested against the sun cascade or scope frustum, read by the pip stats overlay
+	struct CullStats { u32 tested, kept, dropped, runs, run_max, draws; };
+	CullStats m_cull_stats = {};
+	bool cull_Span(Fsphere b, light* L, float grow, bool frustum, u32 count);
 
 	bool m_occ_first_group = false;
 
@@ -430,6 +444,7 @@ public:
 	u32 m_frame_calc;
 	xr_atomic_u32 m_frame_rendered;
 	xrCriticalSection m_mt_calc_guard;
+	u32 m_mt_calc_registration_tid; // thread that queued MT_CALC, a same-thread calc run means it fell back inline
 	void __stdcall MT_CALC();
 
 	CDetailManager();

@@ -1,0 +1,14 @@
+// The installed sky pixel shader, for the Reference sky capture: the engine's sky blender compiled
+// with the "scope_reference_" pixel shader prefix (svp_reference_sky.inl), so the installed
+// sky2.vs, textures and constants are the engine sky's own.
+//
+// Contract with the installed sky2.ps (checked against the SSS 23 and Atmospherics stacks by
+// tests/reference/svp_reference_installed_check.mjs): its entry point is main(v2p) and returns a
+// struct whose member low is the displayed colour; night vision is off when shader_param_8.x is 0.
+#define main scope_reference_installed_sky
+#include "sky2.ps"
+#undef main
+float4 main(v2p input) : SV_Target0
+{
+    return scope_reference_installed_sky(input).low;
+}

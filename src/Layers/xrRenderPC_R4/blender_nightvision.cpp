@@ -36,7 +36,8 @@ void CBlender_nightvision::Compile(CBlender_Compile& C)
 		break;
 	case 1:	
 		C.r_Pass("stub_screen_space", "nightvision_gen_1", FALSE, FALSE, FALSE);
-		C.r_dx10Texture("s_position", r2_RT_P);	
+		C.r_dx10Texture("s_position", r2_RT_P);
+		C.r_dx10Texture("scope_glass_nvg_motion", r2_RT_ssfx_motion_vectors);
 		C.r_dx10Texture("s_image", dlss::Configured() ? "$user$dlss_post_source" : r2_RT_generic0);
 		C.r_dx10Texture("s_bloom_new", r2_RT_pp_bloom);	
 		C.r_dx10Texture("s_blur_2", r2_RT_blur_2);
@@ -53,7 +54,8 @@ void CBlender_nightvision::Compile(CBlender_Compile& C)
 		break;	
 	case 2:	
 		C.r_Pass("stub_screen_space", "nightvision_gen_2", FALSE, FALSE, FALSE);
-		C.r_dx10Texture("s_position", r2_RT_P);	
+		C.r_dx10Texture("s_position", r2_RT_P);
+		C.r_dx10Texture("scope_glass_nvg_motion", r2_RT_ssfx_motion_vectors);
 		C.r_dx10Texture("s_image", dlss::Configured() ? "$user$dlss_post_source" : r2_RT_generic0);
 		C.r_dx10Texture("s_bloom_new", r2_RT_pp_bloom);	
 		C.r_dx10Texture("s_blur_2", r2_RT_blur_2);
@@ -69,7 +71,8 @@ void CBlender_nightvision::Compile(CBlender_Compile& C)
 		break;	
 	case 3:	
 		C.r_Pass("stub_screen_space", "nightvision_gen_3", FALSE, FALSE, FALSE);
-		C.r_dx10Texture("s_position", r2_RT_P);	
+		C.r_dx10Texture("s_position", r2_RT_P);
+		C.r_dx10Texture("scope_glass_nvg_motion", r2_RT_ssfx_motion_vectors);
 		C.r_dx10Texture("s_image", dlss::Configured() ? "$user$dlss_post_source" : r2_RT_generic0);
 		C.r_dx10Texture("s_bloom_new", r2_RT_pp_bloom);	
 		C.r_dx10Texture("s_blur_2", r2_RT_blur_2);

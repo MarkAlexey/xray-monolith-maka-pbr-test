@@ -6,6 +6,10 @@
 using dx10StateUtils::operator==;
 
 #undef SSManager
+// fps audit tally, one shared counter across every shader-stage sampler apply, read by the overlay
+extern int ps_r__svp_stats;
+extern u32 svp_stats_sampler_set;
+
 dx10SamplerStateCache SSManager;
 #if defined(USE_DX11) && RENDER == R_R4
 #define SSManager ActiveSamplerManager()
@@ -182,6 +186,7 @@ void dx10SamplerStateCache::VSApplySamplers(HArray& samplers)
     u32 uiMin;
     u32 uiMax;
     if (!PrepareSamplerStates(samplers, pSS, m_aVSSamplers, uiMin, uiMax)) return;
+    if (ps_r__svp_stats) ++svp_stats_sampler_set;   // PiP overlay tally (not exact across MT recording)
     RenderDeviceContext()->VSSetSamplers(uiMin, uiMax - uiMin + 1, &pSS[uiMin]);
     CommitSamplerStates(samplers, m_aVSSamplers, uiMin, uiMax);
 }
@@ -192,6 +197,7 @@ void dx10SamplerStateCache::PSApplySamplers(HArray& samplers)
     u32 uiMin;
     u32 uiMax;
     if (!PrepareSamplerStates(samplers, pSS, m_aPSSamplers, uiMin, uiMax)) return;
+    if (ps_r__svp_stats) ++svp_stats_sampler_set;   // PiP overlay tally (not exact across MT recording)
     RenderDeviceContext()->PSSetSamplers(uiMin, uiMax - uiMin + 1, &pSS[uiMin]);
     CommitSamplerStates(samplers, m_aPSSamplers, uiMin, uiMax);
 }
@@ -202,6 +208,7 @@ void dx10SamplerStateCache::GSApplySamplers(HArray& samplers)
     u32 uiMin;
     u32 uiMax;
     if (!PrepareSamplerStates(samplers, pSS, m_aGSSamplers, uiMin, uiMax)) return;
+    if (ps_r__svp_stats) ++svp_stats_sampler_set;   // PiP overlay tally (not exact across MT recording)
     RenderDeviceContext()->GSSetSamplers(uiMin, uiMax - uiMin + 1, &pSS[uiMin]);
     CommitSamplerStates(samplers, m_aGSSamplers, uiMin, uiMax);
 }
@@ -213,6 +220,7 @@ void dx10SamplerStateCache::HSApplySamplers(HArray& samplers)
     u32 uiMin;
     u32 uiMax;
     if (!PrepareSamplerStates(samplers, pSS, m_aHSSamplers, uiMin, uiMax)) return;
+    if (ps_r__svp_stats) ++svp_stats_sampler_set;   // PiP overlay tally (not exact across MT recording)
     RenderDeviceContext()->HSSetSamplers(uiMin, uiMax - uiMin + 1, &pSS[uiMin]);
     CommitSamplerStates(samplers, m_aHSSamplers, uiMin, uiMax);
 }
@@ -223,6 +231,7 @@ void dx10SamplerStateCache::DSApplySamplers(HArray& samplers)
     u32 uiMin;
     u32 uiMax;
     if (!PrepareSamplerStates(samplers, pSS, m_aDSSamplers, uiMin, uiMax)) return;
+    if (ps_r__svp_stats) ++svp_stats_sampler_set;   // PiP overlay tally (not exact across MT recording)
     RenderDeviceContext()->DSSetSamplers(uiMin, uiMax - uiMin + 1, &pSS[uiMin]);
     CommitSamplerStates(samplers, m_aDSSamplers, uiMin, uiMax);
 }
@@ -233,6 +242,7 @@ void dx10SamplerStateCache::CSApplySamplers(HArray& samplers)
     u32 uiMin;
     u32 uiMax;
     if (!PrepareSamplerStates(samplers, pSS, m_aCSSamplers, uiMin, uiMax)) return;
+    if (ps_r__svp_stats) ++svp_stats_sampler_set;   // PiP overlay tally (not exact across MT recording)
     RenderDeviceContext()->CSSetSamplers(uiMin, uiMax - uiMin + 1, &pSS[uiMin]);
     CommitSamplerStates(samplers, m_aCSSamplers, uiMin, uiMax);
 }

@@ -1,0 +1,32 @@
+// The installed sky for the VSLR capture: the engine's sky blender compiled with the "scope_vslr_"
+// pixel shader prefix, so the installed sky2.vs, sky textures, rotation and tint are the sky's own.
+// The installed sky2.ps passes its sky colour to tonemap(low, high, rgb, scale) in the tone map's
+// input encoding (sRGB); that colour is kept as linear radiance and the tone map is not run. A sky2.ps
+// that does not tone map (stock, SSS 23) displays sky * (1 + sky / 2.89) / (sky + 1), which is inverted.
+// Alpha marks where the sky box was drawn.
+#include "common.h"
+static float3 scope_vslr_sky_colour = 0;
+static bool scope_vslr_sky_toned = false;
+void scope_vslr_sky_tonemap(out float4 low, out float4 high, float3 rgb, float scale)
+{
+    scope_vslr_sky_colour = max(rgb, 0);
+    scope_vslr_sky_toned = true;
+    low = 0;
+    high = 0;
+}
+#define tonemap scope_vslr_sky_tonemap
+#define main scope_vslr_installed_sky
+#include "sky2.ps"
+#undef main
+#undef tonemap
+// The stock sky curve's inverse: the root x >= 0 of x^2 / 2.89 + (1 - y) x - y = 0.
+float3 scope_vslr_stock_sky_inverse(float3 displayed)
+{
+    const float3 y = max(displayed, 0);
+    return 1.445 * (sqrt((1 - y) * (1 - y) + y * (4 / 2.89)) - (1 - y));
+}
+float4 main(v2p input) : SV_Target0
+{
+    const float3 displayed = scope_vslr_installed_sky(input).low.rgb;
+    return float4(SRGBToLinear(scope_vslr_sky_toned ? scope_vslr_sky_colour : scope_vslr_stock_sky_inverse(displayed)), 1);
+}

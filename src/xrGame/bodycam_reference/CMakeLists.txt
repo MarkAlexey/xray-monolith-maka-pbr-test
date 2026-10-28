@@ -1,0 +1,115 @@
+cmake_minimum_required(VERSION 3.20)
+project(BodycamReference LANGUAGES CXX)
+# The game builds the same sources through src/xrGame/xrGame.vcxproj; tests/reference/check-bodycam-sources.py
+# fails when the two lists differ.
+add_library(bodycam_reference STATIC
+  action_asset.cpp
+  action_semantics.cpp
+  additive_pose.cpp
+  ads_pose.cpp
+  ads_sway.cpp
+  animation_blend.cpp
+  authored_channel.cpp
+  blendspace_fir.cpp
+  blendspace_samples.cpp
+  camera.cpp
+  camera_effects.cpp
+  camera_intensity.cpp
+  camera_presentation.cpp
+  character_frame.cpp
+  character_graph.cpp
+  character_session.cpp
+  compressed_curves.cpp
+  control.cpp
+  curve_frame.cpp
+  cycle_graph.cpp
+  cycle_layer.cpp
+  cycle_pose_owner.cpp
+  detail_players.cpp
+  directional_cache.cpp
+  directional_machine.cpp
+  directional_pose_evaluate.cpp
+  engine_basis.cpp
+  equipment_asset.cpp
+  fire_montages.cpp
+  fire_pose.cpp
+  flat_ground.cpp
+  footroot_pose.cpp
+  gait_blend.cpp
+  grounded_movement.cpp
+  group_bank.cpp
+  group_candidates.cpp
+  group_preparation.cpp
+  idle_pose.cpp
+  inertial.cpp
+  inertial_pose.cpp
+  lean_player.cpp
+  locomotion_asset_bank.cpp
+  locomotion_children.cpp
+  locomotion_frame.cpp
+  locomotion_machine.cpp
+  locomotion_marker_tick.cpp
+  locomotion_player.cpp
+  locomotion_player_group.cpp
+  locomotion_properties.cpp
+  locomotion_rotation.cpp
+  marker_clock.cpp
+  montage_blend.cpp
+  motion_frame.cpp
+  mouse_history.cpp
+  mouse_shake.cpp
+  movement.cpp
+  movement_additives.cpp
+  movement_asset.cpp
+  movement_vibration.cpp
+  normal_five_state.cpp
+  packed_pose_blend.cpp
+  pertrack_pose.cpp
+  pose.cpp
+  pose_asset_bank.cpp
+  primary_frame.cpp
+  primary_rifle_pose.cpp
+  recoil_asset.cpp
+  recoil_controller.cpp
+  recoil_curve.cpp
+  recoil_fire_sway.cpp
+  recoil_pose.cpp
+  recoil_profile.cpp
+  recoil_random.cpp
+  recoil_rig.cpp
+  recoil_secondary.cpp
+  recoil_timeline.cpp
+  regional_pose.cpp
+  regrip_asset_bank.cpp
+  regrip_clip.cpp
+  regrip_montages.cpp
+  regrip_pose.cpp
+  rifle_asset_bank.cpp
+  rifle_local_pose.cpp
+  rifle_overlay.cpp
+  rifle_reference_pose.cpp
+  rifle_virtual_fire.cpp
+  rotate_player.cpp
+  skeleton_bridge.cpp
+  skeleton_pose.cpp
+  spine_pose.cpp
+  spring.cpp
+  sprint_dispatch.cpp
+  sprint_marker_tick.cpp
+  step_pose.cpp
+  stop_plant.cpp
+  sway_ik.cpp
+  transform.cpp
+  upper_frame.cpp
+  upper_locomotion.cpp
+  upper_pose.cpp
+  viewmodel_helpers.cpp
+  viewmodel_pose.cpp
+)
+target_compile_features(bodycam_reference PUBLIC cxx_std_17)
+target_include_directories(bodycam_reference PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+if(MSVC)
+  target_compile_options(bodycam_reference PRIVATE /fp:strict /W4)
+else()
+  target_compile_options(bodycam_reference PRIVATE -ffp-contract=off -fno-fast-math -Wall -Wextra)
+endif()

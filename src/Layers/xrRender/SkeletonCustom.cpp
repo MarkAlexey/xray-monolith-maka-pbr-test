@@ -460,7 +460,7 @@ void CKinematics::Copy(dxRender_Visual* P)
 }
 
 #if defined(USE_DX11) && RENDER == R_R4
-const Fvector4* CKinematics::RenderPalette(u32 count, bool previous)
+const Fvector4* CKinematics::RenderPalette(u32 count, bool previous, u32 viewport)
 {
     PROF_EVENT("Render.Skinning.ValidatePalette");
     if (!count || count > LL_BoneCount()) return nullptr;
@@ -470,7 +470,7 @@ const Fvector4* CKinematics::RenderPalette(u32 count, bool previous)
     if (count > initialized) { source.resize(count); rows.resize(count * 3); }
     for (u32 bone = 0; bone < count; ++bone)
     {
-        const Fmatrix& m = previous ? bone_instances[bone].mRenderTransform_prev : bone_instances[bone].mRenderTransform;
+        const Fmatrix& m = previous ? bone_instances[bone].mRenderTransform_prev[viewport] : bone_instances[bone].mRenderTransform;
         if (bone < initialized && !memcmp(&source[bone], &m, sizeof(m))) continue;
         source[bone] = m;
         Fvector4* packed = rows.data() + bone * 3;
@@ -528,6 +528,7 @@ void CKinematics::Depart()
 
 void CKinematics::Release()
 {
+    PhysicalScopeGlassMask = 0;
 	// xr_free bones
 	for (u32 i = 0; i < bones->size(); i++)
 	{
@@ -990,6 +991,52 @@ void CKinematics::ClearWallmarks()
 	//	for (SkeletonWMVecIt it=wallmarks.begin(); it!=wallmarks.end(); it++)
 	//		xr_delete	(*it);
 	wallmarks.clear();
+}
+
+u64 CKinematics::ScopeGlassBoneSubtree(u16 bone)
+{
+    if (bone >= bones->size()) return 0;
+    u64 mask = 0;
+    for (u16 id = 0; id < bones->size(); ++id)
+    {
+        u16 ancestor = id;
+        while (ancestor != bone && ancestor != BI_NONE && ancestor < bones->size())
+            ancestor = (*bones)[ancestor]->GetParentID();
+        if (ancestor == bone) mask |= u64(1) << id;
+    }
+    return mask;
+}
+
+bool CKinematics::IsPhysicalScopeGlassBone(u16 bone)
+{
+#if RENDER == R_R4
+    const u64 subtree = ScopeGlassBoneSubtree(bone);
+    if (!subtree) return false;
+    bool found = false;
+    // Child arrays reorder as visibility changes; inspect each mesh's actual
+    // bone set instead of indexing the original child_faces by current order.
+    for (const auto* list : { &children, &children_invisible })
+        for (auto* visual : *list)
+        {
+            auto* mesh = smart_cast<CSkeletonX*>(visual);
+            if (!mesh) continue;
+            const u64 used = mesh->ScopeGlassBoneMask();
+            if (!(used & subtree)) continue;
+            if (mesh->IsPhysicalScopeGlass()) found = true;
+            // An opaque mesh shared with unrelated bones cannot be removed
+            // as a whole. Keep native behavior for that unsupported layout.
+            else if (used & ~subtree) return false;
+        }
+    return found;
+#else
+    return false;
+#endif
+}
+
+void CKinematics::SetPhysicalScopeGlassMask(u16 bone, bool enabled)
+{
+    PhysicalScopeGlassMask = enabled && IsPhysicalScopeGlassBone(bone)
+        ? ScopeGlassBoneSubtree(bone) : 0;
 }
 
 int CKinematics::LL_GetBoneGroups(xr_vector<xr_vector<u16>>& groups)

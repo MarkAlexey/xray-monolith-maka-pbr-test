@@ -130,9 +130,14 @@ bool dx10ConstantBuffer::WriteFloat4Array(R_constant* C, R_constant_load& L, con
 
 void dx10ConstantBuffer::Flush()
 {
+    extern int ps_r__svp_stats;
+    extern u32 svp_stats_cb_flush;
+    extern u32 svp_stats_cb_flush_map;
+    if (ps_r__svp_stats) ++svp_stats_cb_flush;
     if (m_bChanged)
     {
         PROF_EVENT("Render.Constants.Upload");
+        if (ps_r__svp_stats) ++svp_stats_cb_flush_map;
         void    *pData;
 #ifdef USE_DX11
         D3D11_MAPPED_SUBRESOURCE    pSubRes;

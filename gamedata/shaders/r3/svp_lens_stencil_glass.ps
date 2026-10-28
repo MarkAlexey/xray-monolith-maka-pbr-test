@@ -1,0 +1,12 @@
+// colour stays untouched (writes masked), the pass only stamps the lens stencil where the
+// deferred physical glass is the visible surface
+
+#include "scope_common.h"
+
+Texture2D scope_reference_visible_glass;
+
+float4 main(v_out I) : SV_Target
+{
+	if (!(scope_reference_visible_glass.Load(int3(I.hpos.xy, 0)).w > 1.5)) discard;
+	return float4(0.0, 0.0, 0.0, 0.0);
+}

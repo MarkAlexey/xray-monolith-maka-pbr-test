@@ -1,0 +1,17 @@
+// The stock PiP image, shadow and reticle (scope_color_write) at visible lens glass pixels only.
+// Deferred glass has written depth in front of the ocular and reticle planes, so the glass
+// G-buffer tag replaces the depth test.
+Texture2D scope_reference_visible_glass;
+// The engine draws this object for the image, shadow and reticle phases only (the lens phase always uses
+// scope_color_write), so the lens code is left out of the compile.
+#ifndef SCOPE_COLOR_WRITE_PHASES
+#define SCOPE_COLOR_WRITE_PHASES (SCOPE_PHASE_IMAGE | SCOPE_PHASE_RETICLE | SCOPE_PHASE_SHADOW)
+#endif
+#define main scope_color_write_main
+#include "scope_color_write.ps"
+#undef main
+float4 main(v_out input) : SV_Target
+{
+    if (!(scope_reference_visible_glass.Load(int3(input.hpos.xy, 0)).w > 1.5)) discard;
+    return scope_color_write_main(input);
+}

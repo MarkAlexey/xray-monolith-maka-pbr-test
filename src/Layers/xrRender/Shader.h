@@ -145,7 +145,7 @@ public:
 		u32 isLandscape : 1;
 		u32 isWater : 1;
 
-		u32 iScopeLense : 2; //  Redotix99: for 3D Shader Based Scopes 		
+		u32 iScopeLense : 4; //  Redotix99: for 3D Shader Based Scopes / pip widened to 4 bits (reflex sights use ==10, non-lens late-pass meshes ==11)
 
 		u32 bReflect : 1; // Monolith: IX-Ray VSLR capture element (E[SE_R2_REFLECTIONS], uber_reflect)
 	};

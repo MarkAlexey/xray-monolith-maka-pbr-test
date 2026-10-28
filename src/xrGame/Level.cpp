@@ -41,6 +41,7 @@
 #include "xrEngine/XR_IOConsole.h"
 #include "actor.h"
 #include "player_hud.h"
+#include "first_person_transform.h"
 #include "UI/UIGameTutorial.h"
 #include "file_transfer.h"
 #include "message_filter.h"
@@ -294,6 +295,7 @@ CLevel::~CLevel()
 {
     PROF_EVENT("CLevel::~CLevel");
     //crash_saving::save_impl = nullptr; // CLevel not available, disable crash save
+    FirstPerson::Reset();
     xr_delete(g_player_hud);
     delete_data(m_script_attachments);
     delete_data(hud_zones_list);
@@ -1246,6 +1248,7 @@ extern void render_reshade_effects();
 
 void CLevel::OnRender()
 {
+	Device.dwViewport++; // pip advance the per-viewport cache key once per frame (keeps non-R4 invalidating)
 	// PDA
 	if (game && CurrentGameUI() && &CurrentGameUI()->GetPdaMenu() != nullptr)
 	{
@@ -1307,7 +1310,7 @@ void CLevel::OnRender()
 	Game().OnRender();
 	BulletManager().Render();
 
-	if (Device.m_SecondViewport.IsSVPFrame())
+	if (!Device.true_pip_on && Device.m_SecondViewport.IsSVPFrame())
 		Render->RenderToTarget(Render->rtSVP);
 
 	if (use_reshade)

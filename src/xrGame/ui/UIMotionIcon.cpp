@@ -2,7 +2,7 @@
 #include "UIMainIngameWnd.h"
 #include "UIMotionIcon.h"
 #include "UIXmlInit.h"
-#include "../actor.cpp"
+float GetActorVisibility(); // Actor.cpp (was an #include of actor.cpp, which linked a second copy of CActor)
 
 const LPCSTR MOTION_ICON_XML = "motion_icon.xml";
 

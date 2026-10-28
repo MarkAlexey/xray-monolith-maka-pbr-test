@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "bodycam_reference_projection.h"
 #include "../xrCDB/frustum.h"
 #include "xr_ioconsole.h"
 #include "xr_input.h"
@@ -40,6 +41,7 @@
 #include "IGame_Level.h"
 
 #include "Rain.h"
+#include "../Layers/xrRender/svp_console.h"
 
 #pragma comment( lib, "d3dx9.lib" )
 
@@ -49,6 +51,7 @@ ENGINE_API CRenderDevice* DevicePtr = nullptr;
 
 ENGINE_API xr_atomic_bool g_bRendering = false;
 extern ENGINE_API float psHUD_FOV;
+extern ENGINE_API float psCamAttachedFOV;
 
 BOOL g_bLoaded = FALSE;
 ref_light precache_light = 0;
@@ -435,6 +438,14 @@ void CRenderDevice::on_idle()
 	mFullTransformCam.mul(mProjectCam, mView);
 	m_pRender->SetCacheXform(mView, mProject);
 
+	// advance per-viewport history and store the main camera in slot 0
+	// slot 1 = SVP, filled by svpCamera in the render layer
+	Device.matrices_previous[0] = Device.matrices[0];
+	Device.matrices_previous[1] = Device.matrices[1];
+	Device.matrices[0].mView = mView;
+	Device.matrices[0].mProject = mProject;
+	Device.matrices[0].mProjectHud = mProjectHud;
+
 	mViewHud_prev = mViewHud;
 	mProjectHud_prev = mProjectHud;
 	mFullTransformHud_prev = mFullTransformHud;
@@ -449,13 +460,25 @@ void CRenderDevice::on_idle()
 
 	m_pRender->SetCacheXform_prev(mView_prev, mProject_prev);
 
-	mProjectHud.build_projection(deg2rad(psHUD_FOV * 83.f), fASPECT, R_VIEWPORT_NEAR, g_pGamePersistent->Environment().CurrentEnv->far_plane);
-	mProjectCam.build_projection(deg2rad(83.f), fASPECT, R_VIEWPORT_NEAR, g_pGamePersistent->Environment().CurrentEnv->far_plane);
+	// pip true hud fov renders the weapon at the scene perspective while fully aimed through a PiP scope
+	extern int g_svp_hud_true_fov;
+	const float hud_fov_deg = BodycamReference::HudProjectionFov(
+		dwFrame, reference_hud_projection_frame, fFOV, psHUD_FOV * BodycamReference::kHudFovDegrees,
+		g_svp_hud_true_fov && true_pip_on && m_SecondViewport.IsSVPActive()
+		&& g_pGamePersistent && g_pGamePersistent->m_pGShaderConstants->hud_params.x > 0.999f, reference_hud_nearwall_scale);
+	mProjectHud.build_projection(deg2rad(hud_fov_deg), fASPECT, R_VIEWPORT_NEAR, g_pGamePersistent->Environment().CurrentEnv->far_plane);
+    const float referenceClipScale=BodycamReference::HudProjectionClipScale(
+        dwFrame,reference_hud_projection_frame,reference_hud_clip_scale);
+    mProjectHud._11*=referenceClipScale;
+    mProjectHud._22*=referenceClipScale;
+	mProjectCam.build_projection(deg2rad(psCamAttachedFOV), fASPECT, R_VIEWPORT_NEAR, g_pGamePersistent->Environment().CurrentEnv->far_plane);
 	
 	mViewHud.set(mView);
 	mViewCam.set(mView);
 	mFullTransformHud.mul(mProjectHud, mViewHud);
 	mFullTransformCam.mul(mProjectCam, mViewCam);
+	if (true_pip_on)
+		Device.matrices[0].mProjectHud = mProjectHud;
 
 	// Save previous frame grass benders data
 	IGame_Persistent::grass_data& GData = g_pGamePersistent->grass_shader_data;
@@ -481,6 +504,9 @@ void CRenderDevice::on_idle()
 	mFullTransform_saved = mFullTransform;
 	mView_saved = mView;
 	mProject_saved = mProject;
+
+	vCameraPosition_bones = vCameraPosition;
+	mFullTransform_bones = mFullTransform;
 
 	STOP_PROFILE;
 
@@ -546,7 +572,16 @@ void CRenderDevice::on_idle()
 #endif 
 	Device.isRendering = false;
 
-	secondary_tasks.wait();
+	// pip wall time of the secondary task join, read by the fps audit overlay
+	{
+		extern int ps_r__svp_stats;
+		extern float svp_stats_join_ms;
+		const bool timed = ps_r__svp_stats != 0;
+		CTimer join_timer;
+		if (timed) join_timer.Start();
+		secondary_tasks.wait();
+		if (timed) svp_stats_join_ms = join_timer.GetElapsed_ms_f();
+	}
 
 	if (psLua_ParallelGC_debug && psLua_ParallelGC && Device.LuaGCDebug)
 	{
@@ -674,6 +709,12 @@ void CRenderDevice::FrameMove()
 
 	dwFrame++;
 	Core.dwFrame = dwFrame;
+	// Sample once, before any viewport or actor work. This timer remains at unit
+	// rate and participates in pause management, independently of gameplay time.
+	application_delta = Paused() ? 0.0 :
+		(psDeviceFlags.test(rsConstantFPS) ? 0.033 :
+			double(application_timer.GetElapsed_ticks()) / double(CPU::qpc_freq));
+	application_timer.Start();
 	renderdoc_poll_captures();
 	dwTimeContinual = TimerMM.GetElapsed_ms() - app_inactive_time;
 	if (psDeviceFlags.test(rsConstantFPS))
@@ -923,14 +964,74 @@ void CLoadScreenRenderer::OnRender()
 	pApp->load_draw_internal();
 }
 
-void CRenderDevice::CSecondVPParams::SetSVPActive(bool bState) //--#SM+#-- +SecondVP+
+void CSecondVPParams::SetSVPActive(bool bState) //--#SM+#-- +SecondVP+
 {
-	isActive = bState;
+	const bool was_active = isActive.load(std::memory_order_acquire);
+	if (scope_svp_enabled < 2)
+	{
+		if (bState != was_active)
+		{
+			if (!bState)
+				isActive.store(false, std::memory_order_release);
+			m_svp_session.fetch_add(1, std::memory_order_acq_rel);
+			InvalidateOpticConfig();
+			if (bState)
+			{
+				ClearWeaponPose();
+				ClearSight();
+				dlss_reset_next = true;
+				isActive.store(true, std::memory_order_release);
+			}
+		}
+		if (!bState)
+		{
+			ClearWeaponPose();
+			ClearSight();
+		}
+		if (g_pGamePersistent != NULL)
+			g_pGamePersistent->m_pGShaderConstants->m_blender_mode.z = bState ? 1.0f : 0.0f;
+		return;
+	}
+	if (bState != was_active)
+	{
+		if (!bState)
+		{
+			isActive.store(false, std::memory_order_release);
+			m_svp_session.fetch_add(1, std::memory_order_acq_rel);
+			InvalidateOpticConfig();
+		}
+		if (bState)
+		{
+			xrCriticalSectionGuard guard(m_snapshot_lock);
+			m_weapon_pose = WeaponPoseSnapshot{};
+			dlss_reset_next = true;
+			isActive.store(true, std::memory_order_release);
+		}
+	}
+	if (!bState)
+	{
+		xrCriticalSectionGuard guard(m_snapshot_lock);
+		m_weapon_pose = WeaponPoseSnapshot{};
+		m_sight = SightSnapshot{};
+	}
 	if (g_pGamePersistent != NULL)
-		g_pGamePersistent->m_pGShaderConstants->m_blender_mode.z = (isActive ? 1.0f : 0.0f);
+		g_pGamePersistent->m_pGShaderConstants->m_blender_mode.z = bState ? 1.0f : 0.0f;
 }
 
-bool CRenderDevice::CSecondVPParams::IsSVPFrame() //--#SM+#-- +SecondVP+
+bool CSecondVPParams::IsSVPFrame() //--#SM+#-- +SecondVP+
 {
+	if (Device.true_pip_on)
+		return m_render_pass_is_svp;
 	return IsSVPActive() && Device.dwFrame % frameDelay == 0;
+}
+
+void CRenderDevice::prepare_matrices()
+{
+	auto svp = m_SecondViewport.IsSVPFrame();
+	// per-viewport previous matrices (0 = main, 1 = SVP) for motion vectors
+	mView_prev = Device.matrices_previous[svp].mView;
+	mProject_prev = Device.matrices_previous[svp].mProject;
+	m_pRender->SetCacheXform_prev(mView_prev, mProject_prev);
+	// grass + wind prev stay once-per-frame in the device frame fn, not here, because
+	// prepare_matrices runs per SetActive and wind prev=saved/saved=cur is not idempotent
 }

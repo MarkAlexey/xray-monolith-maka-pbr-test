@@ -460,7 +460,9 @@ void CRenderTarget::accum_direct_cascade(u32 sub_phase, Fmatrix& xform, Fmatrix&
 
 	// Perform lighting
 	{
-		phase_accumulator();
+		// the masking pass above already set the accumulator up, this rebind is a no-op
+		if (!ps_r__light_lean)
+			phase_accumulator();
 		RCache.set_CullMode(CULL_CCW); //******************************************************************
 		RCache.set_ColorWriteEnable();
 
@@ -1184,6 +1186,10 @@ void CRenderTarget::accum_direct_volumetric(u32 sub_phase, const u32 Offset, con
 
 	if ((sub_phase != SE_SUN_NEAR) && (sub_phase != SE_SUN_FAR)) return;
 
+	// the scope replay reruns this pass so only the main pass feeds the row
+	const bool tm_vol = !Device.m_SecondViewport.m_render_pass_is_svp;
+	if (tm_vol) svp_stats_sun_sub_begin(SUN_SUB_VOL);
+
 // SSS : Deprecated
 /*	float w = float(RenderScreenWidth());
 	float h = float(RenderScreenHeight());
@@ -1206,30 +1212,37 @@ void CRenderTarget::accum_direct_volumetric(u32 sub_phase, const u32 Offset, con
 	//	Set correct depth surface
 	//	It's slow. Make this when shader is created
 	{
-		char* pszSMapName;
-		BOOL b_HW_smap = RImplementation.o.HW_smap;
-		BOOL b_HW_PCF = RImplementation.o.HW_smap_PCF;
-		if (b_HW_smap)
+		// minmax and non-minmax pick a different Element, cache both by identity
+		static ref_selement resolved_for = nullptr;
+		if (!ps_r__light_lean || resolved_for != Element)
 		{
-			if (b_HW_PCF) pszSMapName = r2_RT_smap_depth;
-			else pszSMapName = r2_RT_smap_depth;
-		}
-		else pszSMapName = r2_RT_smap_surf;
-		//s_smap
-		STextureList* _T = &*Element->passes[0]->T;
-
-		STextureList::iterator _it = _T->begin();
-		STextureList::iterator _end = _T->end();
-		for (; _it != _end; _it++)
-		{
-			std::pair<u32, ref_texture>& loader = *_it;
-			u32 load_id = loader.first;
-			//	Shadowmap texture always uses 0 texture unit
-			if (load_id == 0)
+			char* pszSMapName;
+			BOOL b_HW_smap = RImplementation.o.HW_smap;
+			BOOL b_HW_PCF = RImplementation.o.HW_smap_PCF;
+			if (b_HW_smap)
 			{
-				//	Assign correct texture
-				loader.second.create(pszSMapName);
+				if (b_HW_PCF) pszSMapName = r2_RT_smap_depth;
+				else pszSMapName = r2_RT_smap_depth;
 			}
+			else pszSMapName = r2_RT_smap_surf;
+			//s_smap
+			STextureList* _T = &*Element->passes[0]->T;
+
+			STextureList::iterator _it = _T->begin();
+			STextureList::iterator _end = _T->end();
+			for (; _it != _end; _it++)
+			{
+				std::pair<u32, ref_texture>& loader = *_it;
+				u32 load_id = loader.first;
+				//	Shadowmap texture always uses 0 texture unit
+				if (load_id == 0)
+				{
+					//	Assign correct texture
+					loader.second.create(pszSMapName);
+				}
+			}
+			if (ps_r__light_lean)
+				resolved_for = Element;
 		}
 	}
 
@@ -1366,4 +1379,6 @@ void CRenderTarget::accum_direct_volumetric(u32 sub_phase, const u32 Offset, con
 //		if (RImplementation.o.ssfx_volumetric)
 //			set_viewport_size(HW.pContext, w, h);
 	}
+
+	if (tm_vol) svp_stats_sun_sub_end(SUN_SUB_VOL);
 }

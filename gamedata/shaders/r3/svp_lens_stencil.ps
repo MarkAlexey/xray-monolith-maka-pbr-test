@@ -1,0 +1,8 @@
+// colour stays untouched (writes masked), the pass only stamps the lens stencil
+
+#include "scope_common.h"
+
+float4 main(v_out I) : SV_Target
+{
+	return float4(0.0, 0.0, 0.0, 0.0);
+}

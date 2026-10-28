@@ -1,0 +1,10 @@
+// 3DSS reticle glow: one direction of a lobe's Gaussian (r4_rendertarget_phase_3dss_reticle.cpp)
+#include "reticle_glow.h"
+
+Texture2D s_glow_source;
+
+float4 main(p_screen I) : SV_TARGET
+{
+	const int2 px = reticle_glow_pixel(s_glow_source, I.tc0);
+	return float4(reticle_glow_gauss(s_glow_source, px, reticle_glow_blur.xy, reticle_glow_blur.z), 1);
+}

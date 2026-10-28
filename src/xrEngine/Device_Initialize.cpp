@@ -38,6 +38,7 @@ PROTECT_API void CRenderDevice::Initialize()
 {
 	Log("Initializing Engine...");
 	TimerGlobal.Start();
+	application_timer.Start();
 	TimerMM.Start();
 
 #ifdef INGAME_EDITOR

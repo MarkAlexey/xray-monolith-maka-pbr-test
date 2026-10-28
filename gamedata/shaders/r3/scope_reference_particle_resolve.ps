@@ -1,0 +1,18 @@
+#include "common.h"
+#include "scope_reference_fog_transfer.h"
+Texture2D scope_reference_scene_source;
+Texture2D scope_reference_particle_display_source;
+Texture2D scope_reference_particle_baseline;
+float4 scope_reference_transfer;
+float4 main(p_screen I) : SV_Target
+{
+    const int3 pixel = int3(I.hpos.xy, 0);
+    const float4 raw = scope_reference_scene_source.Load(pixel);
+    const float3 display = scope_reference_particle_display_source.Load(pixel).rgb;
+    const float3 baseline = scope_reference_particle_baseline.Load(pixel).rgb;
+    // The FP16 copy of the 8-bit baseline is within 0.00025 per channel; one
+    // 8-bit step is 0.00392, so this threshold catches any drawn particle.
+    if (all(abs(display - baseline) < 0.0003))
+        return raw;
+    return float4(scope_reference_scene_tone_inverse(display, scope_reference_transfer.x, scope_reference_meter()), raw.a);
+}

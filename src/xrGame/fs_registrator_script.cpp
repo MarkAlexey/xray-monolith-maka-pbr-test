@@ -266,6 +266,7 @@ void fs_registrator::script_register(lua_State* L)
 		.def("dir_delete", &dir_delete_script_2)
 
 		.def("file_rename", &CLocatorAPI::file_rename)
+		.def("file_replace", &CLocatorAPI::file_replace)
 		.def("file_length", &CLocatorAPI::file_length)
 		.def("file_copy", &CLocatorAPI::file_copy)
 

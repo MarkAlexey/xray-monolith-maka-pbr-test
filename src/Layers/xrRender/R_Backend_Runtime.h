@@ -50,40 +50,40 @@ IC void R_xforms::set_c_wvp(R_constant* C)
 	RCache.set_c(C, m_wvp);
 };
 
-IC void R_xforms::set_c_w_prev(R_constant* C) 
-{ 
-	c_w_prev = C; 
-	RCache.set_c(C, m_w_prev); 
+IC void R_xforms::set_c_w_prev(R_constant* C)
+{
+	c_w_prev[Device.m_SecondViewport.IsSVPFrame()] = C;
+	RCache.set_c(C, m_w_prev[Device.m_SecondViewport.IsSVPFrame()]);
 };
 
-IC void R_xforms::set_c_v_prev(R_constant* C) 
-{ 
-	c_v_prev = C; 
-	RCache.set_c(C, m_v_prev); 
+IC void R_xforms::set_c_v_prev(R_constant* C)
+{
+	c_v_prev[Device.m_SecondViewport.IsSVPFrame()] = C;
+	RCache.set_c(C, m_v_prev[Device.m_SecondViewport.IsSVPFrame()]);
 };
 
-IC void R_xforms::set_c_p_prev(R_constant* C) 
-{ 
-	c_p_prev = C; 
-	RCache.set_c(C, m_p_prev); 
+IC void R_xforms::set_c_p_prev(R_constant* C)
+{
+	c_p_prev[Device.m_SecondViewport.IsSVPFrame()] = C;
+	RCache.set_c(C, m_p_prev[Device.m_SecondViewport.IsSVPFrame()]);
 };
 
-IC void R_xforms::set_c_wv_prev(R_constant* C) 
-{ 
-	c_wv_prev = C; 
-	RCache.set_c(C, m_wv_prev); 
+IC void R_xforms::set_c_wv_prev(R_constant* C)
+{
+	c_wv_prev[Device.m_SecondViewport.IsSVPFrame()] = C;
+	RCache.set_c(C, m_wv_prev[Device.m_SecondViewport.IsSVPFrame()]);
 };
 
-IC void R_xforms::set_c_vp_prev(R_constant* C) 
-{ 
-	c_vp_prev = C; 
-	RCache.set_c(C, m_vp_prev); 
+IC void R_xforms::set_c_vp_prev(R_constant* C)
+{
+	c_vp_prev[Device.m_SecondViewport.IsSVPFrame()] = C;
+	RCache.set_c(C, m_vp_prev[Device.m_SecondViewport.IsSVPFrame()]);
 };
 
-IC void R_xforms::set_c_wvp_prev(R_constant* C) 
-{ 
-	c_wvp_prev = C; 
-	RCache.set_c(C, m_wvp_prev); 
+IC void R_xforms::set_c_wvp_prev(R_constant* C)
+{
+	c_wvp_prev[Device.m_SecondViewport.IsSVPFrame()] = C;
+	RCache.set_c(C, m_wvp_prev[Device.m_SecondViewport.IsSVPFrame()]);
 };
 
 IC void CBackend::set_xform_world(const Fmatrix& M)
@@ -179,7 +179,13 @@ IC void CBackend::set_Element(ShaderElement* S, u32 pass)
         return;
 	SPass& P = *(S->passes[pass]);
 	set_States(P.state);
-	set_PS(P.ps);
+#if defined(USE_DX10) || defined(USE_DX11)
+	// the shadow raster writes no colour so the shared return zero shader can go away entirely
+	if (m_smap_null_ps && P.ps && P.ps->cName.equal(m_smap_null_ps_name))
+		set_PS((ID3DPixelShader*)nullptr, "dumb");
+	else
+#endif
+		set_PS(P.ps);
 	set_VS(P.vs);
 #if defined(USE_DX10) || defined(USE_DX11)
 	set_GS(P.gs);

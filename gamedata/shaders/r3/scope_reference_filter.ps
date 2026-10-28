@@ -1,0 +1,6 @@
+#define scope_reference_filter_sampler smp_rtlinear
+#include "scope_reference_filter.h"
+float4 main(float4 position : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+{
+    return float4(scope_reference_filter(uv), 1.0);
+}

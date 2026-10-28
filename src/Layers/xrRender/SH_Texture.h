@@ -33,6 +33,15 @@ public:
     void __stdcall apply_gif(u32 stage);
 	void __stdcall apply_normal(u32 stage);
 
+#if defined(USE_DX10) || defined(USE_DX11)
+    std::atomic<bool> loadQueued{false};
+#endif
+    bool IsLoading() const {
+#if defined(USE_DX10) || defined(USE_DX11)
+        if(loadQueued.load(std::memory_order_acquire)) return true;
+#endif
+        return flags.bLoading != 0;
+    }
 	void Preload();
 	void Load();
 	void PostLoad();
@@ -69,7 +78,7 @@ public:
 #endif	//	USE_DX10
 
 private:
-	IC void wait_for_loading() const { while (flags.bLoading){SwitchToThread();} }
+	IC void wait_for_loading() const { while (IsLoading()){SwitchToThread();} }
 	IC BOOL desc_valid() { wait_for_loading(); return pSurface==desc_cache; }
 	IC void desc_enshure() { wait_for_loading(); if (!desc_valid()) desc_update(); }
 	void desc_update();
@@ -106,6 +115,11 @@ public: //	Public class members (must be encapsulated furthur)
 	bool m_is_hot = false;		//--DSR-- HeatVision
 	bool m_is_glowing = false;	//--DSR-- SilencerOverheat
 
+#if RENDER == R_R4
+	// Reticle atlas metadata follows this resource's lifetime; -1 means unread, 0 means no atlas.
+	float reticle_glow_size = -1.f;
+#endif
+
 	union
 	{
 		u32 m_play_time; // sync theora time
@@ -134,8 +148,8 @@ struct resptrcode_texture : public resptr_base<CTexture>
 {
 	void create(LPCSTR _name);
 	void destroy() { _set(NULL); }
-	shared_str bump_get() { while (_get() && _get()->flags.bLoading) { SwitchToThread(); }return _get()->m_bumpmap; }
-	bool bump_exist() { while (_get() && _get()->flags.bLoading) { SwitchToThread(); }return 0!=bump_get().size(); }
+	shared_str bump_get() { while (_get() && _get()->IsLoading()) { SwitchToThread(); }return _get()->m_bumpmap; }
+	bool bump_exist() { while (_get() && _get()->IsLoading()) { SwitchToThread(); }return 0!=bump_get().size(); }
 };
 
 typedef resptr_core<CTexture, resptrcode_texture>

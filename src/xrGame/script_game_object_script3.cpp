@@ -202,6 +202,8 @@ class_<CScriptGameObject> script_register_game_object2(class_<CScriptGameObject>
 		.def("bone_visible", SAFE_WRAP((bool (CScriptGameObject::*)(LPCSTR))(&CScriptGameObject::is_bone_visible)))
 		.def("bone_visible", SAFE_WRAP((bool (CScriptGameObject::*)(LPCSTR, bool))(&CScriptGameObject::is_bone_visible)))
 
+		.def("set_physical_scope_glass_mask", &CScriptGameObject::set_physical_scope_glass_mask)
+		.def("is_physical_scope_glass_bone", &CScriptGameObject::is_physical_scope_glass_bone)
 		.def("set_bone_visible", SAFE_WRAP((void (CScriptGameObject::*)(u16, bool, bool))(&CScriptGameObject::set_bone_visible)))
 		.def("set_bone_visible", SAFE_WRAP((void (CScriptGameObject::*)(u16, bool, bool, bool))(&CScriptGameObject::set_bone_visible)))
 		.def("set_bone_visible", SAFE_WRAP((void (CScriptGameObject::*)(LPCSTR, bool, bool))(&CScriptGameObject::set_bone_visible)))

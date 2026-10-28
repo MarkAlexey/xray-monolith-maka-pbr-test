@@ -1,0 +1,17 @@
+// 3DSS reticle glow: half-size copy of the glow source, a 2x2 box per texel (r4_rendertarget_phase_3dss_reticle.cpp)
+#include "reticle_glow.h"
+
+Texture2D s_glow_source;
+
+float4 main(p_screen I) : SV_TARGET
+{
+	uint w, h;
+	s_glow_source.GetDimensions(w, h);
+	const uint2 size = max(uint2(w, h) / 2, 1);
+	const int2 p = int2(floor(I.tc0 * size)) * 2;
+	float3 sum = 0;
+	[unroll] for (int y = 0; y < 2; ++y)
+		[unroll] for (int x = 0; x < 2; ++x)
+			sum += s_glow_source.Load(int3(min(p + int2(x, y), int2(w, h) - 1), 0)).rgb;
+	return float4(sum * 0.25, 1);
+}

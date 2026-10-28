@@ -1,0 +1,64 @@
+// Runs the optical kernel on the ocular mesh. The eye and the surface are
+// mapped from the weapon's lens frame into the kernel's model frame.
+#include "scope_reference_capture_uv.h"
+#include "scope_reference_coordinates.h"
+float4 reference_source_zoom; // x: gain on the eye's offset from the aim anchor
+float4 reference_tracked_pupil; // xy: tracked eye residual in ocular metres; z: tracking active
+float4 reference_source_baseline,reference_ocular_baseline;
+static bool reference_pupil_zoom_active=false;
+static float2 reference_pupil_zoom_view=0;
+#define SCOPE_REFERENCE_PUPIL_VIEW(uv,view) (reference_pupil_zoom_active ? reference_pupil_zoom_view : (view))
+float4 reference_source_geometry,reference_source_socket,reference_source_tangent,reference_source_bitangent,reference_ocular_forward;
+#define scope_reference_capture_sampler smp_rtlinear
+#define scope_reference_surface_sampler smp_linear
+// y=.5 zeroes the kernel's reticle parallax; zw is the unit glyph scale.
+#define SCOPE_REFERENCE_RETICLE_CB22 float4(scope_reference_cb[22].x,.5,1.0/.033333,1.0/.033333)
+#define SCOPE_REFERENCE_SAMPLE_UV(slot,uv) reference_capture_uv(slot,uv)
+#define SCOPE_REFERENCE_CAPTURE_BASE(uv) reference_source_capture_base=uv
+// Where the image takes the capture, for what the engine adds over it in capture space (a hybrid reflex).
+static float2 reference_image_capture_tc=0;
+#define SCOPE_REFERENCE_IMAGE_SAMPLE(tc) reference_image_capture_tc=tc
+// The late reticle pass draws the glyph, so the kernel's glyph slot stays empty.
+#define SCOPE_REFERENCE_RETICLE_SAMPLE(uv,lod) float4(0,0,0,0)
+#define SCOPE_REFERENCE_INSIDE_BLEND(uv,color) color=lerp(color,reference_inside_sample.rgb,reference_inside_sample.a)
+#define SCOPE_REFERENCE_FOOTPRINT 1.0
+Texture2D scope_reference_inside;
+static float4 reference_inside_sample=0;
+static float scope_reference_visibility=0;
+static float3 scope_reference_pupil_transmission=0;
+#define SCOPE_REFERENCE_PUPIL_TRANSMISSION(value) scope_reference_pupil_transmission=value
+#define SCOPE_REFERENCE_TRANSMISSION(value) scope_reference_visibility=value
+#include "scope_reference_optics.h"
+#include "scope_reference_composite.h"
+float4 scope_reference_active; // x: 1 while this optic is the aimed sight
+struct ScopeReferenceImageOut
+{
+    float4 color : SV_Target0;
+    float4 capture : SV_Target1; // xy: the capture coordinate of the image, while the engine binds the target
+};
+ScopeReferenceImageOut main(ScopeReferenceCompositeVertex input)
+{
+    reference_inside_sample=scope_reference_inside.SampleLevel(scope_reference_surface_sampler,input.uv,0);
+    reference_capture_flip=svp_env.w>.5 && ddy(input.uv.y)<0;
+    reference_image_uv=input.uv;
+    float3 right=normalize(svp_lens_right.xyz),up=normalize(svp_lens_up.xyz),forward=normalize(reference_ocular_forward.xyz);
+    float3 sourceSurface=reference_source_vector(eye_position-input.view-svp_lens_center.xyz,right,up,forward,reference_source_geometry.x);
+    float3 sourceEye=reference_source_eye(eye_position-svp_lens_center.xyz,right,up,forward,reference_ocular_baseline.xyz,reference_source_baseline.xyz,reference_source_geometry.x);
+    float3 sourceView=sourceEye-sourceSurface;
+    bool tracked=reference_tracked_pupil.z>.5;
+    reference_pupil_zoom_active=tracked || reference_source_zoom.x>1.0;
+    if(reference_pupil_zoom_active){
+        float3 pupilEye=sourceEye;
+        float2 residual=float2(-reference_tracked_pupil.x,reference_tracked_pupil.y)*reference_source_geometry.x;
+        if(tracked) pupilEye.xy=reference_source_baseline.xy+residual;
+        pupilEye=reference_zoom_pupil_eye(pupilEye,reference_source_baseline.xyz,reference_source_zoom.x);
+        float3 pupilView=normalize(pupilEye-sourceSurface);
+        reference_pupil_zoom_view=float2(dot(pupilView,reference_source_tangent.xyz),dot(pupilView,reference_source_bitangent.xyz));
+    }
+    float effectDistance=length(sourceEye-reference_source_socket.xyz)*100;
+    float3 color=scope_reference_optics(input.uv,reference_source_tangent.xyz,reference_source_bitangent.xyz,sourceView,effectDistance,scope_reference_active.x);
+    ScopeReferenceImageOut output;
+    output.color=float4(color,saturate(dot(scope_reference_pupil_transmission,float3(1.0/3.0,1.0/3.0,1.0/3.0)))*scope_reference_visibility);
+    output.capture=float4(reference_image_capture_tc,0,1);
+    return output;
+}

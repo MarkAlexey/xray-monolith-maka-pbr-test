@@ -165,7 +165,7 @@ void CDetailManager::cache_Update(int v_x, int v_z, Fvector& view, int limit)
     {
         PROF_EVENT("Render.Grass.SelectCacheTasks");
         PROF_TAG("Pending slots", u32(cache_task.size()));
-        if (cache_task.size() == dm_cache_size || ps_r2_ls_flags.test(R2FLAG_FAST_DETAILS_UPDATE))
+        if (cache_task.size() == dm_cache_size || ps_r2_ls_flags_ext.test(R2FLAGEXT_FAST_DETAILS_UPDATE))
         {
             while (!cache_task.empty())
             {

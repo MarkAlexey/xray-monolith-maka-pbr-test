@@ -1,0 +1,53 @@
+; Bodycam Reference mode: character assets and the scope effects profile.
+; Paths are relative to gamedata. The character assets are installed separately.
+[bodycam_reference_character]
+native_action_semantics = bodycam_reference\character\action-semantics.bin
+upper = bodycam_reference\character\upper.bin
+locomotion = bodycam_reference\character\locomotion.bin
+rifle = bodycam_reference\character\rifle.bin
+recoil = bodycam_reference\character\recoil.bin
+movement = bodycam_reference\character\movement.bin
+equipment = bodycam_reference\character\accepted-equipment.bin
+idle = bodycam_reference\character\copied.bin
+regrip = bodycam_reference\character\regrip.bin
+basis_x = -1, 0, 0
+basis_y = 0, 1, 0
+basis_z = 0, 0, 1
+
+; Host game tuning the portable library takes as parameters. Reference and Classic both read it.
+[bodycam_reference_tuning]
+; Exact HUD aliases that also count as reload steps: the scripted tactical shotgun endings of GAMMA GIMP configs.
+extra_reload_aliases = anm_reloadendtac_end, anm_reloadendtacnachalo_end, anm_reloadendemptytac_end
+; Hip translation of a pistol (kind w_pistol), in camera-local metres with -Z forward: the source Glock17 relative to its M4,
+; measured from the shared FP_Camera socket on their ik_hand_gun bones plus pose offsets.
+pistol_hip_offset_m = -0.01665852, 0.06854060, -0.22434653
+; Typical dispersion / maximum vertical recoil ratio of each family's weapons. A weapon at or above it keeps the full gun recoil;
+; lower ratios scale the gun recoil down to 0.8. Zero keeps the full gun recoil.
+recoil_budget_pistol = 0.04
+recoil_budget_smg = 0.01
+recoil_budget_rifle = 0.01
+recoil_budget_shotgun = 0.12
+recoil_budget_sniper = 0.05
+; Script layers skipped while Reference drives the hands. The crouch additive also lowers the gun when looking up;
+; Reference poses pitch and stance itself.
+reference_skipped_script_layers = liz\liz_hands_crouch_additive.anm, liz/liz_hands_crouch_additive.anm
+
+[bodycam_reference_effects]
+source_baseline_eye_m = 9.999999994736442e-12, 5.999999999062311e-9, -0.04286755
+; Aimed eye in ocular right/up/forward metres, measured on one reference sight; used only when the weapon's own sight cannot be measured.
+fallback_eye_m = 0.00014672990535778523, 0.00008618502920024196, -0.08726985195682399
+source_package = Bodycam/Content/BodycamWeapons/Attachement/Optics/EOTech_Vudu_6X24/MI_ScopeOpticReticle_VTU
+source_variant = resolved_vtu_round_host
+source_radius_m = 0.019236915707588197
+source_socket_m = 0, 0.0144, 0
+source_tangent = -0.9999853229879837, 0.003952570943127375, 0.0037055352591819145
+source_bitangent = -0.003968247436031315, -0.99998316807729, -0.004232797466544726
+glass_constants = bodycam_reference\optics\source_glass_cb.bin
+glass_spots = bodycam_reference\optics\spots
+glass_surface = bodycam_reference\optics\surface
+constants = bodycam_reference\optics\selected_cb.bin
+filter = 0.2, 0.1, 1
+tonemap_input_gamma = 2.2
+allow_deferred_capture = true
+translucent = bodycam_reference\optics\translucent
+opaque = bodycam_reference\optics\opaque
