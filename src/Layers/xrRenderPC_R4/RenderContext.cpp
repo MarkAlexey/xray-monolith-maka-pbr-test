@@ -31,6 +31,7 @@ struct RenderContext::State
         ref_declaration declaration;
         ComPtr<ID3DBlob> signature;
         ComPtr<ID3D11InputLayout> layout;
+        bool failed = false;   // D3D11 rejected the pair: draws with it are skipped (see ContextInputLayout)
     };
 
     u32 id;
@@ -112,13 +113,35 @@ ID3D11InputLayout* ContextInputLayout(SDeclaration* declaration, ID3DBlob* signa
 {
     R_ASSERT(current && declaration && signature);
     auto& result = current->layouts[{declaration, signature}];
-    if (!result.layout)
+    if (!result.layout && !result.failed)
     {
         result.declaration = ref_declaration(declaration);
         result.signature = signature;
-        R_CHK(HW.pDevice->CreateInputLayout(declaration->dx10_dcl_code.data(),
+        const HRESULT hr = HW.pDevice->CreateInputLayout(declaration->dx10_dcl_code.data(),
             u32(declaration->dx10_dcl_code.size() - 1), signature->GetBufferPointer(),
-            signature->GetBufferSize(), result.layout.GetAddressOf()));
+            signature->GetBufferSize(), result.layout.GetAddressOf());
+        if (FAILED(hr))
+        {
+            // The vertex shader reads inputs the model's vertex format does not have (seen with a
+            // mod's skinned model in the sun shadow pass: E_INVALIDARG). The main thread's
+            // CBackend::ApplyVertexLayout ignores the same failure in release builds (CHK_DX is a
+            // no-op there) and the draw goes without a layout; this path used R_CHK and stopped the
+            // game. Same behaviour now: no layout for this pair (remembered, logged once per
+            // pair and recording context), the draw is skipped by D3D11 like on the main thread.
+            result.failed = true;
+            result.layout.Reset();
+            string512 elements = "";
+            for (size_t i = 0; i + 1 < declaration->dx10_dcl_code.size(); ++i)
+            {
+                const auto& element = declaration->dx10_dcl_code[i];
+                string64 item;
+                xr_sprintf(item, "%s%s%u", i ? " " : "", element.SemanticName ? element.SemanticName : "?", element.SemanticIndex);
+                xr_strcat(elements, item);
+            }
+            Msg("! [MT shadows] context %u: vertex layout rejected (0x%08X): the shader needs inputs the model's "
+                "vertex format lacks (vertex elements: %s). Its shadow draw is skipped, as on the main thread.",
+                current->id, unsigned(hr), elements);
+        }
     }
     return result.layout.Get();
 }
