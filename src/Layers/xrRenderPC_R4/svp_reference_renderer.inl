@@ -1,7 +1,7 @@
 // Part of svp_optics.cpp.
 #include "svp_reference_anchor.h"
 #include "svp_reference_material_lifetime.h"
-extern xr_task_group textures_load_tasks;
+extern xr_background_task_group textures_load_tasks; // defined in dx10ResourceManager_Resources.cpp (background TBB arena on this branch)
 // Defined in r__dsgraph_render.cpp.
 extern bool g_svp_reference_particle_replay;
 namespace
