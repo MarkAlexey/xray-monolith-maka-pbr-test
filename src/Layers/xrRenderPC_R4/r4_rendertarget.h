@@ -554,9 +554,15 @@ private:
 	bool m_bHasActiveVolumetric;
 	bool m_bHasActiveVolumetric_spot;
 public:
-	// dims at creation, the SVP target is square so svpCamera reads these for its aspect
-	const u32 Width;
-	const u32 Height;
+	// Scene size of this target: what its G-buffer and scene RTs are created at and what the
+	// scope code sizes its own targets, viewports and constants by. The SVP target is square, so
+	// svpCamera reads these for its aspect. For the main target under DLSS / FSR 3 this is the
+	// render resolution (smaller than the display); DisplayWidth/Height keep the display size,
+	// which SetActive() restores into Device.dwWidth/dwHeight (UI, input, swapchain).
+	u32 Width;
+	u32 Height;
+	u32 DisplayWidth;
+	u32 DisplayHeight;
 
 	CRenderTarget();
 	// Draws the full-screen post-process quad (FullscreenQuad.h) with the element already set

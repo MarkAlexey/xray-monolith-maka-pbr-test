@@ -653,7 +653,7 @@ void CRenderTarget::phase_3DSSReticle(bool object_lens_pass)
 		const bool referenceReticle = scope_reference_current() && scope_reference_composited_frame == Device.dwFrame;
 		if (referenceReticle)
 		{
-			svp_track_disc(Width, Height);
+			svp_track_disc(DisplayWidth, DisplayHeight); // disc px in display units (svpCamera divides by Device.dwHeight)
 			if (!s_scope_reference_reticle_deferred)
 				s_scope_reference_reticle_deferred.create("scope_reference_reticle_deferred");
 			// the tone map input gamma lets atlas reticle paint see the image as the image pass wrote it
@@ -863,7 +863,7 @@ void CRenderTarget::phase_3DSSReticle(bool object_lens_pass)
 			}
 
 			if (!object_lens_pass && svp)
-				svp_track_disc(M->Width, M->Height);
+				svp_track_disc(M->DisplayWidth, M->DisplayHeight);
 
 			if (object_lens_pass)
 			{

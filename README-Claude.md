@@ -1461,6 +1461,13 @@ conflicted; the decisions that are not "keep both":
   on the scope image nor closes the main scene early. `TargetMain->SetActive()` restores the
   render-size viewport. Bodycam's scene passes that drew with display dimensions (light scissor,
   NVG objective split, reticle glow) use the scene size.
+  The main target's `Width`/`Height` (which bodycam's scope code sizes its lens, reference and
+  reticle targets, viewports and `output_res` by) are the scene size; `DisplayWidth/Height`
+  keep the display size for `Device.dwWidth/dwHeight`. Only the main target initializes the
+  upscaler: the SVP target is created mid-frame at ADS-in, and re-initializing DLSS there
+  rebuilt the feature and closed the open scene. (Found in game: with DLSS on, the lens stayed
+  the stock 3DSS glass and showed no scope image.) Under DLSS the Reference particle capture
+  is skipped (the main `rt_secondVP` stays display size for the legacy SVP copy).
 - **Per-viewport targets.** PBR's third G-buffer target (`rt_Surface`), the skin SSS targets and
   the SSLR result are created per viewport (bodycam's `createUnique` remap), so the scope pass no
   longer overwrites the main view's. The scope skips SSLR and VSLR capture: it gets its own cleared
