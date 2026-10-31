@@ -91,7 +91,20 @@ public:
     void Compile(CBlender_Compile& C) override
     {
         IBlender::Compile(C);
-        if (C.iElement > 2) return;
+        if (C.iElement > 3) return;
+        if (C.iElement == 3)
+        {
+            // r_upscaler_debug 2: motion vectors (dlss_debug_mv.ps, DLSS / FSR3 shader patch 0.63+).
+            // An older patch has no such shader: leave the element empty (null) instead of failing
+            // the whole resolve shader; phase_dlss_postprocess then shows the input view instead.
+            string_path fn;
+            if (!FS.exist(fn, "$game_shaders$", "r3\\dlss_debug_mv", ".ps")) return;
+            C.r_Pass("stub_screen_space", "dlss_debug_mv", FALSE, FALSE, FALSE);
+            C.r_dx10Texture("s_image", r2_RT_ssfx_motion_vectors);
+            C.r_dx10Sampler("smp_nofilter");
+            C.r_End();
+            return;
+        }
         C.r_Pass("stub_screen_space", C.iElement == 2 ? "dlss_sharpen" : "dlss_copy", FALSE, FALSE, FALSE);
         C.r_dx10Texture("s_image", C.iElement == 1 ? r2_RT_albedo : "$user$dlss_output");
         C.r_dx10Sampler("smp_rtlinear");

@@ -33,9 +33,10 @@
 #     FSR3 is built into the exe and needs no DLL.
 #   - The DLSS / FSR3 shader compatibility patch (brodrigz, .github/pbr-release/dlss/) is
 #     attached to the release; the in-game DLSS/FSR3 shaders come only from it. It is brodrigz's
-#     0.5 plus components for the October 2026 Atmospherics update (atmos_2026_10,
-#     better_beefs_atmos_2026_10), made by tools/make_dlss_atmos_component.py from that
-#     Atmospherics' own shaders with his DLSS edits.
+#     0.63 (no longer replaces SSS's / Atmospherics' AO, IL, SSR, contact shadows and water
+#     reflections; one atmos_rc7 option covers RC7.5 - 7.71 and the October 2026 update) with
+#     his 0.5 video-menu script and strings, which match these DX11 exes (see its
+#     PBR-Test-NOTES.txt).
 #   - The shader packs are built twice, for the plain GAMMA stack and with that patch's
 #     components on top of it (DLSS_PATCH_COMPONENTS); the FOMOD's second page picks between
 #     them. Overlay + DLSS: DLSS patch first, then the PBR overlay above it.
@@ -126,14 +127,13 @@ env:
   # DLSS branches only (see above). NVIDIA DLSS 310.9.1, the runtime brodrigz's 0.5 build uses.
   DLSS_DLL_URL: https://raw.githubusercontent.com/NVIDIA/DLSS/v310.9.1/lib/Windows_x86_64/rel/nvngx_dlss.dll
   DLSS_DLL_SHA256: 3975567b8943c53acce397f2b72380092f84f162d00b0d2c7d08a1025c563983
-  DLSS_PATCH_ZIP: .github/pbr-release/dlss/dlss-binaries-GAMMA-compatibility-patch-0.5.zip
+  DLSS_PATCH_ZIP: .github/pbr-release/dlss/dlss-binaries-GAMMA-compatibility-patch-0.63.zip
   # Patch components stacked on top of the GAMMA shader sources, lowest first. "base" is the
-  # SSS 23.5 part; then the Atmospherics components matching the sources repository's
-  # atmospherics/. The packs target the October 2026 Atmospherics update only (it is faster;
-  # the older versions are not supported by these packs): "atmos_2026_10" (its AO, IL, SSR, SSS
-  # and terrain shaders; Atmospherics' SSR / IL files are needed whatever its ATMOS_SSR /
-  # ATMOS_IL choice). Other values: "atmos_rc7" for 2.69 RC7.x, nothing for 2.68.93.
-  DLSS_PATCH_COMPONENTS: base atmos_2026_10
+  # SSS 23.5 part; then the Atmospherics component matching the sources repository's
+  # atmospherics/: "atmos_rc7" (only its terrain shader, with motion vectors) for 2.69 RC7.5 -
+  # 7.71 and the October 2026 update, nothing for 2.68.93. Since 0.63 Atmospherics keeps its own
+  # AO, IL and SSR (the 0.5 copies broke the new Atmospherics; that was atmos_2026_10).
+  DLSS_PATCH_COMPONENTS: base atmos_rc7
 
 jobs:
   pack_gamedata:

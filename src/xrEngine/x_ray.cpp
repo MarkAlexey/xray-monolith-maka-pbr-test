@@ -1119,6 +1119,15 @@ int APIENTRY WinMain_impl(HINSTANCE hInstance,
 
 	InitSettings();
 	Msg(XRAY_MONOLITH_VERSION);
+	// Identifies the PBR-Test binaries in support logs before anything renderer-related can fail.
+	// The upscaler is qkff99's port of brodrigz's DLSS / FSR 3 build 0.5, with the DX11 fixes of
+	// 0.6 - 0.6.3 (AO / IL resolution, lens flares after upscaling, r_upscaler_debug).
+#if defined(__AVX__)
+	const char* const binaryVariant = "DX11-AVX";
+#else
+	const char* const binaryVariant = "DX11";
+#endif
+	Msg("[PBR-Test] %s build of %s; upscaler: DLSS 310.9.1 / FSR 3 (brodrigz 0.5 + 0.6.3 fixes)", binaryVariant, __DATE__);
 
 	{
 		FS_FileSet fset;

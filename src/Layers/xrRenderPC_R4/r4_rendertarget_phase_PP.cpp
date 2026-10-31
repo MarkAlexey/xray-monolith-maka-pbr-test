@@ -1,6 +1,8 @@
 #include "stdafx.h"
 #include "r4_rendertarget.h"
 #include "../../xrEngine/CustomHUD.h"
+#include "../../xrEngine/igame_persistent.h"
+#include "../../xrEngine/environment.h"
 
 void CRenderTarget::u_calc_tc_noise(Fvector2& p0, Fvector2& p1)
 {
@@ -153,10 +155,21 @@ void CRenderTarget::phase_dlss_postprocess()
 	// Fuse optional CAS into the existing resolve draw: no extra target or copy.
 	// Zero retains the original copy shader; fallback/scope frames are unsharpened.
 	const bool sharpen = dlssOutput && ps_r_dlss_sharpness > 0.0f;
-	RCache.set_Element(s_dlss_copy->E[dlssOutput ? (sharpen ? 2 : 0) : 1]);
-	if (sharpen) RCache.set_c("dlss_sharpening", ps_r_dlss_sharpness, 0.f, 0.f, 0.f);
+	// r_upscaler_debug: 1 shows the upscaler's input, 2 its motion vectors. The upscaler still
+	// evaluates, so its history stays valid when the view is switched off. Element 3 needs
+	// dlss_debug_mv.ps; without it (older shader patch) the view falls back to the input.
+	const bool mv_view = ps_r_upscaler_debug == 2 && s_dlss_copy->E[3];
+	const u32 element = mv_view ? 3 : ps_r_upscaler_debug ? 1 : dlssOutput ? (sharpen ? 2 : 0) : 1;
+	RCache.set_Element(s_dlss_copy->E[element]);
+	if (element == 2) RCache.set_c("dlss_sharpening", ps_r_dlss_sharpness, 0.f, 0.f, 0.f);
 	RCache.set_Geometry(g_combine);
 	RCache.Render(D3DPT_TRIANGLELIST, offset, 0, 4, 0, 2);
+
+	// Lens flares are additive, depth-free sprites that cover the HUD. In the scene they would be
+	// reprojected with the hands' motion vectors and reconstructed as blocks, so draw them here at
+	// display resolution without jitter (brodrigz 0.6).
+	if (ps_r2_anomaly_flags.test(R2_AN_FLAG_FLARES) && ps_r2_heatvision == 0)
+		g_pGamePersistent->Environment().RenderFlares();
 
 	// Only defer direct UI draws when wearable surfaces were found in this view.
 	// A normal weapon/device must not trigger an additional native depth pass.
@@ -176,12 +189,21 @@ void CRenderTarget::phase_dlss_postprocess()
 		// native depth buffer before drawing unjittered HUD screens. Keep their
 		// occlusion by hands/casing; never attach a render-sized DSV to a native RT.
 		u_setrt(rt_dlss_post_source, nullptr, nullptr, HW.pBaseZB);
+		// The flares above replaced the geometry; draw from a fresh fullscreen quad.
+		u32 uiOffset;
+		FVF::TL* uiQuad = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, uiOffset);
+		uiQuad[0].set(0, h, EPS_S, 1, 0xffffffff, 0, 1);
+		uiQuad[1].set(0, 0, EPS_S, 1, 0xffffffff, 0, 0);
+		uiQuad[2].set(w, h, EPS_S, 1, 0xffffffff, 1, 1);
+		uiQuad[3].set(w, 0, EPS_S, 1, 0xffffffff, 1, 0);
+		RCache.Vertex.Unlock(4, g_combine->vb_stride);
+		RCache.set_Geometry(g_combine);
 		RCache.set_Element(s_dlss_ui_depth->E[0]);
 		RCache.set_c("dlss_ui_depth_params", float(dlss::RenderWidth()) / w,
 			float(dlss::RenderHeight()) / h, sceneJitter.x, sceneJitter.y);
 		RCache.set_ZFunc(D3DCMP_ALWAYS);
 		RCache.set_ColorWriteEnable(0);
-		RCache.Render(D3DPT_TRIANGLELIST, offset, 0, 4, 0, 2);
+		RCache.Render(D3DPT_TRIANGLELIST, uiOffset, 0, 4, 0, 2);
 		RCache.set_ColorWriteEnable();
 		RCache.set_CullMode(CULL_CCW);
 		RImplementation.GMBase.r_dsgraph_render_native_ui(renderHudUi);

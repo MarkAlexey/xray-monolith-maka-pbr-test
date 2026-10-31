@@ -61,6 +61,17 @@ JOBS = os.cpu_count() or 4
 # Per renderer project: include dirs (relative to the repository root) and defines, taken from
 # the .vcxproj files (Release). Projects that share a source file get it checked once per
 # project, because USE_DX10 / USE_DX11 change what compiles.
+# The vcxproj files define XRCORE_PROFILER (= 1, Optick), which includes the optick-git
+# submodule. `git archive` never contains submodule files, so every TU stopped at that fatal
+# include and the before/after counts compared nothing past the precompiled header. The
+# profiler macros only wrap events/tags, so the no-op backend is used for syntax checks.
+PROFILER_DEFINE = "XRCORE_PROFILER=0"
+
+# What is exported from each commit. gamedata/shaders: some engine sources include shader
+# headers to share constants with HLSL (svp_optics.cpp: ../../../gamedata/shaders/r3/
+# scope_defines.h); without them those TUs stopped at that include and checked nothing after it.
+EXPORT_PATHS = ["src", "sdk/include", "gamedata/shaders"]
+
 PROJECTS = {
     "R4": {
         "dir": "src/Layers/xrRenderPC_R4",
@@ -69,7 +80,7 @@ PROJECTS = {
                      "src/3rd party/luabind", "src/3rd party", "sdk/include/nvapi",
                      "sdk/include/OpenAutomate"],
         "defines": ["USE_DX11", "WIN32", "NDEBUG", "_WINDOWS", "_USRDLL", "XRRENDER_R4_EXPORTS",
-                    "_SECURE_SCL=0", "XRCORE_PROFILER"],
+                    "_SECURE_SCL=0", PROFILER_DEFINE],
     },
     # xrGame (and the xrServerEntities sources it builds): include paths and defines from
     # src/xrGame/xrGame.vcxproj (Release|x64 / ProfiledDX11). Without this, xrGame files were
@@ -81,7 +92,7 @@ PROJECTS = {
                      "src/3rd party/luajit-2/src", "src/3rd party/luabind", "sdk/include",
                      "src/3rd party/CxImage", "src/3rd party", "src/3rd party/imgui"],
         "defines": ["WIN32", "NDEBUG", "_WINDOWS", "_USRDLL", "XRGAME_EXPORTS", "dSINGLE", "MSVC",
-                    "_SECURE_SCL=0", "XRCORE_PROFILER"],
+                    "_SECURE_SCL=0", PROFILER_DEFINE],
     },
     "R3": {
         "dir": "src/Layers/xrRenderPC_R3",
@@ -90,7 +101,7 @@ PROJECTS = {
                      "src/3rd party/luabind", "src/3rd party", "sdk/include/nvapi",
                      "sdk/include/OpenAutomate"],
         "defines": ["USE_DX10", "WIN32", "NDEBUG", "_WINDOWS", "_USRDLL", "XRRENDER_R3_EXPORTS",
-                    "_SECURE_SCL=0", "XRCORE_PROFILER"],
+                    "_SECURE_SCL=0", PROFILER_DEFINE],
     },
 }
 
@@ -146,6 +157,10 @@ def fold_tree(src, dst):
 
 def export_commit(repo, rev, dst, paths):
     os.makedirs(dst, exist_ok=True)
+    # a path the commit does not have (e.g. gamedata/shaders before it existed) would make
+    # git archive fail, so only the existing ones are archived
+    paths = [p for p in paths if subprocess.run(["git", "-C", repo, "cat-file", "-e", f"{rev}:{p}"],
+                                                capture_output=True).returncode == 0]
     a = subprocess.run(["git", "-C", repo, "archive", rev, "--"] + paths, capture_output=True, check=True)
     subprocess.run(["tar", "-x", "-C", dst], input=a.stdout, check=True)
 
@@ -229,12 +244,14 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         raw = {k: os.path.join(tmp, "raw_" + k) for k in ("base", "head")}
         fold = {k: os.path.join(tmp, "fold_" + k) for k in ("base", "head")}
-        export_commit(repo, a.base, raw["base"], ["src", "sdk/include"])
+        export_commit(repo, a.base, raw["base"], EXPORT_PATHS)
         if a.head == "WORKTREE":
             shutil.copytree(os.path.join(repo, "src"), os.path.join(raw["head"], "src"))
-            shutil.copytree(os.path.join(repo, "sdk", "include"), os.path.join(raw["head"], "sdk", "include"))
+            for extra in EXPORT_PATHS[1:]:
+                if os.path.isdir(os.path.join(repo, extra)):
+                    shutil.copytree(os.path.join(repo, extra), os.path.join(raw["head"], extra))
         else:
-            export_commit(repo, a.head, raw["head"], ["src", "sdk/include"])
+            export_commit(repo, a.head, raw["head"], EXPORT_PATHS)
         # git archive leaves submodules empty; both trees get the working copy's checkout
         # (run `git submodule update --init` first). They are dependencies, not what is compared.
         # -z: "key\nvalue\0" records. Keys and paths can contain spaces ("src/3rd party/...").
