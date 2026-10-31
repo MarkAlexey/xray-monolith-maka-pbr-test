@@ -148,9 +148,10 @@ env:
   # valid Authenticode signature from its vendor. An empty *_SHA256 is not checked; the job then
   # prints the hash it got (RUNTIME.txt and a notice) so it can be pinned here.
   STREAMLINE_RELEASE: NVIDIA-RTX/Streamline v2.14.16
-  # Release asset holding the SDK binaries (regex on the asset name)
-  STREAMLINE_ASSET: '^streamline-sdk-v?[0-9.]+\.zip$'
-  STREAMLINE_ZIP_SHA256: ""
+  # Release asset holding the SDK binaries (regex on the asset name; NVIDIA writes the version
+  # with underscores: streamline-sdk-v2_14_16.zip)
+  STREAMLINE_ASSET: '^streamline-sdk-v?[0-9._]+\.zip$'
+  STREAMLINE_ZIP_SHA256: 32041e51db0cab709a271b72a352281b690c2abbd669a827809401a5dd23956b
   STREAMLINE_FILES: sl.interposer.dll sl.common.dll sl.dlss_g.dll sl.reflex.dll sl.pcl.dll nvngx_dlssg.dll
   FFX_URL: https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK/v2.3.0/Kits/FidelityFX/signedbin
   # name=sha256 (FSR SDK 2.3.0: loader 2.3.0, upscaler 4.1.1, frame generation 4.0.1)
