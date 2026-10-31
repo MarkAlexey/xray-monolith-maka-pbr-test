@@ -1505,12 +1505,12 @@ Windows 10).
 
 **Runtime DLLs.** Not in git. CI job `dx12_runtime` (DLSS branches) downloads them at pinned
 versions and accepts a file only with a valid Authenticode signature from its vendor; the AMD
-DLLs are also pinned by SHA-256 (taken from the FSR SDK 2.3.0 repository). The Streamline zip and
-the Agility nupkg could not be fetched from this session, so their hashes are not pinned yet:
-the job prints them (notice + `bin/streamline/RUNTIME.txt`); put them in
-`STREAMLINE_ZIP_SHA256` / `AGILITY_NUPKG_SHA256` to pin. The Streamline asset is found by name
-(`STREAMLINE_ASSET`, `streamline-sdk-v<version>.zip`); if NVIDIA names it differently the job
-fails listing the assets. Layout in the main zip: `bin/streamline/` (sl.interposer, sl.common,
+DLLs are also pinned by SHA-256 (taken from the FSR SDK 2.3.0 repository), and so is the
+Streamline zip (`streamline-sdk-v2_14_16.zip`, the release asset, checked: its 24 headers are the
+ones in `sdk/Streamline/include`, `nvngx_dlssg.dll` is 310.9.16). The Agility nupkg could not be
+fetched from this session, so its hash is not pinned yet: the job prints it (notice +
+`bin/streamline/RUNTIME.txt`); put it in `AGILITY_NUPKG_SHA256` to pin. The Streamline asset is
+found by name (`STREAMLINE_ASSET`); if none matches the job fails listing the assets. Layout in the main zip: `bin/streamline/` (sl.interposer, sl.common,
 sl.dlss_g, sl.reflex, sl.pcl, nvngx_dlssg), `bin/amd_fidelityfx_{loader,upscaler,framegeneration}_dx12.dll`,
 `bin/D3D12/D3D12Core.dll`, licenses in `licenses/`. The DX12 leg and `dx12_runtime` may fail
 without stopping the release: the zip then has no `AnomalyDX12.exe` and the notes say so.
