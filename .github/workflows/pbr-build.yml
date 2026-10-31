@@ -145,8 +145,10 @@ env:
   DLSS_DLL_SHA256: 3975567b8943c53acce397f2b72380092f84f162d00b0d2c7d08a1025c563983
   DLSS_PATCH_ZIP: .github/pbr-release/dlss/dlss-binaries-GAMMA-compatibility-patch-0.63.zip
   # DX12 frame-generation runtimes (DLSS branches, job dx12_runtime). Every file must carry a
-  # valid Authenticode signature from its vendor. An empty *_SHA256 is not checked; the job then
-  # prints the hash it got (RUNTIME.txt and a notice) so it can be pinned here.
+  # valid Authenticode signature from its vendor, and every download is pinned by SHA-256 (an
+  # empty *_SHA256 would not be checked; the job then prints the hash it got so it can be pinned).
+  # A new Agility SDK needs the exe's D3D12SDKVersion (src/xrEngine/device.cpp) changed with it:
+  # Windows ignores a D3D12Core.dll whose version differs from the export.
   STREAMLINE_RELEASE: NVIDIA-RTX/Streamline v2.14.16
   # Release asset holding the SDK binaries (regex on the asset name; NVIDIA writes the version
   # with underscores: streamline-sdk-v2_14_16.zip)
@@ -160,7 +162,9 @@ env:
     amd_fidelityfx_upscaler_dx12.dll=d0dcccc74a43c44ba435b7a369b456e0970d8a4464e4bd683119b374f2c9fb46
     amd_fidelityfx_framegeneration_dx12.dll=02297beedd285e822d3a64f314cf00faf378dcec0edc47ff0c4dd71b3a8c2f18
   AGILITY_URL: https://www.nuget.org/api/v2/package/Microsoft.Direct3D.D3D12/1.619.6
-  AGILITY_NUPKG_SHA256: ""
+  # 1.619.6 (D3D12_SDK_VERSION 619, the exe's D3D12SDKVersion export; D3D12Core.dll inside:
+  # 37fa14281a58cc834076971873006feb8a8d25cddc908d1a345bda1b149ffc7d)
+  AGILITY_NUPKG_SHA256: 08f0489281401aa430fc37322d6c3fc98a8025175aacd714c10d562f4963f1e9
   # Patch components stacked on top of the GAMMA shader sources, lowest first. "base" is the
   # SSS 23.5 part; then the Atmospherics component matching the sources repository's
   # atmospherics/: "atmos_rc7" (only its terrain shader, with motion vectors) for 2.69 RC7.5 -

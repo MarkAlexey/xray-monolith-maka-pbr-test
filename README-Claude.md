@@ -1619,10 +1619,11 @@ The frame-burst capture (`r__svp_frame_burst`) reads `HW.pBaseRT`, the shared sl
 versions and accepts a file only with a valid Authenticode signature from its vendor; the AMD
 DLLs are also pinned by SHA-256 (taken from the FSR SDK 2.3.0 repository), and so is the
 Streamline zip (`streamline-sdk-v2_14_16.zip`, the release asset, checked: its 24 headers are the
-ones in `sdk/Streamline/include`, `nvngx_dlssg.dll` is 310.9.16). The Agility nupkg could not be
-fetched from this session, so its hash is not pinned yet: the job prints it (notice +
-`bin/streamline/RUNTIME.txt`); put it in `AGILITY_NUPKG_SHA256` to pin. The Streamline asset is
-found by name (`STREAMLINE_ASSET`); if none matches the job fails listing the assets. Layout in the main zip: `bin/streamline/` (sl.interposer, sl.common,
+ones in `sdk/Streamline/include`, `nvngx_dlssg.dll` is 310.9.16), and the Agility SDK 1.619.6
+nupkg (`D3D12_SDK_VERSION` 619, matching the exe's `D3D12SDKVersion` export: a newer Agility
+SDK needs that export changed too, or Windows ignores its D3D12Core.dll and FSR 4 loses Shader
+Model 6.6 on Windows 10). The Streamline asset is found by name (`STREAMLINE_ASSET`); if none
+matches the job fails listing the assets. Layout in the main zip: `bin/streamline/` (sl.interposer, sl.common,
 sl.dlss_g, sl.reflex, sl.pcl, nvngx_dlssg), `bin/amd_fidelityfx_{loader,upscaler,framegeneration}_dx12.dll`,
 `bin/D3D12/D3D12Core.dll`, licenses in `licenses/`. The DX12 leg and `dx12_runtime` may fail
 without stopping the release: the zip then has no `AnomalyDX12.exe` and the notes say so.
