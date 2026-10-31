@@ -1124,13 +1124,19 @@ int APIENTRY WinMain_impl(HINSTANCE hInstance,
 	Msg(XRAY_MONOLITH_VERSION);
 	// Identifies the PBR-Test binaries in support logs before anything renderer-related can fail.
 	// The upscaler is qkff99's port of brodrigz's DLSS / FSR 3 build 0.5, with the DX11 fixes of
-	// 0.6 - 0.6.3 (AO / IL resolution, lens flares after upscaling, r_upscaler_debug).
-#if defined(__AVX__)
+	// 0.6 - 0.6.3 (AO / IL resolution, lens flares after upscaling, r_upscaler_debug). The DX12
+	// exe adds his DX12 presentation bridge with frame generation (DLSS-G / FSR FG) and FSR 4.
+#if defined(XR_DX12_BRIDGE)
+	const char* const binaryVariant = "DX12 bridge";
+	const char* const upscalerVariant = "DLSS 310.9.1 / FSR 3 / FSR 4, frame generation DLSS-G / FSR (brodrigz 0.5 + 0.6.3)";
+#elif defined(__AVX__)
 	const char* const binaryVariant = "DX11-AVX";
+	const char* const upscalerVariant = "DLSS 310.9.1 / FSR 3 (brodrigz 0.5 + 0.6.3 fixes)";
 #else
 	const char* const binaryVariant = "DX11";
+	const char* const upscalerVariant = "DLSS 310.9.1 / FSR 3 (brodrigz 0.5 + 0.6.3 fixes)";
 #endif
-	Msg("[PBR-Test] %s build of %s; upscaler: DLSS 310.9.1 / FSR 3 (brodrigz 0.5 + 0.6.3 fixes)", binaryVariant, __DATE__);
+	Msg("[PBR-Test] %s build of %s; upscaler: %s", binaryVariant, __DATE__, upscalerVariant);
 
 	{
 		FS_FileSet fset;

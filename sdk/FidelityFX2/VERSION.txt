@@ -1,0 +1,1 @@
+FSR SDK v2.3.0 (GPUOpen-LibrariesAndSDKs/FidelityFX-SDK tag v2.3.0). Upscaler 4.1.1, frame generation 4.0.1, loader 2.3.0. Signed AMD binaries, unmodified.

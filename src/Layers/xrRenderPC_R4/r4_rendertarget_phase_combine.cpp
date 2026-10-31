@@ -1,5 +1,8 @@
 #include "stdafx.h"
 #include "scope_vslr_renderer.h"
+#ifdef XR_DX12_BRIDGE
+#include "Dlss/FrameGeneration.h"
+#endif
 #include "../../xrEngine/igame_persistent.h"
 #include "../../xrEngine/environment.h"
 
@@ -81,9 +84,16 @@ void CRenderTarget::DoAsyncScreenshot()
 
 		//HW.pDevice->CopyResource( t_ss_async, pTex );
 		ID3DTexture2D* pBuffer;
+#ifdef XR_DX12_BRIDGE
+        R_CHK(HW.GetPresentationSurface(&pBuffer));
+#else
 		hr = HW.m_pSwapChain->GetBuffer(0, __uuidof( ID3D10Texture2D), (LPVOID*)&pBuffer);
+#endif
 		// TODO: this won't work in DX11 with HDR due to texture format incompat
 		HW.pContext->CopyResource(t_ss_async, pBuffer);
+#ifdef XR_DX12_BRIDGE
+        pBuffer->Release();
+#endif
 
 
 		RImplementation.m_bMakeAsyncSS = false;
@@ -1059,6 +1069,13 @@ void CRenderTarget::phase_combine()
 		tm_end(svp_stats::SEC_C_COMBINE2);
 	}
 
+#ifdef XR_DX12_BRIDGE
+    // Display-sized postprocessed scene, before the ordinary 2D HUD is drawn. Main view only:
+    // the PiP scope pass combines into its own target, and its call would clear the main
+    // view's capture (CaptureHudless(false)) when it runs after it.
+    if (!dlss::ScopePass())
+        fg::CaptureHudless();
+#endif
 	//	Re-adapt luminance
 	RCache.set_Stencil(FALSE);
 

@@ -33,10 +33,26 @@
 #     FSR3 is built into the exe and needs no DLL.
 #   - The DLSS / FSR3 shader compatibility patch (brodrigz, .github/pbr-release/dlss/) is
 #     attached to the release; the in-game DLSS/FSR3 shaders come only from it. It is brodrigz's
-#     0.63 (no longer replaces SSS's / Atmospherics' AO, IL, SSR, contact shadows and water
-#     reflections; one atmos_rc7 option covers RC7.5 - 7.71 and the October 2026 update) with
-#     his 0.5 video-menu script and strings, which match these DX11 exes (see its
-#     PBR-Test-NOTES.txt).
+#     0.63, unchanged (no longer replaces SSS's / Atmospherics' AO, IL, SSR, contact shadows and
+#     water reflections; one atmos_rc7 option covers RC7.5 - 7.71 and the October 2026 update).
+#     Its video menu needs r_upscaler_support / r_frame_generation, which these exes have.
+#   - DX12 frame generation (brodrigz's DX12 presentation bridge, from OGSR): the build matrix has
+#     a "DX12" leg that builds bin/AnomalyDX12.exe (DX11 rendering, DX12 presentation through
+#     Streamline / AMD FSR frame generation). Its runtime DLLs are not in git; job dx12_runtime
+#     downloads them from their vendors at pinned versions, checks each file's Authenticode
+#     signature (NVIDIA / AMD / Microsoft) and, where a hash is pinned, its SHA-256, and the main
+#     zip gets them beside the exe:
+#       bin/streamline/  Streamline 2.14.16 (sl.interposer, sl.common, sl.dlss_g, sl.reflex,
+#                        sl.pcl, nvngx_dlssg), GitHub release of NVIDIA-RTX/Streamline
+#       bin/amd_fidelityfx_{loader,upscaler,framegeneration}_dx12.dll
+#                        FSR SDK 2.3.0 signedbin (GPUOpen-LibrariesAndSDKs/FidelityFX-SDK v2.3.0)
+#       bin/D3D12/D3D12Core.dll
+#                        Agility SDK 1.619.6 (NuGet Microsoft.Direct3D.D3D12); the exe exports
+#                        D3D12SDKVersion 619 / D3D12SDKPath .\D3D12\
+#       licenses/        the three vendors' licenses (sdk/*/LICENSE*)
+#     Both the DX12 leg and dx12_runtime may fail without stopping the release: the main zip then
+#     ships without AnomalyDX12.exe (an exe without its runtimes is left out too) and the release
+#     notes say so. bin/streamline/RUNTIME.txt lists every file's version and SHA-256.
 #   - The shader packs are built twice, for the plain GAMMA stack and with that patch's
 #     components on top of it (DLSS_PATCH_COMPONENTS); the FOMOD's second page picks between
 #     them. Overlay + DLSS: DLSS patch first, then the PBR overlay above it.
@@ -128,6 +144,22 @@ env:
   DLSS_DLL_URL: https://raw.githubusercontent.com/NVIDIA/DLSS/v310.9.1/lib/Windows_x86_64/rel/nvngx_dlss.dll
   DLSS_DLL_SHA256: 3975567b8943c53acce397f2b72380092f84f162d00b0d2c7d08a1025c563983
   DLSS_PATCH_ZIP: .github/pbr-release/dlss/dlss-binaries-GAMMA-compatibility-patch-0.63.zip
+  # DX12 frame-generation runtimes (DLSS branches, job dx12_runtime). Every file must carry a
+  # valid Authenticode signature from its vendor. An empty *_SHA256 is not checked; the job then
+  # prints the hash it got (RUNTIME.txt and a notice) so it can be pinned here.
+  STREAMLINE_RELEASE: NVIDIA-RTX/Streamline v2.14.16
+  # Release asset holding the SDK binaries (regex on the asset name)
+  STREAMLINE_ASSET: '^streamline-sdk-v?[0-9.]+\.zip$'
+  STREAMLINE_ZIP_SHA256: ""
+  STREAMLINE_FILES: sl.interposer.dll sl.common.dll sl.dlss_g.dll sl.reflex.dll sl.pcl.dll nvngx_dlssg.dll
+  FFX_URL: https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK/v2.3.0/Kits/FidelityFX/signedbin
+  # name=sha256 (FSR SDK 2.3.0: loader 2.3.0, upscaler 4.1.1, frame generation 4.0.1)
+  FFX_FILES: >-
+    amd_fidelityfx_loader_dx12.dll=e2d85aa05a9bd9ed8b38935fdf5199372cca6f74c12015143bb6f945ee1608aa
+    amd_fidelityfx_upscaler_dx12.dll=d0dcccc74a43c44ba435b7a369b456e0970d8a4464e4bd683119b374f2c9fb46
+    amd_fidelityfx_framegeneration_dx12.dll=02297beedd285e822d3a64f314cf00faf378dcec0edc47ff0c4dd71b3a8c2f18
+  AGILITY_URL: https://www.nuget.org/api/v2/package/Microsoft.Direct3D.D3D12/1.619.6
+  AGILITY_NUPKG_SHA256: ""
   # Patch components stacked on top of the GAMMA shader sources, lowest first. "base" is the
   # SSS 23.5 part; then the Atmospherics component matching the sources repository's
   # atmospherics/: "atmos_rc7" (only its terrain shader, with motion vectors) for 2.69 RC7.5 -
@@ -164,12 +196,14 @@ jobs:
   build:
     name: Build ${{ matrix.buildconf }}
     runs-on: windows-latest
-    # The profiled leg is a developer extra: its failure must not hold back the release
-    continue-on-error: ${{ matrix.buildconf == 'ProfiledDX11' }}
+    # The profiled leg is a developer extra and the DX12 exe is experimental: their failure must
+    # not hold back the release
+    continue-on-error: ${{ matrix.buildconf == 'ProfiledDX11' || matrix.buildconf == 'DX12' }}
     strategy:
       fail-fast: false
       matrix:
-        buildconf: [ "DX11", "DX11-AVX", "ProfiledDX11" ]
+        # DX12: AnomalyDX12.exe, DLSS branches only (the configuration exists only there)
+        buildconf: [ "DX11", "DX11-AVX", "ProfiledDX11", "DX12" ]
     steps:
       - name: Configure pagefile
         uses: al-cheb/configure-pagefile-action@v1.3
@@ -213,6 +247,106 @@ jobs:
           # bin-* artifacts go into the main zip; the profiled one is packaged on its own
           name: ${{ matrix.buildconf == 'ProfiledDX11' && 'profiled' || 'bin' }}-${{ matrix.buildconf }}
           path: out/*
+          if-no-files-found: error
+          retention-days: ${{ env.RETENTION_DAYS }}
+
+  dx12_runtime:
+    name: DX12 runtime DLLs
+    # Only the DLSS branches build AnomalyDX12.exe
+    if: endsWith(github.ref_name, '-dlss')
+    runs-on: windows-latest
+    # Without them the release ships without the DX12 exe instead of failing
+    continue-on-error: true
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download, verify and stage
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'   # Invoke-WebRequest is very slow with it
+          $out = "rt/bin"
+          New-Item -ItemType Directory -Force "$out/streamline", "$out/D3D12", dl | Out-Null
+          $manifest = [System.Collections.Generic.List[string]]::new()
+
+          # A file is accepted only with a valid signature from the expected vendor
+          function Assert-Signed([string]$file, [string]$vendor) {
+            $sig = Get-AuthenticodeSignature -LiteralPath $file
+            if ($sig.Status -ne 'Valid') { throw "$file`: signature status $($sig.Status)" }
+            $subject = $sig.SignerCertificate.Subject
+            if ($subject -notmatch $vendor) { throw "$file`: signed by '$subject', expected $vendor" }
+          }
+          function Assert-Hash([string]$file, [string]$expected, [string]$label) {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash.ToLower()
+            if ($expected) {
+              if ($hash -ne $expected.ToLower()) { throw "$label`: SHA-256 $hash, expected $expected" }
+            } else {
+              Write-Output "::notice::$label is not pinned; its SHA-256 is $hash"
+            }
+            return $hash
+          }
+          function Add-Manifest([string]$file, [string]$relative) {
+            $info = (Get-Item -LiteralPath $file).VersionInfo
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash.ToLower()
+            $manifest.Add(("{0,-50} {1,-18} {2}" -f $relative, $info.FileVersion, $hash))
+          }
+
+          # --- Streamline (NVIDIA): the SDK zip of the pinned GitHub release
+          $repo, $tag = $env:STREAMLINE_RELEASE -split ' '
+          $release = gh api "repos/$repo/releases/tags/$tag" | ConvertFrom-Json
+          $asset = @($release.assets | Where-Object { $_.name -match $env:STREAMLINE_ASSET })
+          if ($asset.Count -ne 1) {
+            throw "Streamline $tag`: expected one asset matching $($env:STREAMLINE_ASSET), found: " +
+                  (($release.assets | ForEach-Object name) -join ', ')
+          }
+          Invoke-WebRequest -Uri $asset[0].browser_download_url -OutFile dl/streamline.zip
+          $slHash = Assert-Hash dl/streamline.zip $env:STREAMLINE_ZIP_SHA256 "Streamline zip $($asset[0].name)"
+          Expand-Archive dl/streamline.zip -DestinationPath dl/streamline
+          foreach ($name in ($env:STREAMLINE_FILES -split '\s+' | Where-Object { $_ })) {
+            # Production binaries: bin/x64, never the development/ or debug variants
+            $found = @(Get-ChildItem -Path dl/streamline -Recurse -File -Filter $name |
+              Where-Object { $_.FullName -match '[\\/]bin[\\/]x64[\\/][^\\/]+$' })
+            if ($found.Count -ne 1) { throw "Streamline: $($found.Count) production copies of $name" }
+            Assert-Signed $found[0].FullName 'NVIDIA'
+            Copy-Item $found[0].FullName "$out/streamline/$name"
+            Add-Manifest "$out/streamline/$name" "streamline/$name"
+          }
+
+          # --- AMD FSR SDK: signed DLLs from the SDK repository, pinned by hash
+          foreach ($entry in ($env:FFX_FILES -split '\s+' | Where-Object { $_ })) {
+            $name, $sha = $entry -split '='
+            Invoke-WebRequest -Uri "$($env:FFX_URL)/$name" -OutFile "$out/$name"
+            Assert-Hash "$out/$name" $sha $name | Out-Null
+            Assert-Signed "$out/$name" 'Advanced Micro Devices'
+            Add-Manifest "$out/$name" $name
+          }
+
+          # --- Agility SDK (Microsoft): only the redistributable D3D12Core.dll
+          Invoke-WebRequest -Uri $env:AGILITY_URL -OutFile dl/agility.zip
+          $agHash = Assert-Hash dl/agility.zip $env:AGILITY_NUPKG_SHA256 "Agility SDK nupkg"
+          Expand-Archive dl/agility.zip -DestinationPath dl/agility
+          $core = "dl/agility/build/native/bin/x64/D3D12Core.dll"
+          if (-not (Test-Path $core)) { throw "Agility SDK: no build/native/bin/x64/D3D12Core.dll" }
+          Assert-Signed $core 'Microsoft'
+          Copy-Item $core "$out/D3D12/D3D12Core.dll"
+          Add-Manifest "$out/D3D12/D3D12Core.dll" "D3D12/D3D12Core.dll"
+
+          $header = @(
+            "AnomalyDX12.exe runtime files (paths relative to bin/), fetched by the PBR-Test build:",
+            "  Streamline $tag, asset $($asset[0].name) (sha256 $slHash)",
+            "  FSR SDK 2.3.0 signedbin: $($env:FFX_URL)",
+            "  Agility SDK: $($env:AGILITY_URL) (sha256 $agHash)",
+            "Every file has a valid Authenticode signature from its vendor.",
+            "",
+            ("{0,-50} {1,-18} {2}" -f "file", "version", "sha256"))
+          ($header + $manifest) | Set-Content -Encoding utf8 "$out/streamline/RUNTIME.txt"
+          Get-Content "$out/streamline/RUNTIME.txt"
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: dx12-runtime
+          path: rt/
           if-no-files-found: error
           retention-days: ${{ env.RETENTION_DAYS }}
 
@@ -318,7 +452,7 @@ jobs:
 
   release:
     name: Package and publish
-    needs: [ pack_gamedata, build, shader_packs ]
+    needs: [ pack_gamedata, build, shader_packs, dx12_runtime ]
     # Ship even when the shader packs failed or were skipped (just without them)
     if: ${{ !cancelled() && needs.pack_gamedata.result == 'success' && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
@@ -366,6 +500,24 @@ jobs:
           mkdir -p pkg/bin pkg/db/mods
           cp artifacts/gamedata/*.db0 pkg/db/mods/
           for d in artifacts/bin-*; do cp "$d"/*.exe pkg/bin/; done
+          # DX12 exe: only together with its runtime DLLs (job dx12_runtime)
+          if [ -f pkg/bin/AnomalyDX12.exe ]; then
+            if [ -d artifacts/dx12-runtime/bin ]; then
+              cp -r artifacts/dx12-runtime/bin/. pkg/bin/
+              mkdir -p pkg/licenses
+              cp sdk/Streamline/LICENSE.txt pkg/licenses/NVIDIA-Streamline.txt
+              cp sdk/Streamline/3rd-party-licenses.md pkg/licenses/NVIDIA-Streamline-third-party.md
+              cp sdk/FidelityFX2/LICENSE.md pkg/licenses/AMD-FSR-SDK.md
+              cp sdk/AgilitySDK/LICENSE.txt pkg/licenses/Microsoft-Agility-SDK.txt
+            else
+              echo "::warning::no DX12 runtime DLLs (job dx12_runtime failed): AnomalyDX12.exe left out"
+              rm pkg/bin/AnomalyDX12.exe
+              printf '\n> **This build has no `AnomalyDX12.exe`** (its runtime DLLs could not be fetched).\n' >> notes.md
+            fi
+          elif [[ "$GITHUB_REF_NAME" == *-dlss ]]; then
+            echo "::warning::no AnomalyDX12.exe (the DX12 leg failed): released without it"
+            printf '\n> **This build has no `AnomalyDX12.exe`** (the DX12 build failed).\n' >> notes.md
+          fi
           # oneTBB runtime: the exes' task scheduler (_thread_types.h) loads it at startup
           if [ -f sdk/binaries/tbb12.dll ]; then cp sdk/binaries/tbb12.dll pkg/bin/; fi
           if [[ "$GITHUB_REF_NAME" == *-dlss ]]; then

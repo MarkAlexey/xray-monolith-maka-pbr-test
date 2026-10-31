@@ -40,6 +40,7 @@ public:
     bool Evaluate(const Frame& frame);
     void ResetHistory() { m_history.Invalidate(); }
     bool Ready() const { return m_feature != nullptr && !m_failed; }
+    bool Initialized() const { return m_initialized && m_parameters != nullptr; }
     ID3D11Texture2D* Output() const { return m_output.Get(); }
     ID3D11ShaderResourceView* OutputView() const { return m_outputView.Get(); }
     Size RenderSize() const { return m_render; }

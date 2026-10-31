@@ -436,6 +436,10 @@ u32 dxRenderDeviceRender::GetCacheStatPolys()
 
 void dxRenderDeviceRender::Begin()
 {
+#ifdef XR_DX12_BRIDGE
+    // Select and fence the shared target before OnFrameBegin binds it.
+    HW.AcquirePresentationFrame();
+#endif
 #if !defined(USE_DX10) && !defined(USE_DX11)
 	CHK_DX(HW.pDevice->BeginScene());
 #endif	//	USE_DX10
@@ -508,7 +512,11 @@ void dxRenderDeviceRender::End()
 #ifdef USE_DX11
 		svp_frame_burst_capture(); // r__svp_frame_burst saves this frame
 #endif
+#ifdef XR_DX12_BRIDGE
+		R_CHK(HW.Present(present_interval, present_flags));
+#else
 		HW.m_pSwapChain->Present(present_interval, present_flags);
+#endif
 		svp_stats_present_ms = present_timer.GetElapsed_ms_f();
 	}
 #else //!USE_DX10 || USE_DX11

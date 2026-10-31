@@ -20,20 +20,23 @@ namespace
 xrCriticalSection rendererErrorGuard;
 std::atomic_bool hasRendererError{false};
 string512 rendererErrorLines[3] = {};
+string512 frameGenerationError = {};
+std::atomic_bool hasFrameGenerationError{false};
 
 void DrawRendererError(CGameFont* font)
 {
-    if (!font || !hasRendererError.load()) return;
-    string512 lines[3];
+    if (!font || !(hasRendererError.load() || hasFrameGenerationError.load())) return;
+    string512 lines[4];
     {
         xrCriticalSectionGuard guard(&rendererErrorGuard);
-        if (!hasRendererError.load()) return;
-        memcpy(lines, rendererErrorLines, sizeof(lines));
+        if (!(hasRendererError.load() || hasFrameGenerationError.load())) return;
+        memcpy(lines, rendererErrorLines, sizeof(rendererErrorLines));
+        memcpy(lines[3], frameGenerationError, sizeof(frameGenerationError));
     }
     const float oldHeight = font->GetHeight();
     font->SetAligment(CGameFont::alLeft);
     font->SetColor(color_rgba(255, 48, 48, 255));
-    for (unsigned i = 0; i < 3; ++i)
+    for (unsigned i = 0; i < 4; ++i)
     {
         if (!lines[i][0]) continue;
         font->SetHeightI(0.018f);
@@ -54,6 +57,13 @@ void SetRendererError(const char* summary, const char* detail, const char* recov
     for (unsigned i = 0; i < 3; ++i)
         strncpy_s(rendererErrorLines[i], sizeof(rendererErrorLines[i]), lines[i] ? lines[i] : "", _TRUNCATE);
     hasRendererError.store(summary && *summary);
+}
+
+void SetFrameGenerationError(const char* summary)
+{
+    xrCriticalSectionGuard guard(&rendererErrorGuard);
+    strncpy_s(frameGenerationError,sizeof(frameGenerationError),summary ? summary : "",_TRUNCATE);
+    hasFrameGenerationError.store(summary && *summary);
 }
 
 // stats

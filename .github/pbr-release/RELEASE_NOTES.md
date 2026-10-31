@@ -14,6 +14,9 @@ are not included.
 from [brodrigz's xray-monolith](https://github.com/brodrigz/xray-monolith) (0.5 with the DX11 fixes of 0.6 - 0.6.3, based on OGSR's
 implementation by the OGSR team and xrSimpAI). Upscaling needs Screen Space Shaders 23.5 (its
 motion vectors) and brodrigz's shader compatibility patch, which is attached to this release.
+**Experimental:** `AnomalyDX12.exe` adds brodrigz's frame generation (NVIDIA DLSS 2x / AMD FSR 2x),
+NVIDIA Reflex and AMD FSR 4 (DX12) upscaling: the game still renders with DX11 and presents through
+DirectX 12 (his DX12 presentation bridge, adapted from OGSR's).
 
 **Bodycam build:** asuparabekon's [Bodycam](https://github.com/asuparabekon/xray-monolith-bodycam)
 V0.3.1 is merged in: the bodycam camera and weapon handling, true picture-in-picture scopes
@@ -33,8 +36,8 @@ plus engine support for Screen Space Shaders. DX11 only.
 
 | File | What it is |
 |---|---|
-| `*_latest.zip` / `*_<version>.zip` | the exes and NVIDIA's DLSS runtime `nvngx_dlss.dll` 310.9.1 (`bin/`), and the PBR gamedata (`db/mods/00_modded_exes_gamedata.db0`) |
-| `dlss-binaries-GAMMA-compatibility-patch-0.63.zip` | brodrigz's DLSS / FSR3 shader compatibility patch 0.63 (FOMOD for Mod Organizer), with his 0.5 video menu, which matches these exes (see `PBR-Test-NOTES.txt` inside) |
+| `*_latest.zip` / `*_<version>.zip` | the exes and NVIDIA's DLSS runtime `nvngx_dlss.dll` 310.9.1 (`bin/`), the frame-generation runtimes of `AnomalyDX12.exe` (`bin/streamline/`, `bin/D3D12/`, `bin/amd_fidelityfx_*_dx12.dll`, their licenses in `licenses/`), and the PBR gamedata (`db/mods/00_modded_exes_gamedata.db0`) |
+| `dlss-binaries-GAMMA-compatibility-patch-0.63.zip` | brodrigz's DLSS / FSR shader compatibility patch 0.63 (FOMOD for Mod Organizer), unchanged; its video menu matches these exes (see `PBR-Test-NOTES.txt` inside) |
 | `*_pdb.zip` | debug symbols; put the `.pdb` files next to the exes for readable crash logs |
 | `*_tools.zip` | Python tools: SSS/ES compatibility patch generator, PBR overlay generator, shader pack builder, shader FOMOD builder, PBR texture packer |
 | `*_profiled.zip` | developers: `AnomalyDX11_Profiled.exe`, the DX11 exe with the Optick profiler compiled in (see its README) |
@@ -81,6 +84,23 @@ old choice).
    Settings > Video > Basic and Apply. DLSS needs an NVIDIA RTX GPU; FSR 3 runs on any GPU with
    Direct3D feature level 11.1. The console says `[DLSS] ACTIVE` / `[FSR3] ACTIVE` once it works;
    a red on-screen message explains a failure.
+
+### Frame generation (`AnomalyDX12.exe`, experimental)
+
+1. Set up DLSS / FSR 3 as above; frame generation needs an active upscaler and MSAA Off.
+2. Keep `bin/streamline/`, `bin/D3D12/` and the `amd_fidelityfx_*_dx12.dll` files from the main zip
+   next to the exe. Start `AnomalyDX12.exe` (in Mod Organizer: add it as an executable).
+3. Settings > Video > Basic > **Frame generation (experimental)**: Off, DLSS 2x (NVIDIA RTX 40/50,
+   hardware-accelerated GPU scheduling on) or FSR 2x (any DX12 GPU; FSR 4 frame generation on Radeon
+   RX 9000 with Windows 11, FSR 3.1 elsewhere). Only what your GPU supports is listed. Apply restarts
+   the renderer. Upscaling gains **AMD FSR (DX12)**: FSR 4 on Radeon RX 7000/9000, FSR 3.1 elsewhere.
+4. After FSR 2x has been used, DLSS 2x and Reflex need a game restart (Streamline starts once per
+   session). With frame generation on, `r__framelimit` counts displayed frames. Generation pauses in
+   menus and loading screens. PiP scopes are rendered every frame and are generated with the rest of the image.
+
+If DX12 presentation cannot start, the game stops with a message and the log has `[DX12 bridge]` lines;
+use `AnomalyDX11.exe`. `bin/streamline/RUNTIME.txt` lists the runtime files, their versions and
+checksums.
 
 The shader installer is built for GAMMA's shader stack at the time of this release; if GAMMA updates its shaders,
 generate your own overlay with `make_pbr_overlay.py` from the tools zip. Delete
@@ -153,10 +173,13 @@ qkff99's other optimisations have no switches. `sheduler_budget_max` (5): ceilin
 object-update budget in ms (IX-Ray value); raise it (up to 66, the old value) if NPCs react late in
 busy scenes.
 
-DLSS / FSR3: `r_upscaler` (off / dlss / fsr3), `r_dlss_quality` (off, dlaa, ultra_quality, quality,
-balanced, performance, ultra_performance), `r_dlss_preset` (default, j, k, l, m), `r_fsr3_quality`
-(native_aa, ultra_quality, quality, balanced, performance, ultra_performance), `r_dlss_sharpness`
-(0..1, CAS sharpening for either method). The menu has everything but `ultra_quality` (console only).
-Method and quality changes need `vid_restart`.
+DLSS / FSR3: `r_upscaler` (off / dlss / fsr3, and fsr4 = AMD FSR through DX12 in `AnomalyDX12.exe`),
+`r_dlss_quality` (off, dlaa, ultra_quality, quality, balanced, performance, ultra_performance),
+`r_dlss_preset` (default, j, k, l, m), `r_fsr3_quality` (native_aa, ultra_quality, quality, balanced,
+performance, ultra_performance; also used by FSR through DX12), `r_dlss_sharpness` (0..1, CAS
+sharpening for either method), `r_upscaler_support` (prints what this GPU supports),
+`r_upscaler_debug` (1 upscaler input, 2 motion vectors; not saved). Method and quality changes need
+`vid_restart`. `AnomalyDX12.exe` only: `r_frame_generation` (off / dlss / fsr), `r_fg_diagnostics`
+(1: `[FG DIAG]` log lines, read when the renderer starts).
 
 Details, caveats and the full change list: [README-Claude.md](https://github.com/{{REPO}}/blob/{{SHA}}/README-Claude.md).

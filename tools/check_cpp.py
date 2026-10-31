@@ -70,7 +70,9 @@ PROFILER_DEFINE = "XRCORE_PROFILER=0"
 # What is exported from each commit. gamedata/shaders: some engine sources include shader
 # headers to share constants with HLSL (svp_optics.cpp: ../../../gamedata/shaders/r3/
 # scope_defines.h); without them those TUs stopped at that include and checked nothing after it.
-EXPORT_PATHS = ["src", "sdk/include", "gamedata/shaders"]
+# sdk/FSR3: the DX11 FSR 3 headers (Dlss/Fsr3D3D11.h). sdk/Streamline and sdk/FidelityFX2: headers
+# of the DX12 frame-generation bridge (AnomalyDX12).
+EXPORT_PATHS = ["src", "sdk/include", "gamedata/shaders", "sdk/FSR3", "sdk/Streamline", "sdk/FidelityFX2"]
 
 PROJECTS = {
     "R4": {
@@ -78,7 +80,7 @@ PROJECTS = {
         "includes": ["src/Layers/xrRenderPC_R4", "src/xrCore", "src", "sdk/include",
                      "sdk/include/dxsdk", "src/3rd party/imgui", "src/3rd party/luajit-2/src",
                      "src/3rd party/luabind", "src/3rd party", "sdk/include/nvapi",
-                     "sdk/include/OpenAutomate"],
+                     "sdk/include/OpenAutomate", "sdk/FSR3/include"],
         "defines": ["USE_DX11", "WIN32", "NDEBUG", "_WINDOWS", "_USRDLL", "XRRENDER_R4_EXPORTS",
                     "_SECURE_SCL=0", PROFILER_DEFINE],
     },
@@ -93,6 +95,33 @@ PROJECTS = {
                      "src/3rd party/CxImage", "src/3rd party", "src/3rd party/imgui"],
         "defines": ["WIN32", "NDEBUG", "_WINDOWS", "_USRDLL", "XRGAME_EXPORTS", "dSINGLE", "MSVC",
                     "_SECURE_SCL=0", PROFILER_DEFINE],
+    },
+    # The DX12 executable's renderer and engine (xrRender_R4 Release-DX12 / xrEngine
+    # ReleaseR4-DX12): the same settings plus XR_DX12_BRIDGE. Checked with --project only.
+    "R4DX12": {
+        "dir": "src/Layers/xrRenderPC_R4",
+        "includes": ["src/Layers/xrRenderPC_R4", "src/xrCore", "src", "sdk/include",
+                     "sdk/include/dxsdk", "src/3rd party/imgui", "src/3rd party/luajit-2/src",
+                     "src/3rd party/luabind", "src/3rd party", "sdk/include/nvapi",
+                     "sdk/include/OpenAutomate", "sdk/FSR3/include"],
+        "defines": ["XR_DX12_BRIDGE", "USE_DX11", "WIN32", "NDEBUG", "_WINDOWS", "_USRDLL",
+                    "XRRENDER_R4_EXPORTS", "_SECURE_SCL=0", PROFILER_DEFINE],
+    },
+    "xrEngine": {
+        "dir": "src/xrEngine",
+        "includes": ["src/xrEngine", "src", "src/xrCore", "src/3rd party/imgui",
+                     "src/3rd party/luajit-2/src", "src/3rd party/luabind", "src/3rd party/giflib",
+                     "src/3rd party", "sdk/include", "sdk/include/OpenAutomate"],
+        "defines": ["STATIC_RENDERER_R4", "NDEBUG", "WIN32", "_WINDOWS", "ENGINE_BUILD",
+                    "_SECURE_SCL=0", "AL_LIBTYPE_STATIC", PROFILER_DEFINE],
+    },
+    "xrEngineDX12": {
+        "dir": "src/xrEngine",
+        "includes": ["src/xrEngine", "src", "src/xrCore", "src/3rd party/imgui",
+                     "src/3rd party/luajit-2/src", "src/3rd party/luabind", "src/3rd party/giflib",
+                     "src/3rd party", "sdk/include", "sdk/include/OpenAutomate"],
+        "defines": ["XR_DX12_BRIDGE", "STATIC_RENDERER_R4", "NDEBUG", "WIN32", "_WINDOWS",
+                    "ENGINE_BUILD", "_SECURE_SCL=0", "AL_LIBTYPE_STATIC", PROFILER_DEFINE],
     },
     "R3": {
         "dir": "src/Layers/xrRenderPC_R3",
@@ -195,6 +224,8 @@ def projects_for(tu):
         return ["R4", "R3"]
     if "/xrGame/" in tu or "/xrServerEntities/" in tu:
         return ["xrGame"]
+    if "/xrEngine/" in tu:
+        return ["xrEngine"]
     return ["R4"]
 
 

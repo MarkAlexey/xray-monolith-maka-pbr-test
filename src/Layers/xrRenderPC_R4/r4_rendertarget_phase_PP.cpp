@@ -1,4 +1,7 @@
 #include "stdafx.h"
+#ifdef XR_DX12_BRIDGE
+#include "Dlss/FrameGeneration.h"
+#endif
 #include "r4_rendertarget.h"
 #include "../../xrEngine/CustomHUD.h"
 #include "../../xrEngine/igame_persistent.h"
@@ -129,6 +132,9 @@ void CRenderTarget::phase_dlss_postprocess()
     // PiP scope viewport: its combine runs mid-frame at its own resolution; the main scene is still
     // open (inScene) and is evaluated/closed by the main combine that follows
     if (dlss::ScopePass()) return;
+#ifdef XR_DX12_BRIDGE
+    fg::CaptureScene();
+#endif
     if (!dlss::Configured())
     {
         dlss::EndScene();

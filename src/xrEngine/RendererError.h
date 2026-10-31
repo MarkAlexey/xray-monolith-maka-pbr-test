@@ -5,3 +5,5 @@
 // The caller also logs the diagnostic; this does not depend on log callbacks.
 ENGINE_API void SetRendererError(const char* summary, const char* detail = nullptr,
     const char* recovery = nullptr);
+
+ENGINE_API void SetFrameGenerationError(const char* summary);
