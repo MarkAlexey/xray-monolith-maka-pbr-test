@@ -420,6 +420,10 @@ u32 dxRenderDeviceRender::GetCacheStatPolys()
 
 void dxRenderDeviceRender::Begin()
 {
+#ifdef XR_DX12_BRIDGE
+    // Select and fence the shared target before OnFrameBegin binds it.
+    HW.AcquirePresentationFrame();
+#endif
 #if !defined(USE_DX10) && !defined(USE_DX11)
 	CHK_DX(HW.pDevice->BeginScene());
 #endif	//	USE_DX10
@@ -482,7 +486,11 @@ void dxRenderDeviceRender::End()
 # endif
 
 	if (!Device.m_SecondViewport.IsSVPFrame() && !Device.m_SecondViewport.isCamReady) {
+#ifdef XR_DX12_BRIDGE
+        R_CHK(HW.Present(present_interval, present_flags));
+#else
 		HW.m_pSwapChain->Present(present_interval, present_flags);
+#endif
 	}
 #else //!USE_DX10 || USE_DX11
 	CHK_DX(HW.pDevice->EndScene());

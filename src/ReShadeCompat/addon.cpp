@@ -21,6 +21,11 @@ static void on_reshade_begin_effects(reshade::api::effect_runtime* runtime, resh
 
 void render_reshade_effects()
 {
+	// A DX12 runtime records into a presentation command list owned by ReShade.
+	// Reusing the previous callback's list from our DX11 loading-screen draw is
+	// invalid. Let ReShade execute its effects normally during DX12 Present.
+	if (m_runtime && m_runtime->get_device()->get_api() == reshade::api::device_api::d3d12)
+		return;
 	if (m_runtime)
 		m_runtime->render_effects(m_cmdlist, m_rtv, m_rtv_srgb);
 }

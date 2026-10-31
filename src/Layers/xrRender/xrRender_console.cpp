@@ -135,6 +135,17 @@ xr_token screenshot_mode_token [ ] = {
 //	“DX10.0 style [Standard]”
 //	“DX10.1 style [Higher quality]”
 
+#ifdef XR_DX12_BRIDGE
+// Method switches between DLSS and FSR rebuild DX12 presentation on vid_restart.
+u32 ps_r_frame_generation = 0;
+int ps_r_fg_diagnostics = 0; // Latched at bridge creation.
+static xr_token frame_generation_token[] = {{"off",0},{"dlss",1},{"fsr",2},{nullptr,0}};
+// DX12-only: AMD FSR through the bridge (FSR 4 on supported Radeon GPUs).
+static xr_token upscaler_token_dx12[] = {{"off", 0}, {"dlss", 1}, {"fsr3", 2}, {"fsr4", 3}, {nullptr, 0}};
+#endif
+
+
+
 // Common
 extern int psSkeletonUpdate;
 extern float r__dtex_range;
@@ -587,6 +598,52 @@ float r_rain_k = 99.0f;
 #include	"../../xrEngine/xr_ioconsole.h"
 #include	"../../xrEngine/xr_ioc_cmd.h"
 #include	"../../xrEngine/shader_bus.h"
+
+#if defined(USE_DX11)
+#include "../xrRenderPC_R4/Dlss/DlssIntegration.h"
+
+// Offers only choices this GPU/runtime supports to the options menu and console tips.
+// Parsing and saving keep the full list, so configs stay valid on other hardware,
+// and the current value is always listed so it can be changed away from.
+class CCC_SupportedToken : public CCC_Token
+{
+    using Supported = bool (*)(unsigned id);
+    Supported m_supported;
+    xr_vector<xr_token> m_visible;
+public:
+    CCC_SupportedToken(LPCSTR name, u32* value, xr_token* tokens, Supported supported)
+        : CCC_Token(name, value, tokens), m_supported(supported) {}
+    xr_token* GetToken() override
+    {
+        // Before the device exists nothing can be probed: offer everything.
+        if (!HW.pDevice) return tokens;
+        m_visible.clear();
+        for (xr_token* token = tokens; token->name; ++token)
+            if (token->id == int(*value) || m_supported(unsigned(token->id))) m_visible.push_back(*token);
+        m_visible.push_back({nullptr, 0});
+        return m_visible.data();
+    }
+};
+
+// Read-only capability summary for the options script; never saved to user.ltx.
+class CCC_UpscalerSupport : public IConsole_Command
+{
+public:
+    CCC_UpscalerSupport(LPCSTR name) : IConsole_Command(name) { bEmptyArgsHandled = TRUE; }
+    void Execute(LPCSTR) override
+    {
+        TStatus status;
+        Status(status);
+        Msg("%s %s", cName, status);
+    }
+    void Status(TStatus& status) override
+    {
+        if (!HW.pDevice) { xr_strcpy(status, "unknown"); return; }
+        dlss::SupportSummary(status, sizeof(status));
+    }
+    void Save(IWriter*) override {}
+};
+#endif
 
 #if defined(USE_DX10) || defined(USE_DX11)
 #include "../xrRenderDX10/StateManager/dx10SamplerStateCache.h"
@@ -1643,7 +1700,16 @@ void xrRender_initconsole()
 	CMD3(CCC_Token, "r2_smaa", &ps_smaa_quality, smaa_quality_token);
 #if defined(USE_DX11)
 	CMD3(CCC_Token, "r_dlss_quality", &ps_r_dlss_quality, dlss_quality_token);
-	CMD3(CCC_Token, "r_upscaler", &ps_r_upscaler, upscaler_token);
+#ifdef XR_DX12_BRIDGE
+	CMD4(CCC_SupportedToken, "r_upscaler", &ps_r_upscaler, upscaler_token_dx12, &dlss::UpscalerSupported);
+#else
+	CMD4(CCC_SupportedToken, "r_upscaler", &ps_r_upscaler, upscaler_token, &dlss::UpscalerSupported);
+#endif
+	CMD1(CCC_UpscalerSupport, "r_upscaler_support");
+#ifdef XR_DX12_BRIDGE
+    CMD4(CCC_SupportedToken, "r_frame_generation", &ps_r_frame_generation, frame_generation_token, &dlss::FrameGenerationSupported);
+    CMD4(CCC_Integer, "r_fg_diagnostics", &ps_r_fg_diagnostics, 0, 1);
+#endif
 	CMD3(CCC_Token, "r_fsr3_quality", &ps_r_fsr3_quality, fsr3_quality_token);
 	CMD3(CCC_Token, "r_dlss_preset", &ps_r_dlss_preset, dlss_preset_token);
 	CMD4(CCC_Float, "r_dlss_sharpness", &ps_r_dlss_sharpness, 0.0f, 1.0f);

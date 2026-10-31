@@ -475,7 +475,12 @@ void CRender::RenderToTarget(RRT target)
 	}
 
 	ID3DTexture2D* pBuffer = nullptr;
+#ifdef XR_DX12_BRIDGE
+    // PDA and scope copies read the DX11 render image, not the DX12 swapchain.
+    R_CHK(HW.GetPresentationSurface(&pBuffer));
+#else
 	HW.m_pSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&pBuffer);
+#endif
 	HW.pContext->CopyResource((*RT)->pSurface, pBuffer);
 	pBuffer->Release();
 }

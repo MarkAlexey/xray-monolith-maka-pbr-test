@@ -1,0 +1,136 @@
+DX12 presentation bridge
+========================
+
+Build
+-----
+Solution: src/engine-vs2022.sln
+Configuration: DX12 | x64
+Target: xrEngine
+Output: _build/_game/bin_dbg/AnomalyDX12.exe
+
+This is a Release/WPO build. The engine and R4 renderer have separate DX12
+configuration/intermediate directories. Common libraries use their existing
+Release configurations. XR_DX12_BRIDGE is defined only for the new engine and
+renderer configurations. No launch argument is needed to enable the bridge.
+
+Runtime layout (beside AnomalyDX12.exe)
+---------------------------------------
+bin/streamline/*.dll          sdk/Streamline/bin (Streamline 2.14.16, nvngx_dlssg 310.9.16,
+                              NVIDIA-signed; 310.9.16 is required for DLSS-FG Preset C)
+bin/amd_fidelityfx_*_dx12.dll sdk/FidelityFX2/bin (FSR SDK 2.3.0: loader 2.3.0,
+                              upscaler 4.1.1, frame generation 4.0.1; AMD-signed)
+bin/D3D12/D3D12Core.dll       sdk/AgilitySDK/bin (Agility SDK 1.619.6). The exe
+                              exports D3D12SDKVersion=619 / D3D12SDKPath=.\D3D12\.
+                              Gives Shader Model 6.6+ (FSR 4) on Windows 10.
+Licenses: sdk/FidelityFX2/LICENSE.md, sdk/AgilitySDK/LICENSE.txt,
+sdk/Streamline/LICENSE.txt. Only the files listed above are redistributable.
+The sdk/*/bin runtime DLLs are not tracked in git (like nvngx_dlss.dll): take
+them from the vendor packages at the versions above. Builds only need the
+tracked headers; the DLLs are loaded at runtime.
+
+Current scope
+-------------
+Native DX11 scene rendering, followed by native DX12 presentation through one of
+three runtimes, chosen by r_frame_generation when the bridge is created:
+  off / dlss -> Streamline proxy swapchain (Reflex; DLSS-G when dlss)
+  fsr        -> AMD FSR frame-generation swapchain (no Reflex)
+  fallback   -> plain DX12 swapchain
+Changing between dlss and fsr rebuilds the bridge on vid_restart (the options
+menu requests one). A runtime that fails to start is not retried until restart.
+Streamline is initialized at most once per process: after slShutdown, DLSS-G
+(nvngx_dlssg) keeps a callback into the unloaded plugin and a later
+slSetD3DDevice faults (reproduced standalone; seen in game 2026-10-16, where
+the fault inside vid_restart was swallowed by LuaJIT's pcall and left
+RImplementation.Target null, crashing the next frame). After FSR FG has been
+used, Off/DLSS keep the FSR swapchain with generation off; DLSS FG and Reflex
+need a game restart (menu: "DLSS 2x (restart the game)").
+
+DLSS-FG presets (e.g. Preset C, NVIDIA app beta 2026-10-13) are driver overrides,
+not a Streamline option: DLSSGOptions has no preset field in 2.14.16. Forcing one
+means the driver profile for AnomalyDX12.exe (NvApiDriverSettings.h in the SL SDK):
+  0x10E41E03 "Enable DLSS-FG override"  = 1
+  0x10E41DF1 "Override DLSS-FG preset"  = 3 (Preset C; 0 off, 0x00ffffff latest)
+  0x10E41E06 "Enable Streamline override" = 1 may also be needed (unverified).
+NvAPI_NGX_GetNGXOverrideState (driver R570+) reports the applied FG preset for a
+process and can verify an override; not integrated.
+DLSS-G only generates while its window is focused (sl.log: "DLSS-G disabled:
+window not focused"); standalone tests must keep the test window in front.
+
+Menu guards: r_upscaler / r_frame_generation list only supported choices to
+the UI (plus the current value); parsing/saving use the full token list.
+Support: DLSS = NVIDIA + NGX SuperSampling available (probed once per device);
+FSR 3 = feature level 11.1; FSR (DX12) and FSR FG = signed AMD runtime loads
+and offers a version for this GPU; DLSS FG = Streamline adapter check (vendor
+check before Streamline has started). r_upscaler_support prints the summary
+the options script uses for labels (FSR 4 vs FSR 3.1, restart required).
+
+Upscalers: DX11 DLSS, DX11 FSR 3.1.2 (r_upscaler fsr3), and DX12 AMD FSR
+(r_upscaler fsr4, DX12 exe only). The DX12 FSR path copies render-resolution
+color and converts depth/motion into shared textures, upscales on its own DX12
+queue, and the DX11 queue waits on a shared fence before post-processing reads
+the output. FSR 4.1.1 runs on Radeon RX 7000/9000; elsewhere the same AMD
+runtime selects its FSR 3.1 provider (3.1.5 on RTX 4070). The selected provider
+is logged ("[FSR] DX12 upscaler provider ...").
+
+Frame generation
+----------------
+Inputs: render-resolution depth and SSS motion (RGBA16F, current-minus-previous
+UV) converted to R32F/RG16F, plus the display-sized image copied after phase_pp
+and before the 2D HUD (HUD-less color). Requires an active upscaler, SSS motion
+vectors and MSAA off. Suspended in menus/loading/pause and, for Streamline,
+with VSync on a runtime without FG VSync support.
+Scopes and heat vision: generation continues. 3D-scope (SVP) frames skip Reflex
+and the frame token; the main view's continuity check allows the SVP frame gap.
+The 3D scope lens updates at its own rate and may ghost slightly in the lens.
+FSR FG: synchronous generation on the presentation queue (allowAsyncWorkloads
+false), HUD-less UI detection; FG 4.0.1 on Windows 11 + RX 9000, otherwise the
+runtime's 3.1 provider (3.1.6 on RTX 4070).
+r__framelimit: with Streamline, Reflex applies the cap and the engine limiter
+does not wait. While frames are generated the cap counts displayed frames.
+
+Diagnostics (r_fg_diagnostics 1, latched at device creation): [FG DIAG] lines for
+tags/formats, post-Present DLSS-G state, sparse depth/motion samples, cumulative
+counters, and "DXGI present counter ... per rendered frame" (~2 when generating;
+works for both runtimes). [FSR] lines carry FSR runtime debug-checker messages
+(consecutive repeats dropped). The startup line "[DX12 bridge] D3D12 core"
+shows which D3D12Core.dll loaded and the highest shader model.
+
+The presentation transport is adapted from OGSR's D3D12PresentBridge at revision
+6443f8426. Credits: OGSR team and xrSimpAI.
+
+Resource ownership
+------------------
+Both API devices use the selected adapter. Startup requires D3D11 Device5 /
+Context4 shared-fence support and D3D12 device creation. Failure is logged and
+reported at startup; the DX12 executable does not silently pretend to be active.
+
+The final DX11 image is rendered directly into a ring of shared DX12 textures.
+AcquireFrame queues a DX11 GPU wait before the selected slot is written again.
+Each slot owns its cached DX11 RTV and DX12 command allocator/list. SubmitFrame
+signals/flushed DX11 work, queues a DX12 wait, copies into the current DX12
+backbuffer, and signals copy completion. Frames that generate also signal a
+retirement fence after Present on the presentation queue, which is ordered
+behind both runtimes' generation work; DX11 waits for it before reusing a slot.
+CPU waiting is limited to allocator reuse and lifecycle operations; image data
+is not read back to the CPU.
+
+Scope/PDA passes can acquire a slot without presenting. Only the normal main
+viewport presentation advances the ring. Screenshot and RenderToTarget paths
+read the shared DX11 image. Resize and shutdown drain both queues before freeing
+shared resources; the FSR frame-generation context is recreated on resize.
+
+ReShade's cached command-list helper skips explicit effect replay on DX12.
+ReShade is allowed to run through its normal Present hook. This is not a claim
+that all ReShade effects/depth access or capture tools work with the bridge.
+
+Validation status
+-----------------
+In game: bridge presentation (2026-10-15: 124 -> 115 FPS with DLSS Quality,
+~0.63 ms) and DLSS FG generating frames (2026-10-16).
+Standalone GPU smoke test (RTX 4070, Windows 10 19045, 2026-10-16), using the
+bridge sources unchanged: both runtimes, 600 frames with the DX12 FSR upscaler,
+an FG off/on toggle and a resize; no failures. Measured 1.95 (FSR) and 1.93
+(DLSS) DXGI presents per rendered frame; Agility D3D12Core loaded, SM 6.9.
+Not yet validated: FSR upscaling/FG image quality in game, FG in scopes,
+Reflex frame limiting, bridge rebuild on vid_restart, FSR 4 / FG 4 providers
+(need Radeon hardware), HDR10 with FSR FG. Shipped as experimental in 0.6.

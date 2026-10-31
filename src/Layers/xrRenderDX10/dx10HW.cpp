@@ -12,6 +12,10 @@
 #endif
 #pragma warning(default:4995)
 #include "../xrRender/HW.h"
+#ifdef XR_DX12_BRIDGE
+#include "D3D12PresentBridge.h"
+#include "../xrRenderPC_R4/Dlss/FrameGeneration.h"
+#endif
 #include "../../xrEngine/XR_IOConsole.h"
 #include "../../xrEngine/renderdoc_integration.h"
 #include "../../Include/xrAPI/xrAPI.h"
@@ -564,9 +568,17 @@ void CHW::CreateDevice(HWND hwnd, bool move_window)
     // create device
     ID3D11Device* device = nullptr;
     ID3D11DeviceContext* context = nullptr;
+#ifdef XR_DX12_BRIDGE
+    // Both APIs must use the adapter selected for the game window.
+    IDXGIAdapter* renderAdapter = m_pAdapter;
+    const D3D_DRIVER_TYPE renderDriver = D3D_DRIVER_TYPE_UNKNOWN;
+#else
+    IDXGIAdapter* renderAdapter = nullptr;
+    const D3D_DRIVER_TYPE renderDriver = D3D_DRIVER_TYPE_HARDWARE;
+#endif
     R = D3D11CreateDevice(
-        nullptr,
-        D3D_DRIVER_TYPE_HARDWARE,
+        renderAdapter,
+        renderDriver,
         nullptr,
         create_device_flags,
         pFeatureLevels,
@@ -577,7 +589,7 @@ void CHW::CreateDevice(HWND hwnd, bool move_window)
         &context);
     // Older runtimes reject a list containing 11.1 instead of selecting 11.0.
     if (R == E_INVALIDARG)
-        R = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, create_device_flags,
+        R = D3D11CreateDevice(renderAdapter, renderDriver, nullptr, create_device_flags,
             pFeatureLevels + 1, 1, D3D11_SDK_VERSION, &device, &FeatureLevel, &context);
     R_CHK(R);
     Msg("[DX11] Device feature level: %s", FeatureLevel >= D3D_FEATURE_LEVEL_11_1 ? "11.1" : "11.0");
@@ -589,6 +601,9 @@ void CHW::CreateDevice(HWND hwnd, bool move_window)
     _RELEASE(context);
 
     // create swapchain
+#ifdef XR_DX12_BRIDGE
+    CreatePresentationBridge();
+#else
     R_CHK(m_pFactory->CreateSwapChainForHwnd(pDevice, m_hWnd, &sd, &sd_fullscreen, NULL, &m_pSwapChain));
 
     // setup colorspace (SDR, sRGB / Rec.709)
@@ -596,6 +611,7 @@ void CHW::CreateDevice(HWND hwnd, bool move_window)
     R_CHK(m_pSwapChain->QueryInterface(&swapchain3));
     R_CHK(swapchain3->SetColorSpace1(DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709));
     _RELEASE(swapchain3);
+#endif
 
     R_CHK(pContext->QueryInterface(__uuidof(ID3DUserDefinedAnnotation), (void**)&pAnnotation));
 
@@ -674,8 +690,15 @@ void CHW::CreateDevice(HWND hwnd, bool move_window)
     // NOTE: this seems required to get the default render target to match the swap chain resolution
     // probably the sequence ResizeTarget, ResizeBuffers, and UpdateViews is important
     
-    // u32	memory									= pDevice->GetAvailableTextureMem	();
-    if (Core.ParamsData.test(ECoreParams::dxgi_old)) {
+    // The DX12 swapchain starts windowed; Reset applies the requested mode.
+#ifdef XR_DX12_BRIDGE
+    const bool legacyStartup = false;
+    if (Core.ParamsData.test(ECoreParams::dxgi_old))
+        Msg("[DX12 bridge] Ignoring dxgi-old; using DX12 presentation lifecycle.");
+#else
+    const bool legacyStartup = Core.ParamsData.test(ECoreParams::dxgi_old);
+#endif
+    if (legacyStartup) {
         Msg("* %s enabled", "dxgi-old");
         UpdateViews();
         size_t memory = Desc.DedicatedVideoMemory;
@@ -701,6 +724,11 @@ void CHW::CreateDevice(HWND hwnd, bool move_window)
 
 void CHW::DestroyDevice()
 {
+#ifdef XR_DX12_BRIDGE
+    // Drain both queues before any renderer-owned resources are released.
+    if (m_presentBridge) m_presentBridge->WaitIdle();
+    if (pContext) pContext->ClearState();
+#endif
 #ifdef USE_DX11
     dlss::ShutdownDevice();
 #endif
@@ -732,6 +760,7 @@ void CHW::DestroyDevice()
         m_pSwapChain->SetFullscreenState(FALSE, NULL);
 
         if (Core.ParamsData.test(ECoreParams::dxgi_old)) {
+#ifndef XR_DX12_BRIDGE
 #ifdef USE_DX11
             const auto& cd = m_ChainDesc;
             CHK_DX(m_pSwapChain->ResizeBuffers(
@@ -743,10 +772,15 @@ void CHW::DestroyDevice()
 
             UpdateViews();
 #endif
+#endif
 		}
     }
     _SHOW_REF("refCount:m_pSwapChain", m_pSwapChain);
     _RELEASE(m_pSwapChain);
+
+#ifdef XR_DX12_BRIDGE
+    xr_delete(m_presentBridge);
+#endif
 
 #ifdef USE_DX11
     _RELEASE(pContext);
@@ -782,6 +816,10 @@ void CHW::Reset(HWND hwnd)
 #endif
 
     BOOL bWindowed = (g_screenmode != 2);
+
+#ifdef XR_DX12_BRIDGE
+    RecreatePresentationBridgeIfNeeded();
+#endif
 
 #if defined(USE_DX11)
     cd_fs.Windowed = bWindowed;
@@ -852,12 +890,16 @@ void CHW::Reset(HWND hwnd)
         flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
     }
 
+#ifdef XR_DX12_BRIDGE
+    R_CHK(ResizePresentation(cd.Width, cd.Height, cd.Format, flags));
+#else
     CHK_DX(m_pSwapChain->ResizeBuffers(
         cd.BufferCount,
         cd.Width,
         cd.Height,
         cd.Format,
         flags));
+#endif
 #elif defined(USE_DX10)
 	CHK_DX(m_pSwapChain->ResizeBuffers(
 		cd.BufferCount,
@@ -1101,12 +1143,16 @@ void CHW::OnAppActivate()
             flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
         }
 
+#ifdef XR_DX12_BRIDGE
+        R_CHK(ResizePresentation(cd.Width, cd.Height, cd.Format, flags));
+#else
         m_pSwapChain->ResizeBuffers(
             cd.BufferCount,
             cd.Width,
             cd.Height,
             cd.Format,
             flags);
+#endif
 
         UpdateViews();
 #endif
@@ -1147,12 +1193,16 @@ void CHW::OnAppDeactivate()
             flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
         }
 
+#ifdef XR_DX12_BRIDGE
+        R_CHK(ResizePresentation(cd.Width, cd.Height, cd.Format, flags));
+#else
         m_pSwapChain->ResizeBuffers(
             cd.BufferCount,
             cd.Width,
             cd.Height,
             cd.Format,
             flags);
+#endif
 
         UpdateViews();
 #endif
@@ -1447,6 +1497,135 @@ void fill_vid_mode_list(CHW* _hw)
     */
 }
 
+#ifdef XR_DX12_BRIDGE
+extern u32 ps_r_frame_generation;
+extern int ps_r_fg_diagnostics;
+
+// "[FG DIAG]" and "[DX12 bridge stats]" lines are diagnostics, logged only with
+// r_fg_diagnostics (latched when the bridge is created). Status, warnings and
+// errors always log.
+static bool bridgeDiagnostics = false;
+static void BridgeLog(const char* message)
+{
+    if (!bridgeDiagnostics && (!strncmp(message, "[FG DIAG]", 9) || !strncmp(message, "[DX12 bridge stats]", 19)))
+        return;
+    Msg("%s", message);
+}
+
+static const char* PresentRuntimeName(PresentRuntime runtime)
+{
+    switch (runtime)
+    {
+    case PresentRuntime::Streamline: return "Streamline";
+    case PresentRuntime::Fsr: return "AMD FSR frame generation";
+    default: return "plain DX12";
+    }
+}
+
+// FSR FG owns the swapchain; Off and DLSS share Streamline (Reflex stays available).
+static PresentRuntime DesiredPresentRuntime()
+{
+    return ps_r_frame_generation == 2 ? PresentRuntime::Fsr : PresentRuntime::Streamline;
+}
+
+void CHW::CreatePresentationBridge()
+{
+    const PresentRuntime desired = DesiredPresentRuntime();
+    const PresentRuntime order[]{desired, PresentRuntime::Streamline, PresentRuntime::Plain};
+    for (unsigned i = 0; i < 3 && !m_presentBridge; ++i)
+    {
+        const PresentRuntime runtime = order[i];
+        if ((i && runtime == desired) || (runtime != PresentRuntime::Plain && (m_failedPresentRuntimes & (1u << unsigned(runtime)))))
+            continue;
+        m_presentBridge = xr_new<D3D12PresentBridge>();
+        bridgeDiagnostics = ps_r_fg_diagnostics != 0;
+        const HRESULT R = m_presentBridge->Initialize(m_pFactory, m_pAdapter, pDevice, pContext, m_hWnd, m_ChainDesc,
+            Core.ParamsData.test(ECoreParams::dxgi_dbg), runtime, &BridgeLog, ps_r_fg_diagnostics != 0);
+        if (SUCCEEDED(R)) break;
+        Msg("! [DX12 bridge] %s presentation unavailable at %s (0x%08X); trying the next runtime.",
+            PresentRuntimeName(runtime), m_presentBridge->LastFailure(), unsigned(R));
+        if (runtime != PresentRuntime::Plain) m_failedPresentRuntimes |= 1u << unsigned(runtime);
+        xr_delete(m_presentBridge);
+    }
+    if (!m_presentBridge)
+    {
+        xrLogger::FlushLog();
+        CHECK_OR_EXIT(false, "DX12 presentation could not start. See the game log for details or use AnomalyDX11.exe.");
+        return;
+    }
+    m_pSwapChain = m_presentBridge->GetSwapChain();
+    m_pSwapChain->AddRef();
+
+    // HDR10 output is not in this tree: the DX12 swapchain is always SDR (G22 / P709).
+    IDXGISwapChain3* swapchain3;
+    R_CHK(m_pSwapChain->QueryInterface(&swapchain3));
+    R_CHK(swapchain3->SetColorSpace1(DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709));
+    _RELEASE(swapchain3);
+    Msg("[DX12 bridge] Active: DX11 rendering with DX12 presentation through %s. r_frame_generation off|dlss|fsr; diagnostics %s.",
+        m_presentBridge->RuntimeName(), ps_r_fg_diagnostics ? "on" : "off");
+}
+
+void CHW::RecreatePresentationBridgeIfNeeded()
+{
+    if (!m_presentBridge) return;
+    const PresentRuntime desired = DesiredPresentRuntime();
+    const PresentRuntime active = m_presentBridge->Runtime();
+    // A runtime that failed this session is not retried on every vid_restart.
+    if (active == desired || (m_failedPresentRuntimes & (1u << unsigned(desired)))) return;
+    // Streamline cannot start twice per process. Keep the current swapchain (FSR's
+    // presents normally with generation off) rather than rebuilding into plain DX12.
+    if (desired == PresentRuntime::Streamline && !StreamlineIntegration::CanInitialize())
+    {
+        Msg("[DX12 bridge] Streamline already ran in this session; keeping %s presentation. Restart the game for DLSS frame generation/Reflex.",
+            PresentRuntimeName(active));
+        return;
+    }
+    Msg("[DX12 bridge] Frame generation method changed; rebuilding presentation (%s -> %s).",
+        PresentRuntimeName(active), PresentRuntimeName(desired));
+    RCache.OnFrameEnd();
+    _RELEASE(pBaseRT);
+    _RELEASE(pBaseZB);
+    fg::Reset();
+    m_presentBridge->WaitIdle();
+    // DXGI allows one swapchain per window: release the old one completely first.
+    m_pSwapChain->SetFullscreenState(FALSE, nullptr);
+    _RELEASE(m_pSwapChain);
+    xr_delete(m_presentBridge);
+    CreatePresentationBridge();
+}
+
+void CHW::AcquirePresentationFrame()
+{
+    fg::BeginRender();
+    R_CHK(m_presentBridge->AcquireFrame());
+    _RELEASE(pBaseRT);
+    R_CHK(m_presentBridge->GetRenderTargetView(&pBaseRT));
+}
+
+HRESULT CHW::Present(UINT interval, UINT flags)
+{
+    const HRESULT result = m_presentBridge->Present(interval, flags);
+    if (!(flags & DXGI_PRESENT_TEST)) fg::EndPresent();
+    return result;
+}
+
+HRESULT CHW::GetPresentationSurface(ID3D11Texture2D** surface) const
+{
+    return m_presentBridge->GetRenderSurface(surface);
+}
+
+HRESULT CHW::ResizePresentation(UINT width, UINT height, DXGI_FORMAT format, UINT flags)
+{
+    // Drop all DX11 bindings/views before replacing imported textures. The bridge
+    // drains both GPU queues, including unpresented scope or loading-screen work.
+    RCache.OnFrameEnd();
+    _RELEASE(pBaseRT);
+    _RELEASE(pBaseZB);
+    fg::Reset();
+    return m_presentBridge->Resize(width, height, format, flags);
+}
+#endif
+
 void CHW::UpdateViews()
 {
 #if defined(USE_DX11)
@@ -1458,6 +1637,9 @@ void CHW::UpdateViews()
 
     // Create a render target view
 	//R_CHK	(pDevice->GetRenderTarget			(0,&pBaseRT));
+#ifdef XR_DX12_BRIDGE
+    R_CHK(m_presentBridge->GetRenderTargetView(&pBaseRT));
+#else
     ID3DTexture2D* pBuffer;
 	R = m_pSwapChain->GetBuffer(0, __uuidof( ID3DTexture2D), (LPVOID*)&pBuffer);
     R_CHK(R);
@@ -1465,6 +1647,7 @@ void CHW::UpdateViews()
     R = pDevice->CreateRenderTargetView(pBuffer, NULL, &pBaseRT);
     pBuffer->Release();
     R_CHK(R);
+#endif
 
     //	Create Depth/stencil buffer
     //	HACK: DX10: hard depth buffer format

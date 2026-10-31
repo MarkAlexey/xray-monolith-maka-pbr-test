@@ -11,6 +11,10 @@
 #include <dxgi1_4.h>
 #endif
 
+#ifdef XR_DX12_BRIDGE
+class D3D12PresentBridge;
+#endif
+
 #include "hwcaps.h"
 
 #include "../../build_config_defines.h"
@@ -38,6 +42,22 @@ public:
 	void DestroyDevice();
 
 	void Reset(HWND hw);
+
+#ifdef XR_DX12_BRIDGE
+    D3D12PresentBridge* PresentationBridge() const { return m_presentBridge; }
+    void AcquirePresentationFrame();
+    HRESULT Present(UINT interval, UINT flags);
+    HRESULT ResizePresentation(UINT width, UINT height, DXGI_FORMAT format, UINT flags);
+    HRESULT GetPresentationSurface(ID3D11Texture2D** surface) const;
+private:
+    // Creates the bridge for the configured frame-generation method, falling back to
+    // plain presentation, then applies the output colour space.
+    void CreatePresentationBridge();
+    // vid_restart: rebuild when DLSS-G and FSR FG need a different swapchain owner.
+    void RecreatePresentationBridgeIfNeeded();
+    unsigned m_failedPresentRuntimes = 0; // Bitmask of runtimes that failed to start this session.
+public:
+#endif
 
 #if defined(USE_DX10) || defined(USE_DX11)
 	IDXGIOutput* FindOutputOnCurrentAdapter(HMONITOR hMon);
@@ -135,6 +155,9 @@ public:
 #endif	//	USE_DX10
 
 private:
+#ifdef XR_DX12_BRIDGE
+    D3D12PresentBridge* m_presentBridge = nullptr;
+#endif
 #if defined(USE_DX10) || defined(USE_DX11)
 	void AcquireDefaultOutput();
 #endif

@@ -1454,3 +1454,69 @@ shadows and water reflections (his side-by-side tests showed no difference), so 
 October 2026 Atmospherics component (`atmos_2026_10`, `tools/make_dlss_atmos_component.py`) is
 no longer needed: its terrain shader was already identical to `atmos_rc7`'s and its Better
 Beef's combine differs only in comments. CI folds `base atmos_rc7` into the DLSS shader packs.
+
+## brodrigz's DX12 frame generation: `AnomalyDX12.exe` (perf and bodycam branches)
+
+From brodrigz's 0.6 - 0.63 ([`bdefda0d`](https://github.com/brodrigz/xray-monolith/commit/bdefda0d)
+"Add dx12 bridge and fg", with the fixes `ecb11ddb` (DLSS-G input fence deadlock) and `1c76b812`
+(frame generation turns itself off on recoverable errors)). Design and runtime notes:
+`tools/dlss/DX12_BRIDGE.txt` (his, unchanged).
+
+**What it is.** A third exe, built by the new `DX12` solution configuration (xrEngine
+`ReleaseR4-DX12`, xrRender_R4 `Release-DX12`, every other project its `Release`). It defines
+`XR_DX12_BRIDGE`; nothing changes in the DX11 exes. The scene is still rendered by DX11; the
+final image goes into a ring of textures shared with a DX12 device, which presents it through
+one of three runtimes (`D3D12PresentBridge`, adapted from OGSR's by brodrigz; credits: OGSR team,
+xrSimpAI):
+
+- Streamline proxy swapchain (`r_frame_generation off|dlss`): Reflex, and DLSS-G when `dlss`;
+- AMD FSR frame-generation swapchain (`r_frame_generation fsr`, no Reflex);
+- a plain DX12 swapchain if neither starts.
+
+It also adds `r_upscaler fsr4`: AMD's FSR upscaler run on the DX12 device (FSR 4 on RX 7000/9000,
+the runtime's FSR 3.1 elsewhere), and the menu guards: `r_upscaler` / `r_frame_generation` list
+only what the GPU supports, `r_upscaler_support` prints the summary the 0.63 menu reads. The guards
+and `r_upscaler_support` are in the DX11 exes too, so the compatibility patch is 0.63 unchanged
+again (the 0.5 menu swap is gone; `PBR-Test-NOTES.txt` inside says so).
+
+**Hooks** (all `#ifdef XR_DX12_BRIDGE`): `fg::BeginSimulation` / `EndSimulation` in
+`CRenderDevice::on_idle`; `HW.AcquirePresentationFrame` at the start of
+`dxRenderDeviceRender::Begin` (re-gets `pBaseRT` every frame); `HW.Present`; `fg::CaptureScene`
+at the start of `phase_dlss_postprocess` (render-resolution depth + SSS motion vectors);
+`fg::CaptureHudless` after `phase_pp` (display-sized image before the 2D HUD); screenshots and
+`RenderToTarget` read `HW.GetPresentationSurface`. The engine frame limiter steps aside when
+Reflex limits frames, and counts displayed frames while generating. A 4th red line on screen
+reports frame-generation errors (`SetFrameGenerationError`). D3D12SDKVersion 619 /
+D3D12SDKPath `.\D3D12\` are exported from the exe (Agility SDK, Shader Model 6.6 for FSR 4 on
+Windows 10).
+
+**Differences from his tree.**
+- HDR10 output is not in this tree: the DX12 swapchain is always SDR (G22 / P709), FSR is
+  created without HDR. (His colour-space block read `ps_r4_hdr10_on`.)
+- `phase_dlss_postprocess` keeps its early return without an upscaler; `fg::CaptureScene` runs
+  before it, so frame generation sees "not eligible" and drops its history, as in his.
+- `DlssIntegration`: his `FsrD3D12Backend` and `Upscaler { Dlss, Fsr3, FsrDx12 }` merged with the
+  reactive mask (the DX12 FSR path does not take it).
+- The DX12 configurations are generated from this tree's own DX11 ones by
+  `tools/dlss/add_dx12_configs.py` (idempotent, `--dry-run`), so our project settings carry over;
+  run on his base it reproduces his `.sln` and `.vcxproj` configuration changes byte for byte.
+  The four bridge sources are added to xrRender_R4 as in his project (excluded from every other
+  configuration).
+
+**Runtime DLLs.** Not in git. CI job `dx12_runtime` (DLSS branches) downloads them at pinned
+versions and accepts a file only with a valid Authenticode signature from its vendor; the AMD
+DLLs are also pinned by SHA-256 (taken from the FSR SDK 2.3.0 repository). The Streamline zip and
+the Agility nupkg could not be fetched from this session, so their hashes are not pinned yet:
+the job prints them (notice + `bin/streamline/RUNTIME.txt`); put them in
+`STREAMLINE_ZIP_SHA256` / `AGILITY_NUPKG_SHA256` to pin. The Streamline asset is found by name
+(`STREAMLINE_ASSET`, `streamline-sdk-v<version>.zip`); if NVIDIA names it differently the job
+fails listing the assets. Layout in the main zip: `bin/streamline/` (sl.interposer, sl.common,
+sl.dlss_g, sl.reflex, sl.pcl, nvngx_dlssg), `bin/amd_fidelityfx_{loader,upscaler,framegeneration}_dx12.dll`,
+`bin/D3D12/D3D12Core.dll`, licenses in `licenses/`. The DX12 leg and `dx12_runtime` may fail
+without stopping the release: the zip then has no `AnomalyDX12.exe` and the notes say so.
+
+**Checked:** `tools/check_cpp.py` (new projects `R4DX12`, `xrEngine`, `xrEngineDX12`; it now also
+exports `sdk/FSR3`, `sdk/Streamline`, `sdk/FidelityFX2`) on every changed and new file, DX11 and
+DX12 defines: no new errors; every DX12 TU parses to its end (probe). The only errors left are
+mingw lacking `WINTRUST_SIGNATURE_SETTINGS` in NVIDIA's `sl_security.h` (environment).
+Not built with MSVC here and untested in game.

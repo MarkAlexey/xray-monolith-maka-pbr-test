@@ -1,4 +1,16 @@
 #include "stdafx.h"
+#ifdef XR_DX12_BRIDGE
+#include "../Layers/xrRenderPC_R4/Dlss/FrameGeneration.h"
+
+// DirectX 12 Agility SDK 1.619.6 (bin\D3D12\D3D12Core.dll): Shader Model 6.6 for
+// FSR 4 on Windows 10. If the OS runtime is newer or the folder is missing, the
+// system D3D12 runtime is used instead. Must be exported from the executable.
+extern "C"
+{
+__declspec(dllexport) extern const UINT D3D12SDKVersion = 619;
+__declspec(dllexport) extern const char* D3D12SDKPath = ".\\D3D12\\";
+}
+#endif
 #include "../xrCDB/frustum.h"
 #include "xr_ioconsole.h"
 #include "xr_input.h"
@@ -379,6 +391,9 @@ void CRenderDevice::on_idle()
 		g_SASH.StartBenchmark();
 	}
 
+#ifdef XR_DX12_BRIDGE
+    fg::BeginSimulation();
+#endif
 	if (Device.ModelDefferClear)
 	{
 		Device.ModelDefferClear();
@@ -498,7 +513,13 @@ void CRenderDevice::on_idle()
 	secondary_tasks.run(&XRay::Engine::GameThread);
 	
 #ifdef ECO_RENDER // ECO_RENDER START
-	if (Device.Paused() || IsMainMenuActive() || ps_framelimiter)
+#ifdef XR_DX12_BRIDGE
+	// Reflex applies r__framelimit itself; never wait twice.
+	const bool engineLimiter = ps_framelimiter && !fg::ReflexLimitsFrames();
+#else
+	const bool engineLimiter = ps_framelimiter != 0;
+#endif
+	if (Device.Paused() || IsMainMenuActive() || engineLimiter)
 	{
 		PROF_EVENT("Eco Render");
 
@@ -507,8 +528,14 @@ void CRenderDevice::on_idle()
 
 		float rr;
 
-		if (ps_framelimiter)
+		if (engineLimiter)
+		{
 			rr = 1.f / ps_framelimiter;
+#ifdef XR_DX12_BRIDGE
+			// With frame generation the cap applies to displayed frames.
+			rr *= fg::FrameLimitScale();
+#endif
+		}
 		else
 			rr = refresh_rate;
 
@@ -526,6 +553,9 @@ void CRenderDevice::on_idle()
 	Statistic->RenderTOTAL_Real.FrameStart();
 	Statistic->RenderTOTAL_Real.Begin();
 
+#ifdef XR_DX12_BRIDGE
+    fg::EndSimulation();
+#endif
 	if (b_is_Active && Begin())
 	{
 		START_PROFILE("Process seqRender");

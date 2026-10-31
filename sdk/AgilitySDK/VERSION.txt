@@ -1,0 +1,1 @@
+Microsoft.Direct3D.D3D12 1.619.6 (NuGet). Only the redistributable D3D12Core.dll is included. Exported D3D12SDKVersion must equal 619.
