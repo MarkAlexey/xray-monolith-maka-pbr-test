@@ -1518,3 +1518,34 @@ conflicted; the decisions that are not "keep both":
 - DXC: all 88 bodycam and Bodycam GAMMA Patch shaders on vanilla + this exe's gamedata + the PBR
   GAMMA pack + the patch. Only the environment fails: GAMMA's 3DSS headers absent, and DXC's
   stricter `SV_POSITION` check that stock `fakescope.ps` hits too.
+
+## brodrigz's DLSS / FSR 0.6 - 0.6.3: the DX11 fixes (perf and bodycam branches)
+
+The upscaler here is qkff99's port of brodrigz's 0.5. From his 0.6 - 0.6.3
+([`958b6d71`](https://github.com/brodrigz/xray-monolith/commit/958b6d71)) the parts that apply to
+the DX11 exes are taken; his DX12 frame-generation executable is not (planned separately).
+
+- **AO / IL at reduced resolution** (`82d09dac`): `phase_ssfx_ao/il` clamp the MCM divisor to
+  [1, 8] for the viewport but passed the raw value to the shaders (and the `ssfx_ao` / `ssfx_il`
+  bindings), so AO and indirect light broke below 1. The shaders now see the clamped value.
+- **Lens flares after upscaling** (0.6): with an upscaler the main view's flares are drawn in
+  `phase_dlss_postprocess`, at display resolution and without jitter, instead of in the scene,
+  where they took the hands' motion vectors and came out as blocks over the HUD. The native-HUD
+  depth pass re-locks its fullscreen quad (the flares replace the geometry). On the bodycam
+  branch the PiP scope pass, which is not upscaled, keeps its flares in the combine.
+- **`r_upscaler_debug 0/1/2`** (session only, never saved): 1 shows the upscaler's input, 2 its
+  motion vectors (`dlss_debug_mv.ps`, in patch 0.63). The upscaler keeps evaluating, so history
+  stays valid. With an older patch the motion-vector element is left empty and 2 shows the input.
+- The log starts with a `[PBR-Test] DX11 / DX11-AVX build of <date>; upscaler: ...` line.
+- Ultra Quality was already here.
+
+**Compatibility patch 0.63.** `.github/pbr-release/dlss/` now carries brodrigz's 0.63, built from
+his sources with his `package_compatibility.py`, with one change: the base component's
+`modxml_dlss_options.script` and `st_monolith_dlss.xml` are his 0.5 versions (the 0.63 menu asks
+the DX12 exe's `r_upscaler_support` / `r_frame_generation` / `fsr4`, which these exes do not
+have; its lists came up empty), noted in `PBR-Test-NOTES.txt` inside. Every other shader shared
+with 0.5 is byte-identical. 0.63 stops replacing SSS's / Atmospherics' AO, IL, SSR, contact
+shadows and water reflections (his side-by-side tests showed no difference), so the
+October 2026 Atmospherics component (`atmos_2026_10`, `tools/make_dlss_atmos_component.py`) is
+no longer needed: its terrain shader was already identical to `atmos_rc7`'s and its Better
+Beef's combine differs only in comments. CI folds `base atmos_rc7` into the DLSS shader packs.

@@ -1042,7 +1042,11 @@ void CRenderTarget::phase_combine()
 
 	//	if FP16-BLEND !not! supported - draw flares here, overwise they are already in the bloom target
 	/* if (!RImplementation.o.fp16_blend)*/
-	if (ps_r2_anomaly_flags.test(R2_AN_FLAG_FLARES) && ps_r2_heatvision == 0) //--DSR-- HeatVision
+	// With an upscaler, the main view's flares are drawn after reconstruction (phase_dlss_postprocess):
+	// in the scene they took the hands' motion vectors and came out as blocks over the HUD
+	// (brodrigz 0.6). The PiP scope pass is not upscaled and keeps them here.
+	if (ps_r2_anomaly_flags.test(R2_AN_FLAG_FLARES) && ps_r2_heatvision == 0 //--DSR-- HeatVision
+		&& !(dlss::Configured() && !dlss::ScopePass()))
 		g_pGamePersistent->Environment().RenderFlares(); // lens-flares
 
 	//	PP-if required

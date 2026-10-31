@@ -20,6 +20,8 @@ xr_token fsr3_quality_token[] = {
 };
 u32 ps_r_dlss_preset = 0;
 float ps_r_dlss_sharpness = 0.0f;
+// r_upscaler_debug: 1 shows the upscaler's input, 2 its motion vectors (session only)
+int ps_r_upscaler_debug = 0;
 xr_token dlss_preset_token[] = {
     {"default", 0}, {"j", 10}, {"k", 11}, {"l", 12}, {"m", 13}, {nullptr, 0}
 };
@@ -616,6 +618,14 @@ float r_rain_k = 99.0f;
 #if defined(USE_DX10) || defined(USE_DX11)
 #include "../xrRenderDX10/StateManager/dx10SamplerStateCache.h"
 #endif	//	USE_DX10
+
+// A console integer that is never written to user.ltx (debug views must not survive a restart)
+class CCC_UnsavedInteger : public CCC_Integer
+{
+public:
+	CCC_UnsavedInteger(LPCSTR name, int* value, int min, int max) : CCC_Integer(name, value, min, max) {}
+	void Save(IWriter*) override {}
+};
 
 class CCC_ssfx_cascades : public CCC_Vector3
 {
@@ -1715,6 +1725,7 @@ void xrRender_initconsole()
 	CMD3(CCC_Token, "r_fsr3_quality", &ps_r_fsr3_quality, fsr3_quality_token);
 	CMD3(CCC_Token, "r_dlss_preset", &ps_r_dlss_preset, dlss_preset_token);
 	CMD4(CCC_Float, "r_dlss_sharpness", &ps_r_dlss_sharpness, 0.0f, 1.0f);
+	CMD4(CCC_UnsavedInteger, "r_upscaler_debug", &ps_r_upscaler_debug, 0, 2);
 #endif
 	CMD3(CCC_Mask,		"r2_gi",				&ps_r2_ls_flags,			R2FLAG_GI);
 	CMD4(CCC_Float,		"r2_gi_clip",			&ps_r2_GI_clip,				EPS,	0.1f	);

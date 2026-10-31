@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 """
+NOT NEEDED SINCE brodrigz's PATCH 0.63 (kept for reference): 0.63 no longer replaces SSS's or
+Atmospherics' AO / IL / SSR / contact-shadow shaders, and its atmos_rc7 component (terrain
+motion vectors only) covers the October 2026 Atmospherics update. The CI packs use
+"base atmos_rc7" from the 0.63 patch in .github/pbr-release/dlss/.
+
 make_dlss_atmos_component.py - add DLSS / FSR3 support for a newer Atmospherics to brodrigz's
 DLSS compatibility patch (the zip in .github/pbr-release/dlss/).
 

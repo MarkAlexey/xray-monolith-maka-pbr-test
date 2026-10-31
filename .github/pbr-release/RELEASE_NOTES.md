@@ -11,7 +11,7 @@ recording (from their `mt-consolidated-fixes` branch). LASS's picture-in-picture
 are not included.
 
 **This is the DLSS / FSR3 build:** NVIDIA DLSS and AMD FSR 3 super resolution, ported by qkff99
-from [brodrigz's xray-monolith](https://github.com/brodrigz/xray-monolith) (0.5, based on OGSR's
+from [brodrigz's xray-monolith](https://github.com/brodrigz/xray-monolith) (0.5 with the DX11 fixes of 0.6 - 0.6.3, based on OGSR's
 implementation by the OGSR team and xrSimpAI). Upscaling needs Screen Space Shaders 23.5 (its
 motion vectors) and brodrigz's shader compatibility patch, which is attached to this release.
 
@@ -34,7 +34,7 @@ plus engine support for Screen Space Shaders. DX11 only.
 | File | What it is |
 |---|---|
 | `*_latest.zip` / `*_<version>.zip` | the exes and NVIDIA's DLSS runtime `nvngx_dlss.dll` 310.9.1 (`bin/`), and the PBR gamedata (`db/mods/00_modded_exes_gamedata.db0`) |
-| `dlss-binaries-GAMMA-compatibility-patch-0.5.zip` | brodrigz's DLSS / FSR3 shader compatibility patch (FOMOD for Mod Organizer), unchanged |
+| `dlss-binaries-GAMMA-compatibility-patch-0.63.zip` | brodrigz's DLSS / FSR3 shader compatibility patch 0.63 (FOMOD for Mod Organizer), with his 0.5 video menu, which matches these exes (see `PBR-Test-NOTES.txt` inside) |
 | `*_pdb.zip` | debug symbols; put the `.pdb` files next to the exes for readable crash logs |
 | `*_tools.zip` | Python tools: SSS/ES compatibility patch generator, PBR overlay generator, shader pack builder, shader FOMOD builder, PBR texture packer |
 | `*_profiled.zip` | developers: `AnomalyDX11_Profiled.exe`, the DX11 exe with the Optick profiler compiled in (see its README) |
@@ -69,7 +69,7 @@ old choice).
 ### DLSS / FSR 3
 
 1. Install the main zip as above (`nvngx_dlss.dll` goes into `bin/` with the exes).
-2. Install `dlss-binaries-GAMMA-compatibility-patch-0.5.zip` in Mod Organizer and pick your
+2. Install `dlss-binaries-GAMMA-compatibility-patch-0.63.zip` in Mod Organizer (REPLACE an older one) and pick your
    Atmospherics version and add-ons in its installer (see its README). Put it below SSS,
    Atmospherics and the other shader mods in the left pane (higher priority).
 3. Install the PBR shader FOMOD with **With DLSS / FSR 3** on its second page. As an **overlay**, put
