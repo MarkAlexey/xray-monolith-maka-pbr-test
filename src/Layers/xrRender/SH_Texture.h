@@ -54,12 +54,18 @@ public:
 	IC BOOL isUser() { return flags.bUser; }
 	IC u32 get_Width()
 	{
+#if defined(USE_DX10) || defined(USE_DX11)
+		ensure_loaded();
+#endif
 		desc_enshure();
 		return desc.Width;
 	}
 
 	IC u32 get_Height()
 	{
+#if defined(USE_DX10) || defined(USE_DX11)
+		ensure_loaded();
+#endif
 		desc_enshure();
 		return desc.Height;
 	}
@@ -83,6 +89,9 @@ private:
 	IC void desc_enshure() { wait_for_loading(); if (!desc_valid()) desc_update(); }
 	void desc_update();
 #if defined(USE_DX10) || defined(USE_DX11)
+	// On-demand residency: a texture asked for its size or surface before it was drawn loads now
+	// (on the calling thread) instead of answering 0 / nullptr. No-op otherwise.
+	void								ensure_loaded();
 	void								Apply			(u32 dwStage);
 	void								ProcessStaging();
 	D3D_USAGE							GetUsage();

@@ -150,8 +150,20 @@ void CTexture::surface_set(ID3DBaseTexture* surf)
 	}
 }
 
+// On-demand residency (ResourceManager.cpp): a texture that was left for first use and is asked
+// for its size (get_Width / get_Height) or surface before it is drawn loads here, on the calling
+// thread, instead of answering 0 / nullptr. $ textures (render targets, $null, $user$) are never
+// loaded from a file and are left alone. Without on-demand residency this does nothing.
+void CTexture::ensure_loaded()
+{
+	if (!textures_on_demand() || flags.bLoaded || flags.bUser || !cName.size() || strchr(cName.c_str(), '$'))
+		return;
+	Load();	// returns at once when another thread is loading it; the waits below cover that
+}
+
 ID3DBaseTexture* CTexture::surface_get()
 {
+	ensure_loaded();
 	while (IsLoading())
 	{
 		SwitchToThread();
@@ -174,6 +186,29 @@ void CTexture::PostLoad()
 
 void CTexture::apply_load(u32 dwStage)
 {
+    // On-demand residency (ResourceManager.cpp): load at first bind, here, on the render thread.
+    // Not while recording on a worker's deferred context (MT shadows prime their textures on the
+    // render thread first; anything else keeps the background path below), and not for $ names.
+    if (!flags.bLoaded && textures_on_demand() && RenderDeviceContext() == HW.pContext &&
+        !(cName.size() && strchr(cName.c_str(), '$')))
+    {
+        Load();
+        // Another thread may have been loading it (Load() then returns at once): wait for it.
+        // flags.bLoading, not IsLoading(): a load that PiP queued (loadQueued) but that has not
+        // started has nothing to wait for once this thread loaded the texture itself; the
+        // queued task then finds it loaded and returns.
+        while (flags.bLoading)
+            SwitchToThread();
+        if (!flags.bLoaded)
+        {
+            // The load failed: bind nothing, as the background path does while in flight
+            apply_normal(dwStage);
+            return;
+        }
+        if (flags.bLoadedAsStaging)
+            ProcessStaging();
+    }
+
     if (!flags.bLoaded)
     {
         // Never loaded, or just dropped by EvictStalledTextures(). Load() ends up in
@@ -502,8 +537,15 @@ void CTexture::Load()
 {
 	PROF_EVENT("CTexture::Load");
 
-	if (flags.bLoaded || flags.bLoading) return;
-	flags.bLoading = true;
+	{
+		// Claim the load atomically: on-demand residency can reach Load() from the render thread
+		// (apply_load / ensure_loaded) while a background task loads the same texture, and two
+		// loads would build two surfaces. Only the check-and-set is under the lock.
+		static xrCriticalSection s_claim;
+		xrCriticalSectionGuard guard(s_claim);
+		if (flags.bLoaded || flags.bLoading) return;
+		flags.bLoading = true;
+	}
 	flags.bLoaded = false;
 	desc_cache = 0;
 	if (pSurface)

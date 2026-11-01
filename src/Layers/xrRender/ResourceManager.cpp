@@ -11,6 +11,7 @@
 #pragma warning(default:4995)
 
 #include "ResourceManager.h"
+#include "../../xrEngine/IGame_Level.h"
 #include "tss.h"
 #include "blenders\blender.h"
 #include "blenders\blender_recorder.h"
@@ -528,6 +529,55 @@ void CResourceManager::PrefetchTexture(LPCSTR name)
         m_necessary.push_back(texture);
 }
 
+// ------------------------------------------------------------------------------------------
+// Monolith: on-demand texture residency (R4)
+//
+// Stock X-Ray loads every registered texture at every DeferredUpload: at the main menu that is
+// everything the model prefetch touched, and in a level every texture any loaded shader names,
+// including the skyboxes of every hour and weather. In a modded install that is gigabytes that
+// are never drawn (TheMockinJay's maka-pbr-merged measured ~3.4 GB at the menu and ~2.5 GB of
+// skyboxes in GAMMA). With on-demand residency:
+//   - _CreateTexture, while the level / prefetch is loading (bDeferredLoad), marks each texture
+//     it hands out as wanted (dwLastUsedFrame = 1) instead of queueing its load; UI, editor and
+//     $ textures keep loading right away, and textures created during play keep loading in the
+//     background as before (dx10ResourceManager_Resources.cpp).
+//   - DeferredUpload loads, at the main menu, only UI / editor / $ textures; in a level, those
+//     plus fx\ and intro\ and every texture marked or drawn before, but no sky\ texture.
+//   - Anything not loaded then loads when it is first bound (CTexture::apply_load, on the render
+//     thread) or first asked for its size or surface (CTexture::ensure_loaded).
+//   - UnloadAllTexturesOnLevelUnload clears the mark, so the next level starts from nothing.
+// Trade-off: a texture loaded at first use costs the render thread its load time once (a skybox
+// at a weather change, an asset that appears mid-game and was not part of the level load).
+// -tex_preload_all on the command line restores the previous behaviour everywhere.
+// ------------------------------------------------------------------------------------------
+bool textures_on_demand()
+{
+#if defined(USE_DX11)
+	static const bool on = !(Core.Params && strstr(Core.Params, "-tex_preload_all"));
+	return on;
+#else
+	return false;
+#endif
+}
+
+bool texture_is_core(LPCSTR name)
+{
+	return !strncmp(name, "ui\\", 3) || !strncmp(name, "ui/", 3) || !strncmp(name, "ed\\", 3) ||
+		strchr(name, '$') != nullptr;
+}
+
+// DeferredUpload: does this texture belong to the upload? (on-demand residency only)
+static bool texture_upload_now(LPCSTR name, const CTexture* texture, bool inLevel)
+{
+	if (texture_is_core(name))
+		return true;
+	if (!inLevel)
+		return false;
+	if (!strncmp(name, "sky\\", 4) || !strncmp(name, "sky/", 4))
+		return false;
+	return !strncmp(name, "fx\\", 3) || !strncmp(name, "intro\\", 6) || texture->dwLastUsedFrame != 0;
+}
+
 void CResourceManager::DeferredUpload()
 {
 	if (!RDEVICE.b_is_Ready) return;
@@ -541,12 +591,21 @@ void CResourceManager::DeferredUpload()
 	// concurrently with _CreateTexture's insert into the same std::map, then
 	// release the lock before running Load() across PPL worker threads (some
 	// of which may themselves need creationGuard, e.g. via _CreateTexture).
+	const bool onDemand = textures_on_demand();
+	const bool inLevel = g_pGameLevel != nullptr;
+	u32 skipped = 0;
 	xr_vector<ref_texture> textures;
 	{
 		xrCriticalSectionGuard guard(creationGuard);
 		textures.reserve(m_textures.size());
 		for (auto& pair : m_textures)
         {
+            if (onDemand && pair.second && !pair.second->flags.bLoaded &&
+                !texture_upload_now(pair.first, pair.second, inLevel))
+            {
+                ++skipped;
+                continue;
+            }
             ref_texture texture = AcquireTexture(pair.second);
             if (texture) textures.push_back(texture);
         }
@@ -559,7 +618,11 @@ void CResourceManager::DeferredUpload()
 		texture->Load();
 	});
 
-	Msg("texture loading time: %d", timer.GetElapsed_ms());
+	if (onDemand)
+		Msg("texture loading time: %d (on demand: %u loaded or already resident, %u left for first use, %s)",
+			timer.GetElapsed_ms(), u32(textures.size()), skipped, inLevel ? "level" : "menu");
+	else
+		Msg("texture loading time: %d", timer.GetElapsed_ms());
 }
 
 void CResourceManager::DeferredUnload()
@@ -616,7 +679,11 @@ void CResourceManager::UnloadAllTexturesOnLevelUnload()
     }
 
     for (CTexture* texture : textures_to_unload)
+    {
         texture->Unload();
+        // On-demand residency: no longer wanted until the next level asks for it again
+        texture->dwLastUsedFrame = 0;
+    }
 }
 
 #ifdef _EDITOR
