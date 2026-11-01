@@ -261,7 +261,8 @@ void IGame_Persistent::Prefetch()
 
 	Msg("* [x-ray]: Prefetched Data");
 	p_time = 1000.f * Device.GetTimerGlobal()->GetElapsed_sec() - p_time;
-	size_t p_mem = Memory.mem_usage() - mem_0;
+	// signed: process private memory (Memory.mem_usage) can also go down meanwhile
+	const s64 p_mem = s64(Memory.mem_usage()) - s64(mem_0);
 
 	Msg("* [prefetch] time:   %d ms", iFloor(p_time));
 	Msg("* [prefetch] memory: %lldKb", p_mem / 1024);

@@ -451,7 +451,8 @@
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /D /Y "$(xrSdkDir)binaries\tbb12.dll" "$(OutDir)"</Command>
+      <Command>xcopy /D /Y "$(xrSdkDir)binaries\tbb12.dll" "$(OutDir)"
+xcopy /D /Y "$(xrSdkDir)binaries\tbbmalloc.dll" "$(OutDir)"</Command>
       <Message>Deploying TBB runtime DLLs</Message>
     </PostBuildEvent>
     <Manifest>
@@ -496,7 +497,8 @@
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /D /Y "$(xrSdkDir)binaries\tbb12.dll" "$(OutDir)"</Command>
+      <Command>xcopy /D /Y "$(xrSdkDir)binaries\tbb12.dll" "$(OutDir)"
+xcopy /D /Y "$(xrSdkDir)binaries\tbbmalloc.dll" "$(OutDir)"</Command>
       <Message>Deploying TBB runtime DLLs</Message>
     </PostBuildEvent>
     <Manifest>
@@ -539,7 +541,8 @@
       <LinkTimeCodeGeneration>Default</LinkTimeCodeGeneration>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /D /Y "$(xrSdkDir)binaries\tbb12.dll" "$(OutDir)"</Command>
+      <Command>xcopy /D /Y "$(xrSdkDir)binaries\tbb12.dll" "$(OutDir)"
+xcopy /D /Y "$(xrSdkDir)binaries\tbbmalloc.dll" "$(OutDir)"</Command>
       <Message>Deploying TBB runtime DLLs</Message>
     </PostBuildEvent>
     <Manifest>
@@ -760,7 +763,8 @@
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /D /Y "$(xrSdkDir)binaries\tbb12.dll" "$(OutDir)"</Command>
+      <Command>xcopy /D /Y "$(xrSdkDir)binaries\tbb12.dll" "$(OutDir)"
+xcopy /D /Y "$(xrSdkDir)binaries\tbbmalloc.dll" "$(OutDir)"</Command>
       <Message>Deploying TBB runtime DLLs</Message>
     </PostBuildEvent>
     <Manifest>
@@ -805,7 +809,8 @@
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /D /Y "$(xrSdkDir)binaries\tbb12.dll" "$(OutDir)"</Command>
+      <Command>xcopy /D /Y "$(xrSdkDir)binaries\tbb12.dll" "$(OutDir)"
+xcopy /D /Y "$(xrSdkDir)binaries\tbbmalloc.dll" "$(OutDir)"</Command>
       <Message>Deploying TBB runtime DLLs</Message>
     </PostBuildEvent>
     <Manifest>
@@ -850,7 +855,8 @@
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /D /Y "$(xrSdkDir)binaries\tbb12.dll" "$(OutDir)"</Command>
+      <Command>xcopy /D /Y "$(xrSdkDir)binaries\tbb12.dll" "$(OutDir)"
+xcopy /D /Y "$(xrSdkDir)binaries\tbbmalloc.dll" "$(OutDir)"</Command>
       <Message>Deploying TBB runtime DLLs</Message>
     </PostBuildEvent>
     <Manifest>

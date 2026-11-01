@@ -26,6 +26,8 @@
 #
 # oneTBB (branches with sdk/binaries/tbb12.dll): bin/ gets tbb12.dll, the task scheduler the
 # exes link against (oneTBB 2023.0.0). The exes do not start without it.
+# bin/ also gets tbbmalloc.dll (same oneTBB release), the scalable allocator the exes load only
+# when started with -tbbmalloc (A/B test); without it they never touch it.
 #
 # DLSS / FSR3 branches (name ends in "-dlss", e.g. pbr-test-s3ds-mt-sss-lass-dlss)
 #   - bin/ also gets NVIDIA's DLSS runtime, nvngx_dlss.dll, downloaded from NVIDIA's own
@@ -525,6 +527,8 @@ jobs:
           fi
           # oneTBB runtime: the exes' task scheduler (_thread_types.h) loads it at startup
           if [ -f sdk/binaries/tbb12.dll ]; then cp sdk/binaries/tbb12.dll pkg/bin/; fi
+          # oneTBB's scalable allocator: only loaded with -tbbmalloc (xrMemory_subst_msvc.cpp)
+          if [ -f sdk/binaries/tbbmalloc.dll ]; then cp sdk/binaries/tbbmalloc.dll pkg/bin/; fi
           if [[ "$GITHUB_REF_NAME" == *-dlss ]]; then
             # NVIDIA's DLSS runtime next to the exes (pinned version and checksum)
             curl -sSL --fail -o pkg/bin/nvngx_dlss.dll "$DLSS_DLL_URL"
