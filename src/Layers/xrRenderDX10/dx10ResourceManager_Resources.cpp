@@ -635,10 +635,18 @@ ref_texture CResourceManager::_CreateTexture(LPCSTR _Name)
 	// ***** first pass - search already loaded texture
 	LPSTR N = LPSTR(Name);
 	map_TextureIt I = m_textures.find(N);
+	// On-demand residency (ResourceManager.cpp): a texture handed out while a level / prefetch
+	// loads is wanted by DeferredUpload, whether new or already registered
+	const bool markWanted = textures_on_demand() && bDeferredLoad;
 	if (I != m_textures.end())
     {
         ref_texture existing = AcquireTexture(I->second);
-        if (existing) return existing;
+        if (existing)
+        {
+            if (markWanted && existing->dwLastUsedFrame == 0)
+                existing->dwLastUsedFrame = 1;
+            return existing;
+        }
         // Last release has begun destruction. Never resurrect the object.
         I->second->dwFlags &= ~xr_resource_flagged::RF_REGISTERED;
         m_textures.erase(I);
@@ -650,7 +658,12 @@ ref_texture CResourceManager::_CreateTexture(LPCSTR _Name)
 		T->dwFlags |= xr_resource_flagged::RF_REGISTERED;
 		m_textures.insert(mk_pair(T->set_name(Name), T));
 		T->Preload();
-		if (Device.b_is_Ready)
+		if (markWanted)
+			T->dwLastUsedFrame = 1;
+		// On-demand residency: while a level / prefetch loads, only UI, editor and $ textures load
+		// now; DeferredUpload decides about the rest. Otherwise (and during play) as before.
+		const bool loadNow = !markWanted || texture_is_core(T->cName.c_str());
+		if (Device.b_is_Ready && loadNow)
 		{
             const DWORD owner_thread = GetCurrentThreadId();
             textures_load_tasks.run([texture, owner_thread]()

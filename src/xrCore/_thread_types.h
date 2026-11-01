@@ -143,6 +143,22 @@ using xr_concurrent_unordered_map = tbb::concurrent_unordered_map<T, U>;
 template <typename T, typename allocator = xalloc<T>>
 using xr_concurrent_vector = tbb::concurrent_vector<T, allocator>;
 
+// Work isolation (oneTBB this_task_arena::isolate) around the parallel algorithms below
+//
+// While a thread waits for its own parallel_for / parallel_for_each / parallel_sort to finish, TBB
+// lets it run other queued tasks meanwhile. Without isolation that can be ANY task of the arena:
+// a thread that called xr_parallel_for while holding a lock (an xrSRWLock / xrCriticalSection,
+// neither of which is reentrant) could pick up an unrelated task that takes the same lock, and
+// deadlock on itself. Inside isolate() it only runs the algorithm's own pieces (oneTBB "Work
+// Isolation"). Other threads are not restricted, and the algorithm's pieces are still shared out
+// as before, so the parallelism of the call itself is unchanged.
+//
+// Deliberately NOT applied to xr_task_group::wait(): a group's tasks are queued by run() before
+// the wait starts, i.e. outside the isolated region, so an isolated waiter could not run any of
+// them (measured: 0 of 64), and a task that waits on its own group from inside another task
+// would deadlock once every thread is in such a wait (reproduced with 2, 4 and 8 threads).
+// (Idea from TheMockinJay's maka-pbr-merged, which isolated the waits as well.)
+
 // Over an explicit blocked_range instead of oneTBB's (first, last, f) overload: MSVC fails to
 // resolve that overload for some call sites ("'xr_parallel_for': no matching overloaded function
 // found"). The bounds may also differ in type (0u and a size_t, say); both go to their common type.
@@ -153,18 +169,21 @@ inline void xr_parallel_for(BeginType Begin, EndType End, Body Functor)
     static_assert(std::is_integral_v<Index>, "xr_parallel_for: integral bounds expected");
     if (!(Index(Begin) < Index(End)))
         return;
-    tbb::parallel_for(tbb::blocked_range<Index>(Index(Begin), Index(End)),
-        [&Functor](const tbb::blocked_range<Index>& Range)
-        {
-            for (Index i = Range.begin(); i != Range.end(); ++i)
-                Functor(i);
-        });
+    tbb::this_task_arena::isolate([&]
+    {
+        tbb::parallel_for(tbb::blocked_range<Index>(Index(Begin), Index(End)),
+            [&Functor](const tbb::blocked_range<Index>& Range)
+            {
+                for (Index i = Range.begin(); i != Range.end(); ++i)
+                    Functor(i);
+            });
+    });
 }
 
 template<typename Index, typename Body>
 inline void xr_parallel_foreach(Index Begin, Index End, Body Functor)
 {
-    tbb::parallel_for_each(Begin, End, Functor);
+    tbb::this_task_arena::isolate([&] { tbb::parallel_for_each(Begin, End, Functor); });
 }
 
 // Helper to deduce the value type for the default predicate
@@ -181,5 +200,5 @@ using IsRandomAccess = std::is_base_of<
 template<typename RandomIt, typename P = std::less<IterValueT<RandomIt>>>
 IC void xr_parallel_sort(RandomIt first, RandomIt last, P pred = {})
 {
-    tbb::parallel_sort(first, last, pred);
+    tbb::this_task_arena::isolate([&] { tbb::parallel_sort(first, last, pred); });
 }

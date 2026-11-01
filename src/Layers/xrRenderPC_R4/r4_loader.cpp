@@ -189,7 +189,16 @@ void CRender::level_Unload()
 	//*** Shaders
 	Shaders.clear_and_free();
 
-	const bool clearResources = psDeviceFlags2.test(rsClearAllResources);
+	// Monolith: models and textures are always released when a level unloads (save load, level
+	// change, quit to menu), so nothing of the previous level stays resident: the next level loads
+	// what it needs, and with on-demand texture residency (ResourceManager.cpp) nothing else.
+	// Before, this was opt-in (r__clear_models_on_unload / r__clear_resources_on_unload, still
+	// honoured; Modded Exes' menu: "Reduces RAM and VRAM usage but increases loading times").
+	// Cost: assets shared between levels (weapons, NPCs, common world textures) load again.
+	// -keep_resources_on_unload on the command line restores the opt-in behaviour.
+	// (From TheMockinJay's maka-pbr-merged.)
+	static const bool keepResources = Core.Params && strstr(Core.Params, "-keep_resources_on_unload");
+	const bool clearResources = !keepResources || psDeviceFlags2.test(rsClearAllResources);
 	if (psDeviceFlags2.test(rsClearModels) || clearResources)
 	{
 		Models->ClearPool(true);
@@ -200,7 +209,13 @@ void CRender::level_Unload()
 			dxRenderDeviceRender::Instance().ResourcesDestroyNecessaryTextures();
 			dxRenderDeviceRender::Instance().Resources->Evict();
 		}
-		dxRenderDeviceRender::Instance().Resources->Dump(false);
+		// Brief: the counts only. Dump(false) lists every texture, vertex / pixel shader by name,
+		// thousands of log lines per unload in a modded install now that this runs every time.
+		dxRenderDeviceRender::Instance().Resources->Dump(true);
+		// Freed animation-key blocks and, with -tbbmalloc, the allocator's cached memory go back
+		// to the system (a load boundary, like Device_create/destroy and the end of precache)
+		if (clearResources)
+			Memory.mem_compact();
 		//static int unload_counter = 0;
 		//Msg("The Level Unloaded.======================== %d", ++unload_counter);
 	}

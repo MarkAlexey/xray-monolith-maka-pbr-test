@@ -15,6 +15,12 @@ struct lua_State;
 class dx10ConstantBuffer;
 
 // defs
+// Monolith: on-demand texture residency (R4; ResourceManager.cpp). False on the other renderers
+// and with -tex_preload_all.
+bool textures_on_demand();
+// Texture names that always stay resident / load right away: UI, editor, render targets ($...)
+bool texture_is_core(LPCSTR name);
+
 class ECORE_API CResourceManager
 {
 private:

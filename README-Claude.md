@@ -1545,7 +1545,35 @@ Reviewed [TheMockinJay/xray-monolith `maka-pbr-merged`](https://github.com/TheMo
   kept zero; checked with a randomized alloc / realloc / free test against an allocator with
   the same usable-size behaviour (0 violations; 36 822 without the slack zeroing).
 
-Not taken (see the review in the conversation log): isolating every TBB wait (a thread waiting
-in an isolated region cannot run its own group's tasks, oneTBB "Work Isolation"), the file
-system revert, inline texture loading on the render thread, the always-on purge at level
-unload, the RDTSC timer and the native DDS loader (not without in-game testing).
+Also taken, adapted (second commit):
+
+- **TBB work isolation** around `xr_parallel_for`, `xr_parallel_foreach` and `xr_parallel_sort`
+  (`_thread_types.h`): a thread waiting for its own parallel algorithm only runs that algorithm's
+  pieces, so a caller holding a non-reentrant lock cannot pick up an unrelated task that wants
+  the same lock. Not around `xr_task_group::wait()`, as in their branch: there an isolated waiter
+  cannot run its own group's tasks (measured: 0 of 64) and a task waiting on its own group inside
+  another task deadlocks once every thread does it (reproduced with 2, 4 and 8 threads; their
+  engine has no such wait today). The helpers were tested against oneTBB with 1-8 threads
+  (results, empty ranges, nested use, a caller holding a lock). The background loading arena
+  stays.
+- **On-demand texture residency** (R4; `ResourceManager.cpp`, `dx10ResourceManager_Resources.cpp`,
+  `dx10SH_Texture.cpp`). While a level or the prefetch loads, `_CreateTexture` marks the textures
+  it hands out (`dwLastUsedFrame = 1`) instead of queueing their load; `DeferredUpload` loads at
+  the main menu only UI / editor / `$` textures, in a level those plus `fx\`, `intro\` and every
+  marked or previously drawn texture, but no `sky\` texture. The rest loads at first bind
+  (`apply_load`, render thread) or when first asked for its size or surface (`ensure_loaded`).
+  Textures created during play still load in the background, as before. Differences from their
+  branch, for safety: no inline load while recording on a worker's deferred context (background
+  path instead); the inline path waits for a load another thread is doing and binds nothing if
+  the load failed; `Load()` claims a texture under a lock (two loads of one texture could build
+  two surfaces); prefetched textures are marked at the menu too, so the first level loads them
+  instead of hitting them one by one at first sight. `-tex_preload_all` restores the previous
+  behaviour. Trade-off: a texture loaded at first use costs the render thread its load once
+  (watch weather / hour changes, the skybox).
+- **Purge at every level unload** (R4 `level_Unload`): models and textures are released when a
+  level unloads (save load, level change, quit to menu), as if `r__clear_resources_on_unload` were
+  on; the resource dump there is brief (the full one lists every resource by name, thousands of
+  lines per unload in a modded install), followed by `mem_compact()`. `-keep_resources_on_unload`
+  restores the opt-in behaviour. Cost: assets shared between levels load again.
+
+Not taken: the file system revert, the RDTSC timer and the native DDS loader.
