@@ -59,6 +59,8 @@ public:
     HRESULT GetRenderTargetView(ID3D11RenderTargetView** view) const;
     HRESULT FailGeneration(const char* reason);
     bool GenerationFailed() const { return m_fgFailed; }
+    // DLSS-G reported low video memory since generation last (re)started.
+    bool GenerationOutOfVram() const { return m_runtimeKind == PresentRuntime::Streamline && m_streamline.OutOfVram(); }
     // After an automatic disable, let FG start again when the player re-enables it.
     void ClearGenerationFailure();
     // Acquire BEFORE recording/executing any frame commands that touch the shared targets.
