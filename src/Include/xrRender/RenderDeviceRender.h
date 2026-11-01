@@ -40,7 +40,9 @@ public:
 	virtual void DeferredLoad(BOOL E) = 0;
 	virtual void ResourcesDeferredUpload() = 0;
 	virtual void ResourcesDeferredUnload() = 0;
-	virtual void ResourcesGetMemoryUsage(u32& m_base, u32& c_base, u32& m_lmaps, u32& c_lmaps) = 0;
+	// Texture bytes are 64-bit: a GAMMA install passes 4 GB of loaded textures, which wrapped the
+	// old u32 totals (log / console statistics only)
+	virtual void ResourcesGetMemoryUsage(u64& m_base, u32& c_base, u64& m_lmaps, u32& c_lmaps) = 0;
 	virtual void ResourcesDestroyNecessaryTextures() = 0;
 	virtual void ResourcesStoreNecessaryTextures() = 0;
 	virtual void ResourcesDumpMemoryUsage() = 0;

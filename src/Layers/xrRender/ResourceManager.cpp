@@ -659,16 +659,17 @@ Shader* CResourceManager::_CreateShader(Shader* InShader)
 	return N;
 }
 
-void CResourceManager::_GetMemoryUsage(u32& m_base, u32& c_base, u32& m_lmaps, u32& c_lmaps)
+void CResourceManager::_GetMemoryUsage(u64& m_base, u32& c_base, u64& m_lmaps, u32& c_lmaps)
 {
     xrCriticalSectionGuard guard(creationGuard);
-	m_base = c_base = m_lmaps = c_lmaps = 0;
+	m_base = m_lmaps = 0;
+	c_base = c_lmaps = 0;
 
 	map_Texture::iterator I = m_textures.begin();
 	map_Texture::iterator E = m_textures.end();
 	for (; I != E; I++)
 	{
-		u32 m = I->second->flags.MemoryUsage;
+		const u64 m = I->second->flags.MemoryUsage;
 		if (strstr(I->first, "lmap"))
 		{
 			c_lmaps ++;

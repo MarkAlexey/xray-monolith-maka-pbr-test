@@ -1,6 +1,8 @@
 #include "stdafx.h"
 #include <malloc.h>
 #include <errno.h>
+#include <psapi.h>
+#pragma comment(lib, "psapi.lib") // GetProcessMemoryInfo whatever PSAPI_VERSION the SDK picks
 
 XRCORE_API void vminfo(size_t* _free, size_t* reserved, size_t* committed)
 {
@@ -40,8 +42,31 @@ XRCORE_API void log_vminfo()
 	);
 }
 
+// Monolith: mem_usage() runs at the end of every loading phase ("phase cmem"), around
+// IGame_Persistent::Prefetch and in stat_memory (main menu). It used to walk the whole CRT heap
+// with _heapwalk, which holds the heap lock for the entire walk: on a GAMMA-sized heap that is
+// seconds of loading screen, with every other thread's allocations blocked meanwhile.
+// It now returns the process's private bytes (GetProcessMemoryInfo, constant time). That is
+// more than the CRT heap alone (D3D / driver and other allocators' memory count too), so the
+// numbers in the log are larger than before; the deltas around Prefetch stay meaningful.
+// -mem_heapwalk on the command line brings the heap walk back: it also checks the heap's
+// integrity (FATAL on a corrupt heap when assert is set).
+// (Stall found by TheMockinJay, maka-pbr-merged, who replaced it with a tbbmalloc counter.)
+static bool mem_usage_heapwalk()
+{
+	static const bool walk = Core.Params && strstr(Core.Params, "-mem_heapwalk");
+	return walk;
+}
+
 size_t xrMemory::mem_usage(bool assert)
 {
+	if (!mem_usage_heapwalk())
+	{
+		PROCESS_MEMORY_COUNTERS_EX counters = {};
+		counters.cb = sizeof(counters);
+		if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&counters, sizeof(counters)))
+			return counters.PrivateUsage;
+	}
     xrCriticalSectionGuard g(mem_lock);
 	PROF_EVENT("mem_usage");
 	_HEAPINFO hinfo = {};

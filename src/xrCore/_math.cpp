@@ -21,43 +21,19 @@ XRCORE_API CRandom Random;
 #ifdef _M_AMD64
 u16 getFPUsw() { return 0; }
 
+// x64: floating-point maths runs on SSE, where there is no precision control. _control87 with
+// MCW_PC is documented as ignored on x64, so only the rounding mode (MXCSR) is set here; the
+// behaviour is the same as before with half the calls (m24r / m64r run around every sun / spot
+// shadow pass and some script calls). (Idea from TheMockinJay's maka-pbr-merged, which made them
+// no-ops; the rounding mode is kept here because m24 / m53 / m64 select truncation.)
 namespace FPU
 {
-	XRCORE_API void m24(void)
-	{
-		_control87(_PC_64, MCW_PC);
-		_control87(_RC_CHOP, MCW_RC);
-	}
-
-	XRCORE_API void m24r(void)
-	{
-		_control87(_PC_64, MCW_PC);
-		_control87(_RC_NEAR, MCW_RC);
-	}
-
-	XRCORE_API void m53(void)
-	{
-		_control87(_PC_53, MCW_PC);
-		_control87(_RC_CHOP, MCW_RC);
-	}
-
-	XRCORE_API void m53r(void)
-	{
-		_control87(_PC_53, MCW_PC);
-		_control87(_RC_NEAR, MCW_RC);
-	}
-
-	XRCORE_API void m64(void)
-	{
-		_control87(_PC_64, MCW_PC);
-		_control87(_RC_CHOP, MCW_RC);
-	}
-
-	XRCORE_API void m64r(void)
-	{
-		_control87(_PC_64, MCW_PC);
-		_control87(_RC_NEAR, MCW_RC);
-	}
+	XRCORE_API void m24(void) { _control87(_RC_CHOP, MCW_RC); }
+	XRCORE_API void m24r(void) { _control87(_RC_NEAR, MCW_RC); }
+	XRCORE_API void m53(void) { _control87(_RC_CHOP, MCW_RC); }
+	XRCORE_API void m53r(void) { _control87(_RC_NEAR, MCW_RC); }
+	XRCORE_API void m64(void) { _control87(_RC_CHOP, MCW_RC); }
+	XRCORE_API void m64r(void) { _control87(_RC_NEAR, MCW_RC); }
 
 	void initialize()
 	{
