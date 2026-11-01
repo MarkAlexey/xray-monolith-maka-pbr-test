@@ -189,6 +189,8 @@ void xrCore::_initialize(LPCSTR _ApplicationName, xrLogger::LogCallback cb, BOOL
 		// demonized: Print modded exes version
 		Msg("%s version %s\n", get_modded_exes_name(), get_modded_exes_version_string().c_str());
 		Msg("Game started: %s\n", timeInDMYHMSMMM().c_str());
+		extern XRCORE_API const char* xr_memory_heap_name();
+		Msg("* Memory: %s", xr_memory_heap_name());
 		xr_tbb_initialize(); // -tbb_threads, before anything starts TBB work
 		EFS._initialize();
 #ifdef DEBUG

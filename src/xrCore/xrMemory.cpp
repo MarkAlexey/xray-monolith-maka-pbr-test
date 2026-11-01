@@ -165,6 +165,10 @@ void xrMemory::mem_compact()
 	// teardown path, and calling it mid-session would dangle every live shared_str.
 	if (g_pSharedMemoryContainer) g_pSharedMemoryContainer->clean();
 
+	// -tbbmalloc: return the allocator's cached free blocks (xrMemory_subst_msvc.cpp)
+	extern void xr_memory_heap_compact();
+	xr_memory_heap_compact();
+
 #ifdef DEBUG_MEMORY_MANAGER
 	// left debug-only: both stall for long enough to be visible
 	RegFlushKey(HKEY_CLASSES_ROOT);

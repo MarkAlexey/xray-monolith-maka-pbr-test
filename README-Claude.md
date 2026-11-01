@@ -1521,3 +1521,31 @@ exports `sdk/FSR3`, `sdk/Streamline`, `sdk/FidelityFX2`) on every changed and ne
 DX12 defines: no new errors; every DX12 TU parses to its end (probe). The only errors left are
 mingw lacking `WINTRUST_SIGNATURE_SETTINGS` in NVIDIA's `sl_security.h` (environment).
 Not built with MSVC here and untested in game.
+
+## Opt-in tbbmalloc (`-tbbmalloc`) and two fixes from TheMockinJay's `maka-pbr-merged`
+
+Reviewed [TheMockinJay/xray-monolith `maka-pbr-merged`](https://github.com/TheMockinJay/xray-monolith/tree/maka-pbr-merged)
+(this branch plus six code commits). Taken:
+
+- **`Memory.mem_usage()` without the heap walk.** It walked the whole CRT heap (`_heapwalk`, heap
+  lock held) at the end of every loading phase, around `Prefetch` and in `stat_memory`. It now
+  returns the process's private bytes (larger numbers than before: D3D / driver memory counts);
+  `-mem_heapwalk` brings the walk and its heap-integrity check back.
+- **64-bit texture totals** (`ResourcesGetMemoryUsage` / `_GetMemoryUsage`): past 4 GB the u32
+  sums wrapped (log / console only).
+- **x64 FPU modes** without the precision-control calls (ignored on x64); the rounding mode is
+  still set. The inverted `AuthenticAMD` test in cpuid is fixed (it only gates 3DNow).
+- **tbbmalloc, opt-in.** `-tbbmalloc` routes every xrMemory allocation through oneTBB's scalable
+  allocator (`tbbmalloc.dll` 2023.0.0 from `sdk/binaries`, Intel-signed, same release as
+  `tbb12.dll`), loaded at run time; without the option, or without the DLL, nothing changes.
+  The log says which heap is used (`* Memory: ...`). `mem_compact()` also returns tbbmalloc's
+  cached memory. The DLL is copied next to the exe by the xrEngine post-build step and by CI.
+  The zero-fill contract (zeroed allocations on request, zero-filled realloc growth) is kept:
+  tbbmalloc reports a block's usable size, not the requested one, so the slack between them is
+  kept zero; checked with a randomized alloc / realloc / free test against an allocator with
+  the same usable-size behaviour (0 violations; 36 822 without the slack zeroing).
+
+Not taken (see the review in the conversation log): isolating every TBB wait (a thread waiting
+in an isolated region cannot run its own group's tasks, oneTBB "Work Isolation"), the file
+system revert, inline texture loading on the render thread, the always-on purge at level
+unload, the RDTSC timer and the native DDS loader (not without in-game testing).
