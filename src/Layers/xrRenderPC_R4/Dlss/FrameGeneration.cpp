@@ -141,8 +141,9 @@ void EndPresent()
         SetFrameGenerationError(ps_r_frame_generation == Dlss && !StreamlineIntegration::CanInitialize() ?
             "DLSS frame generation needs a game restart after using FSR frame generation." :
             "Selected frame generation method is not active. Apply again or see the game log.");
-    else if (g_pGameLevel && !IsMainMenuActive() && !dlss::Configured())
-        SetFrameGenerationError("Frame generation needs DLSS or FSR upscaling enabled.");
+    // Upscaling Off is the player's choice, not an error: the menu hides the frame
+    // generation row then, and generation resumes when an upscaler is selected again.
+    // Eligible() logs why it is not generating.
     else SetFrameGenerationError(nullptr);
 }
 
