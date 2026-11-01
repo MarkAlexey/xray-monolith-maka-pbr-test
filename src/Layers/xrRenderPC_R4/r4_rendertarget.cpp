@@ -134,6 +134,24 @@ public:
     }
 };
 
+class CBlender_dlss_scope_copy : public IBlender
+{
+public:
+    CBlender_dlss_scope_copy() { description.CLS = 0; }
+    LPCSTR getComment() override { return "Display-resolution scope lens inputs"; }
+    BOOL canBeDetailed() override { return FALSE; }
+    BOOL canBeLMAPped() override { return FALSE; }
+    void Compile(CBlender_Compile& C) override
+    {
+        IBlender::Compile(C);
+        // Scope lenses Load these with display pixel coordinates after reconstruction.
+        if (C.iElement > 1) return;
+        C.r_Pass("stub_screen_space", "dlss_scope_copy", FALSE, FALSE, FALSE);
+        C.r_dx10Texture("s_image", C.iElement == 0 ? r2_RT_P : r2_RT_heat);
+        C.r_End();
+    }
+};
+
 void CRenderTarget::set_viewport_size(ID3DDeviceContext * dev, float w, float h)
 {
 	custom_viewport[0].Width = w;
@@ -1654,6 +1672,13 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 		s_dlss_postprocess.create(&blender, "dlss_postprocess");
 		CBlender_dlss_copy copy;
 		s_dlss_copy.create(&copy, "dlss_copy");
+		// Optional: older shader patches keep drawing 3D scope lenses before reconstruction.
+		string_path scopeCopy;
+		if (FS.exist(scopeCopy, "$game_shaders$", "r3\\dlss_scope_copy", ".ps"))
+		{
+			CBlender_dlss_scope_copy scope;
+			s_dlss_scope_copy.create(&scope, "dlss_scope_copy");
+		}
 	}
 	g_postprocess.create(D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_SPECULAR | D3DFVF_TEX3, RCache.Vertex.Buffer(),
 	                     RCache.QuadIB);

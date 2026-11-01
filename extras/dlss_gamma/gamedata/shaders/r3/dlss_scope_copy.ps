@@ -1,0 +1,15 @@
+// Display-resolution copies of render-sized G-buffer/heat targets for 3D scope
+// lenses drawn after reconstruction: their thermal/night modes Load these with
+// display pixel coordinates. Same unjittered mapping as dlss_ui_depth; no
+// filtering, since positions and packed normals must not be blended.
+Texture2D s_image;
+float4 dlss_scope_copy_params; // render/display xy, current raster jitter zw
+
+float4 main(float4 position : SV_Position) : SV_Target
+{
+    uint width, height;
+    s_image.GetDimensions(width, height);
+    int2 pixel = int2(floor(position.xy * dlss_scope_copy_params.xy + dlss_scope_copy_params.zw));
+    pixel = clamp(pixel, int2(0, 0), int2(width, height) - 1);
+    return s_image.Load(int3(pixel, 0));
+}

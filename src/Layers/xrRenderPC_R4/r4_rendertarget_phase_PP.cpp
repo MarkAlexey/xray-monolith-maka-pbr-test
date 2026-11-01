@@ -127,6 +127,110 @@ ref_rt& CRenderTarget::PostprocessSource()
 	return dlss::Configured() && !dlss::ScopePass() ? rt_dlss_post_source : rt_Generic_0;
 }
 
+bool CRenderTarget::ScopeAfterUpscale() const
+{
+	return dlss::Configured() && s_dlss_scope_copy._get() != nullptr;
+}
+
+void CRenderTarget::phase_dlss_native_depth(float jitterX, float jitterY)
+{
+	// Scene depth is render-sized and jittered. Reproject it into the existing
+	// native depth buffer before drawing unjittered HUD screens. Keep their
+	// occlusion by hands/casing; never attach a render-sized DSV to a native RT.
+	u_setrt(rt_dlss_post_source, nullptr, nullptr, HW.pBaseZB);
+	const float w = float(Device.dwWidth), h = float(Device.dwHeight);
+	u32 offset;
+	FVF::TL* quad = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, offset);
+	quad[0].set(0, h, EPS_S, 1, 0xffffffff, 0, 1);
+	quad[1].set(0, 0, EPS_S, 1, 0xffffffff, 0, 0);
+	quad[2].set(w, h, EPS_S, 1, 0xffffffff, 1, 1);
+	quad[3].set(w, 0, EPS_S, 1, 0xffffffff, 1, 0);
+	RCache.Vertex.Unlock(4, g_combine->vb_stride);
+	RCache.set_Geometry(g_combine);
+	RCache.set_Element(s_dlss_ui_depth->E[0]);
+	RCache.set_c("dlss_ui_depth_params", float(dlss::RenderWidth()) / w,
+		float(dlss::RenderHeight()) / h, jitterX, jitterY);
+	RCache.set_ZFunc(D3DCMP_ALWAYS);
+	RCache.set_ColorWriteEnable(0);
+	RCache.Render(D3DPT_TRIANGLELIST, offset, 0, 4, 0, 2);
+	RCache.set_ColorWriteEnable();
+	RCache.set_CullMode(CULL_CCW);
+}
+
+// Redotix99's 3D shader scopes at display resolution, after reconstruction.
+// The lens shaders are unchanged: their scene inputs are pointed at display-
+// resolution copies for the draw, and screen_res is already the display size.
+void CRenderTarget::phase_dlss_scope(float jitterX, float jitterY)
+{
+	const u32 w = Device.dwWidth, h = Device.dwHeight;
+	if (!rt_dlss_scope_color)
+	{
+		rt_dlss_scope_color.create("$user$dlss_scope_color", w, h, D3DFMT_A16B16G16R16F);
+		rt_dlss_scope_position.create("$user$dlss_scope_position", w, h, D3DFMT_A16B16G16R16F);
+		rt_dlss_scope_heat.create("$user$dlss_scope_heat", w, h, D3DFMT_A8R8G8B8);
+	}
+	if (!reported_native_scope)
+	{
+		Msg("[Upscaler] 3D scope lenses drawn after reconstruction: native=%ux%u, scene=%ux%u",
+			w, h, dlss::RenderWidth(), dlss::RenderHeight());
+		reported_native_scope = true;
+	}
+
+	// Magnify the reconstructed frame, not the jittered render-sized one.
+	HW.pContext->CopyResource(rt_dlss_scope_color->pSurface, rt_dlss_post_source->pSurface);
+
+	// Thermal/night modes Load positions and heat at display pixel coordinates.
+	const float fw = float(w), fh = float(h);
+	u32 offset;
+	FVF::TL* quad = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, offset);
+	quad[0].set(0, fh, EPS_S, 1, 0xffffffff, 0, 1);
+	quad[1].set(0, 0, EPS_S, 1, 0xffffffff, 0, 0);
+	quad[2].set(fw, fh, EPS_S, 1, 0xffffffff, 1, 1);
+	quad[3].set(fw, 0, EPS_S, 1, 0xffffffff, 1, 0);
+	RCache.Vertex.Unlock(4, g_combine->vb_stride);
+	RCache.set_CullMode(CULL_NONE);
+	RCache.set_Stencil(FALSE);
+	RCache.set_ColorWriteEnable();
+	const ref_rt* copies[] = {&rt_dlss_scope_position, &rt_dlss_scope_heat};
+	for (u32 i = 0; i < 2; ++i)
+	{
+		u_setrt(*copies[i], nullptr, nullptr, nullptr);
+		RCache.set_Geometry(g_combine);
+		RCache.set_Element(s_dlss_scope_copy->E[i]);
+		RCache.set_c("dlss_scope_copy_params", float(dlss::RenderWidth()) / fw,
+			float(dlss::RenderHeight()) / fh, jitterX, jitterY);
+		RCache.Render(D3DPT_TRIANGLELIST, offset, 0, 4, 0, 2);
+	}
+
+	phase_dlss_native_depth(jitterX, jitterY);
+	// Reticles mark stencil 254 and cutouts test it.
+	HW.pContext->ClearDepthStencilView(HW.pBaseZB, D3D_CLEAR_STENCIL, 1.f, 0);
+
+	CTexture* inputs[] = {&*rt_Generic_temp->pTexture, &*rt_Generic_2->pTexture, &*rt_Heat->pTexture};
+	ID3DBaseTexture* sources[] = {rt_dlss_scope_color->pSurface, rt_dlss_scope_position->pSurface,
+		rt_dlss_scope_heat->pSurface};
+	ID3DBaseTexture* saved[3];
+	for (u32 i = 0; i < 3; ++i)
+	{
+		saved[i] = inputs[i]->surface_get();
+		inputs[i]->surface_set(sources[i]);
+	}
+	RCache.InvalidateTextures();
+
+	u_setrt(rt_dlss_post_source, nullptr, nullptr, HW.pBaseZB);
+	RCache.set_CullMode(CULL_CCW);
+	RCache.set_Stencil(FALSE);
+	RCache.set_ColorWriteEnable();
+	RImplementation.render_Reticle();
+
+	for (u32 i = 0; i < 3; ++i)
+	{
+		inputs[i]->surface_set(saved[i]);
+		_RELEASE(saved[i]);
+	}
+	RCache.InvalidateTextures();
+}
+
 void CRenderTarget::phase_dlss_postprocess()
 {
     // PiP scope viewport: its combine runs mid-frame at its own resolution; the main scene is still
@@ -174,9 +278,18 @@ void CRenderTarget::phase_dlss_postprocess()
 	RCache.set_Geometry(g_combine);
 	RCache.Render(D3DPT_TRIANGLELIST, offset, 0, 4, 0, 2);
 
-	// Lens flares are additive, depth-free sprites that cover the HUD. In the scene they would be
-	// reprojected with the hands' motion vectors and reconstructed as blocks, so draw them here at
-	// display resolution without jitter (brodrigz 0.6).
+	// 3D scope lenses magnify the frame around them. In the scene the zoom also
+	// magnified the jitter and was reconstructed with the world's motion vectors.
+	bool nativeDepth = false;
+	if (scope_3D_fake_enabled && ScopeAfterUpscale() && !RImplementation.GMBase.RGraph.mapScopeHUDSorted.empty())
+	{
+		phase_dlss_scope(sceneJitter.x, sceneJitter.y);
+		nativeDepth = true;
+	}
+
+	// Lens flares are additive, depth-free sprites that cover the HUD. In the scene
+	// they would be reprojected with the hands' motion vectors and reconstructed as
+	// blocks, so draw them here at display resolution without jitter.
 	if (ps_r2_anomaly_flags.test(R2_AN_FLAG_FLARES) && ps_r2_heatvision == 0)
 		g_pGamePersistent->Environment().RenderFlares();
 
@@ -194,26 +307,9 @@ void CRenderTarget::phase_dlss_postprocess()
 				unsigned(RImplementation.GMBase.RGraph.mapHUDNativeUi.size()), unsigned(renderHudUi));
 			reported_native_ui = true;
 		}
-		// Scene depth is render-sized and jittered. Reproject it into the existing
-		// native depth buffer before drawing unjittered HUD screens. Keep their
-		// occlusion by hands/casing; never attach a render-sized DSV to a native RT.
+		// Lenses only mark stencil, so the depth they used is still valid here.
+		if (!nativeDepth) phase_dlss_native_depth(sceneJitter.x, sceneJitter.y);
 		u_setrt(rt_dlss_post_source, nullptr, nullptr, HW.pBaseZB);
-		// The flares above replaced the geometry; draw from a fresh fullscreen quad.
-		u32 uiOffset;
-		FVF::TL* uiQuad = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, uiOffset);
-		uiQuad[0].set(0, h, EPS_S, 1, 0xffffffff, 0, 1);
-		uiQuad[1].set(0, 0, EPS_S, 1, 0xffffffff, 0, 0);
-		uiQuad[2].set(w, h, EPS_S, 1, 0xffffffff, 1, 1);
-		uiQuad[3].set(w, 0, EPS_S, 1, 0xffffffff, 1, 0);
-		RCache.Vertex.Unlock(4, g_combine->vb_stride);
-		RCache.set_Geometry(g_combine);
-		RCache.set_Element(s_dlss_ui_depth->E[0]);
-		RCache.set_c("dlss_ui_depth_params", float(dlss::RenderWidth()) / w,
-			float(dlss::RenderHeight()) / h, sceneJitter.x, sceneJitter.y);
-		RCache.set_ZFunc(D3DCMP_ALWAYS);
-		RCache.set_ColorWriteEnable(0);
-		RCache.Render(D3DPT_TRIANGLELIST, uiOffset, 0, 4, 0, 2);
-		RCache.set_ColorWriteEnable();
 		RCache.set_CullMode(CULL_CCW);
 		RImplementation.GMBase.r_dsgraph_render_native_ui(renderHudUi);
 	}

@@ -772,13 +772,13 @@ void CRenderTarget::phase_combine()
 
 	// pip composite the lens once on the MAIN view only, whenever a 3DSS scope is aimed under true_pip
 	// (magnified or a 1x reflex/eyepiece was captured), true_pip off keeps the stock scope_3D_fake_enabled gate
+	const bool pipLens = Device.true_pip_on
+		&& (Device.m_SecondViewport.IsSVPActive()
+			|| !RImplementation.GMBase.RGraph.mapReflexHUDSorted.empty()
+			|| !RImplementation.GMBase.RGraph.mapScopeHUDSorted.empty()
+			|| !RImplementation.GMBase.RGraph.mapScopeHUDOverlay.empty());
 	if (this == RImplementation.TargetMain
-		&& (scope_3D_fake_enabled
-			|| (Device.true_pip_on
-				&& (Device.m_SecondViewport.IsSVPActive()
-					|| !RImplementation.GMBase.RGraph.mapReflexHUDSorted.empty()
-					|| !RImplementation.GMBase.RGraph.mapScopeHUDSorted.empty()
-					|| !RImplementation.GMBase.RGraph.mapScopeHUDOverlay.empty()))))
+		&& ((scope_3D_fake_enabled && !ScopeAfterUpscale()) || pipLens))
 	{
 		svp_stats::cpu_begin(svp_stats::CPU_LENS);
 		phase_3DSSReticle(false); // PiP reticle/depth overlays and legacy 3DSS
