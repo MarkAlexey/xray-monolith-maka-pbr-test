@@ -119,16 +119,20 @@ void EndPresent()
     // A runtime error turned FG off (the game keeps running). Reflect that in the
     // setting so the menu shows Off, and let the player turn it on again to retry.
     static u32 disabledNoticeUntil = 0;
+    static bool disabledOutOfVram = false;
     if (ps_r_frame_generation && bridge && bridge->GenerationFailed())
     {
         Msg("! [FG] Frame generation was turned off after an error (see above). It can be turned on again in Video settings.");
         ps_r_frame_generation = Off;
+        // Read before ClearGenerationFailure, which forgets the VRAM warning.
+        disabledOutOfVram = bridge->GenerationOutOfVram();
         bridge->ClearGenerationFailure();
         disabledNoticeUntil = Device.dwTimeGlobal + 8000;
     }
     if (!ps_r_frame_generation)
-        SetFrameGenerationError(Device.dwTimeGlobal < disabledNoticeUntil ?
-            "Frame generation was turned off after an error. You can turn it on again in Video settings." : nullptr);
+        SetFrameGenerationError(Device.dwTimeGlobal >= disabledNoticeUntil ? nullptr : disabledOutOfVram ?
+            "OUT OF VRAM FG STOPPED WORKING" :
+            "Frame generation was turned off after an error. You can turn it on again in Video settings.");
     else if (!bridge || bridge->GenerationFailed() || !bridge->FrameGenerationReady())
         SetFrameGenerationError("Frame generation is unavailable. See the game log.");
     else if (!RuntimeMatchesSetting(*bridge))
