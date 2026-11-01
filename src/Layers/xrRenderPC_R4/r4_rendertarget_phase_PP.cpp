@@ -132,7 +132,7 @@ bool CRenderTarget::ScopeAfterUpscale() const
 	return dlss::Configured() && s_dlss_scope_copy._get() != nullptr;
 }
 
-void CRenderTarget::phase_dlss_native_depth(float jitterX, float jitterY)
+void CRenderTarget::phase_dlss_native_depth(float jitterX, float jitterY, bool lens)
 {
 	// Scene depth is render-sized and jittered. Reproject it into the existing
 	// native depth buffer before drawing unjittered HUD screens. Keep their
@@ -150,6 +150,7 @@ void CRenderTarget::phase_dlss_native_depth(float jitterX, float jitterY)
 	RCache.set_Element(s_dlss_ui_depth->E[0]);
 	RCache.set_c("dlss_ui_depth_params", float(dlss::RenderWidth()) / w,
 		float(dlss::RenderHeight()) / h, jitterX, jitterY);
+	RCache.set_c("dlss_ui_depth_lens", lens ? 1.f : 0.f, 0.f, 0.f, 0.f);
 	RCache.set_ZFunc(D3DCMP_ALWAYS);
 	RCache.set_ColorWriteEnable(0);
 	RCache.Render(D3DPT_TRIANGLELIST, offset, 0, 4, 0, 2);
@@ -202,7 +203,7 @@ void CRenderTarget::phase_dlss_scope(float jitterX, float jitterY)
 		RCache.Render(D3DPT_TRIANGLELIST, offset, 0, 4, 0, 2);
 	}
 
-	phase_dlss_native_depth(jitterX, jitterY);
+	phase_dlss_native_depth(jitterX, jitterY, true);
 	// Reticles mark stencil 254 and cutouts test it.
 	HW.pContext->ClearDepthStencilView(HW.pBaseZB, D3D_CLEAR_STENCIL, 1.f, 0);
 
@@ -280,12 +281,8 @@ void CRenderTarget::phase_dlss_postprocess()
 
 	// 3D scope lenses magnify the frame around them. In the scene the zoom also
 	// magnified the jitter and was reconstructed with the world's motion vectors.
-	bool nativeDepth = false;
 	if (scope_3D_fake_enabled && ScopeAfterUpscale() && !RImplementation.GMBase.RGraph.mapScopeHUDSorted.empty())
-	{
 		phase_dlss_scope(sceneJitter.x, sceneJitter.y);
-		nativeDepth = true;
-	}
 
 	// Lens flares are additive, depth-free sprites that cover the HUD. In the scene
 	// they would be reprojected with the hands' motion vectors and reconstructed as
@@ -307,8 +304,8 @@ void CRenderTarget::phase_dlss_postprocess()
 				unsigned(RImplementation.GMBase.RGraph.mapHUDNativeUi.size()), unsigned(renderHudUi));
 			reported_native_ui = true;
 		}
-		// Lenses only mark stencil, so the depth they used is still valid here.
-		if (!nativeDepth) phase_dlss_native_depth(sceneJitter.x, sceneJitter.y);
+		// Not the lenses' widened depth: these screens need their exact edges.
+		phase_dlss_native_depth(sceneJitter.x, sceneJitter.y);
 		u_setrt(rt_dlss_post_source, nullptr, nullptr, HW.pBaseZB);
 		RCache.set_CullMode(CULL_CCW);
 		RImplementation.GMBase.r_dsgraph_render_native_ui(renderHudUi);

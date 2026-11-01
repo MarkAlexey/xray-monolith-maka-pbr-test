@@ -702,7 +702,7 @@ public:
 	void scope_overlay_scene_copy(); // pip scene copy the late-pass overlays blur
 	bool draw_hybrid_reflex(); // pip render an engaged magnifier reflex through the objective camera
 	bool ScopeAfterUpscale() const;
-	void phase_dlss_native_depth(float jitterX, float jitterY);
+	void phase_dlss_native_depth(float jitterX, float jitterY, bool lens = false);
 	void phase_dlss_scope(float jitterX, float jitterY);
 	void phase_lut();
 	void phase_smaa();
