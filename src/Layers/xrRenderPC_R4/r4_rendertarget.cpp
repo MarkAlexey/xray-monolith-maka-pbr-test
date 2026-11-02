@@ -176,6 +176,29 @@ public:
     }
 };
 
+class CBlender_dlss_sunshaft_mask : public IBlender
+{
+public:
+    CBlender_dlss_sunshaft_mask() { description.CLS = 0; }
+    LPCSTR getComment() override { return "Screen-space sunshaft mask over time"; }
+    BOOL canBeDetailed() override { return FALSE; }
+    BOOL canBeLMAPped() override { return FALSE; }
+    void Compile(CBlender_Compile& C) override
+    {
+        IBlender::Compile(C);
+        // One element per history target: each reads one and writes the other.
+        if (C.iElement > 1) return;
+        C.r_Pass("ssss_notransform", "dlss_sunshaft_mask", FALSE, FALSE, FALSE);
+        C.r_dx10Texture("s_current", r2_RT_sunshafts1);
+        C.r_dx10Texture("s_history", C.iElement ? "$user$dlss_sunshaft_history_1" : "$user$dlss_sunshaft_history_0");
+        C.r_dx10Texture("s_position", r2_RT_P);
+        C.r_dx10Texture("s_motion_vectors", r2_RT_ssfx_motion_vectors);
+        C.r_dx10Sampler("smp_nofilter");
+        C.r_dx10Sampler("smp_rtlinear");
+        C.r_End();
+    }
+};
+
 void CRenderTarget::set_viewport_size(ID3DDeviceContext * dev, float w, float h)
 {
 	custom_viewport[0].Width = w;
@@ -1736,6 +1759,14 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 			dlss_post_twin(rt_ssfx_bloom_tmp32, 32.f);
 			dlss_post_twin(rt_ssfx_bloom_tmp32_2, 32.f);
 			dlss_post_twin(rt_ssfx_bloom_tmp64, 64.f);
+			string_path sunshaftMaskShader;
+			if (FS.exist(sunshaftMaskShader, "$game_shaders$", "r3\\dlss_sunshaft_mask", ".ps"))
+			{
+				rt_dlss_sunshaft_history[0].create("$user$dlss_sunshaft_history_0", Device.dwWidth, Device.dwHeight, D3DFMT_R16F);
+				rt_dlss_sunshaft_history[1].create("$user$dlss_sunshaft_history_1", Device.dwWidth, Device.dwHeight, D3DFMT_R16F);
+				CBlender_dlss_sunshaft_mask sunshaftMask;
+				s_dlss_sunshaft_mask.create(&sunshaftMask, "dlss_sunshaft_mask");
+			}
 			if (dlss::HdrInput())
 			{
 				CBlender_dlss_hdr hdr;

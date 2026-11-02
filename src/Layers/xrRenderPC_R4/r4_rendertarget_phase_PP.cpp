@@ -397,6 +397,32 @@ void CRenderTarget::dlss_post_effects()
 	RImplementation.GMBase.r_dsgraph_render_dlss_effects();
 }
 
+bool CRenderTarget::DlssSunshaftMaskOverTime() const
+{
+	return dlss_post_swapped && s_dlss_sunshaft_mask._get() != nullptr && ps_r_upscaler_sunshaft_smooth;
+}
+
+// This frame's mask is in rt_sunshafts_1; the blurs read the result from rt_sunshafts_0.
+// Offset is the phase's full-screen quad.
+void CRenderTarget::dlss_sunshaft_mask(u32 Offset)
+{
+	// A gap in the frames means stale history. Scope views skip every other frame.
+	const bool restart = Device.dwFrame - dlss_sunshaft_frame > 2;
+	dlss_sunshaft_frame = Device.dwFrame;
+	const u32 next = dlss_sunshaft_history ^ 1;
+
+	u_setrt(rt_sunshafts_0, rt_dlss_sunshaft_history[next], nullptr, nullptr);
+	RCache.set_CullMode(CULL_NONE);
+	RCache.set_Stencil(FALSE);
+	RCache.set_Element(s_dlss_sunshaft_mask->E[dlss_sunshaft_history]);
+	RCache.set_c("dlss_sunshaft_params", restart ? 1.f : 0.1f, 0.f, 0.f, 0.f);
+	RCache.set_c("m_current", Matrix_current);
+	RCache.set_c("m_previous", Matrix_previous);
+	RCache.set_Geometry(g_KD);
+	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
+	dlss_sunshaft_history = next;
+}
+
 void CRenderTarget::phase_dlss_postprocess()
 {
 	// With the post chain after reconstruction, the scene targets hold its display-size result.

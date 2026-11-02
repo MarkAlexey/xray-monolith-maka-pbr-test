@@ -23,6 +23,7 @@ float ps_r_dlss_sharpness = 0.0f;
 // r_upscaler_debug: 1 shows the upscaler's input, 2 its motion vectors (session only)
 int ps_r_upscaler_debug = 0;
 int ps_r_upscaler_post_after = 1;
+int ps_r_upscaler_sunshaft_smooth = 1;
 int ps_r_dlss_hdr_input = 1;
 xr_token dlss_preset_token[] = {
     {"default", 0}, {"j", 10}, {"k", 11}, {"l", 12}, {"m", 13}, {nullptr, 0}
@@ -1889,6 +1890,8 @@ void xrRender_initconsole()
 	CMD4(CCC_Integer, "r_dlss_hdr_input", &ps_r_dlss_hdr_input, 0, 1);
 	// 1 = upscaler input (render resolution, stretched), 2 = motion vectors
 	CMD4(CCC_UnsavedInteger, "r_upscaler_debug", &ps_r_upscaler_debug, 0, 2);
+	// Smooth the screen-space sunshaft mask over time when the post chain runs after the upscaler
+	CMD4(CCC_Integer, "r_upscaler_sunshaft_smooth", &ps_r_upscaler_sunshaft_smooth, 0, 1);
 #endif
 	CMD3(CCC_Mask,		"r2_gi",				&ps_r2_ls_flags,			R2FLAG_GI);
 	CMD4(CCC_Float,		"r2_gi_clip",			&ps_r2_GI_clip,				EPS,	0.1f	);

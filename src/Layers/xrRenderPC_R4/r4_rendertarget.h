@@ -581,6 +581,11 @@ public:
 	bool dlss_hdr_swapped = false;
 	ref_rt rt_dlss_hdr_input;
 	ref_shader s_dlss_hdr;
+	// Screen-space sunshaft mask over time, once it no longer goes through the upscaler.
+	ref_rt rt_dlss_sunshaft_history[2];
+	ref_shader s_dlss_sunshaft_mask;
+	u32 dlss_sunshaft_history = 0; // the target holding the latest mask
+	u32 dlss_sunshaft_frame = 0;
 	ref_shader s_postprocess_msaa;
 	ref_geom g_postprocess;
 	ref_shader s_menu;
@@ -834,6 +839,8 @@ public:
 	void dlss_post_upscale();
 	void dlss_post_restore();
 	void dlss_post_effects();
+	bool DlssSunshaftMaskOverTime() const;
+	void dlss_sunshaft_mask(u32 Offset);
 	void dlss_hdr_begin();
 	void dlss_hdr_restore();
 	ref_rt& PostprocessColor();
