@@ -67,6 +67,15 @@ public:
 	IBlender* b_ssao;
 	IBlender* b_ssao_msaa[8];
 
+	IBlender* b_hdr10_bloom_downsample;
+	IBlender* b_hdr10_bloom_blur;
+	IBlender* b_hdr10_bloom_upsample;
+	
+	IBlender* b_hdr10_lens_flare_downsample;
+	IBlender* b_hdr10_lens_flare_fgen;
+	IBlender* b_hdr10_lens_flare_blur;
+	IBlender* b_hdr10_lens_flare_upsample;
+
 	IBlender* b_blur;
 	IBlender* b_dof;
 	IBlender* b_pp_bloom;
@@ -150,6 +159,8 @@ public:
 
 	ref_rt rt_fakescope;	// crookr fakescope
 
+
+
 	ref_rt rt_dof;
 	ref_rt rt_ui_pda;
 
@@ -177,6 +188,9 @@ public:
 	ref_rt rt_LUM_pool[2]; // 1xfp32,1x1,		exp-result -> scaler
 	ref_texture t_LUM_src; // source
 	ref_texture t_LUM_dest; // destination & usage for current frame
+
+	// HDR10
+	ref_rt rt_HDR10_HalfRes[2];
 
 	// env
 	ref_texture t_envmap_0; // env-0
@@ -418,6 +432,8 @@ private:
 	ref_shader s_hdao_cs;
 	ref_shader s_hdao_cs_msaa;
 
+
+
 	// Accum
 	ref_shader s_accum_mask;
 	ref_shader s_accum_direct;
@@ -495,6 +511,16 @@ private:
 	ref_shader s_bloom;
 	ref_shader s_bloom_msaa;
 	float f_bloom_factor;
+
+	// HDR10
+	ref_shader s_hdr10_bloom_downsample;
+	ref_shader s_hdr10_bloom_blur;
+	ref_shader s_hdr10_bloom_upsample;
+	
+	ref_shader s_hdr10_lens_flare_downsample;
+	ref_shader s_hdr10_lens_flare_fgen;
+	ref_shader s_hdr10_lens_flare_blur;
+	ref_shader s_hdr10_lens_flare_upsample;
 
 	// Luminance
 	ref_shader s_luminance;
@@ -587,6 +613,7 @@ public:
 	// G-buffer with Heatvision: _5 goes to slot 4 (see r4_rendertarget_phase_scene.cpp)
 	void u_setrt(const ref_rt& _1, const ref_rt& _2, const ref_rt& _3, const ref_rt& _4, const ref_rt& _5, ID3DDepthStencilView* zb);
 	void u_setrt(const ref_rt& _1, const ref_rt& _2, const ref_rt& _3, ID3DDepthStencilView* zb);
+	void set_viewport_size(ID3DDeviceContext* dev, float w, float h);
 	void u_setrt(const ref_rt& _1, const ref_rt& _2, ID3DDepthStencilView* zb);
 	void u_setrt(u32 W, u32 H, ID3DRenderTargetView* _1, ID3DRenderTargetView* _2, ID3DRenderTargetView* _3,
 	             ID3DDepthStencilView* zb);
@@ -713,6 +740,9 @@ public:
 	void phase_ssfx_ao(); // AO
 	void phase_ssfx_il(); // IL
 	void set_viewport_size(ID3DDeviceContext* dev, float w, float h);
+	// HDR10
+	void phase_hdr10_bloom();
+	void phase_hdr10_lens_flare();
 
 	//	Generates min/max sm
 	void create_minmax_SM();

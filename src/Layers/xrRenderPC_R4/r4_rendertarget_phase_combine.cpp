@@ -1046,7 +1046,17 @@ void CRenderTarget::phase_combine()
 	tm_end(svp_stats::SEC_C_COMBINE2);
 	RCache.set_Stencil(FALSE);
 
-	// (no HDR10 on this branch: upstream's HDR10 bloom / lens flare passes are not here)
+	if (RImplementation.o.dx11_hdr10) {
+		// TODO: we should be able to avoid a copy if both are enabled
+		if (ps_r4_hdr10_bloom_on) {
+			HW.pContext->CopyResource(rt_Generic_0->pTexture->surface_get(), rt_Color->pTexture->surface_get());
+			phase_hdr10_bloom(); // samples from rt_Generic_0, writes to rt_Color
+		}
+		if (ps_r4_hdr10_flare_on) {
+			HW.pContext->CopyResource(rt_Generic_0->pTexture->surface_get(), rt_Color->pTexture->surface_get());
+			phase_hdr10_lens_flare(); // samples from rt_Generic_0, writes to rt_Color
+		}
+	}
 	scope_vslr_render(*this);
 	reticle_glow_compose(); // 3DSS reticle glow, after bloom and the tone curve
 

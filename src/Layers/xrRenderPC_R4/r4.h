@@ -125,6 +125,9 @@ public:
 		u32 forcegloss : 1;
 		u32 forceskinw : 1;
 		
+		// HDR10
+		u32 dx11_hdr10 : 1;
+		
 		float forcegloss_v;
 	} o;
 

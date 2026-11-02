@@ -187,6 +187,10 @@ void CRenderTarget::phase_scope_debug()
 	if (!s_scope_debug)
 		return;
 
+	// The main HDR target uses the swapchain format rather than the FP16 scene format.
+	if (rt_secondVP->fmt != rt_Generic_0->fmt)
+		return;
+
 	// snapshot the finished main view so the overlay can sample it without reading the RT it draws into
 	HW.pContext->CopyResource(rt_secondVP->pSurface, rt_Generic_0->pSurface);
 

@@ -30,6 +30,10 @@
 #include "blender_nightvision.h"
 #include "blender_lut.h"
 
+// HDR10
+#include "blender_hdr10_bloom.h"
+#include "blender_hdr10_lens_flare.h"
+
 #include "../xrRender/dxRenderDeviceRender.h"
 #include "../xrRender/xrRender_console.h"
 
@@ -625,6 +629,15 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 
 	// Reactive mask for DLSS / FSR 3
 	b_upscaler_reactive = xr_new<CBlender_upscaler_reactive>();
+	// HDR10
+	b_hdr10_bloom_downsample = xr_new<CBlender_hdr10_bloom_downsample>();
+	b_hdr10_bloom_blur 		 = xr_new<CBlender_hdr10_bloom_blur>();
+	b_hdr10_bloom_upsample   = xr_new<CBlender_hdr10_bloom_upsample>();
+	
+	b_hdr10_lens_flare_downsample = xr_new<CBlender_hdr10_lens_flare_downsample>();
+	b_hdr10_lens_flare_fgen 	  = xr_new<CBlender_hdr10_lens_flare_fgen>();
+	b_hdr10_lens_flare_blur       = xr_new<CBlender_hdr10_lens_flare_blur>();
+	b_hdr10_lens_flare_upsample   = xr_new<CBlender_hdr10_lens_flare_upsample>();
 
 	// HDAO
 	b_hdao_cs = xr_new<CBlender_CS_HDAO>();
@@ -725,7 +738,8 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 		if (RImplementation.o.mrtmixdepth)
 		{
 			// NV50
-			rt_Color = createUnique(r2_RT_albedo, w, h, D3DFMT_A8R8G8B8, SampleCount);
+			rt_Color = createUnique(r2_RT_albedo, w, h,
+				RImplementation.o.dx11_hdr10 ? D3DFMT_A16B16G16R16F : D3DFMT_A8R8G8B8, SampleCount);
 			rt_Accumulator = createUnique(r2_RT_accum, w, h, D3DFMT_A16B16G16R16F, SampleCount);
 		}
 		else
@@ -749,9 +763,10 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 
 		// generic(LDR) RTs
 		//LV - we should change their formats into D3DFMT_A16B16G16R16F for better HDR support.
-		rt_Generic_0 = createUnique(r2_RT_generic0, w, h, D3DFMT_A8R8G8B8, 1);
-		rt_Generic_1 = createUnique(r2_RT_generic1, w, h, D3DFMT_A8R8G8B8, 1);
-		rt_Generic = createUnique(r2_RT_generic, w, h, D3DFMT_A8R8G8B8, 1);
+		const D3DFORMAT genericFormat = RImplementation.o.dx11_hdr10 ? D3DFMT_A16B16G16R16F : D3DFMT_A8R8G8B8;
+		rt_Generic_0 = createUnique(r2_RT_generic0, w, h, genericFormat, 1);
+		rt_Generic_1 = createUnique(r2_RT_generic1, w, h, genericFormat, 1);
+		rt_Generic = createUnique(r2_RT_generic, w, h, genericFormat, 1);
 
 		rt_fakescope = createUnique(r2_RT_scopert, w, h, D3DFMT_A8R8G8B8, 1); //crookr fakescope
 
@@ -759,7 +774,8 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 		rt_Heat = createUnique(r2_RT_heat, w, h, D3DFMT_A8R8G8B8, SampleCount);
 		//--DSR-- HeatVision_end
 
-		rt_Generic_temp = createUnique("$user$generic_temp", w, h, D3DFMT_A8R8G8B8, RImplementation.o.dx10_msaa ? SampleCount : 1);
+		rt_Generic_temp = createUnique("$user$generic_temp", w, h,
+			genericFormat, RImplementation.o.dx10_msaa ? SampleCount : 1);
 
 		// Reactive mask for DLSS / FSR 3: a copy of rt_Generic_0 (same size and format, for
 		// CopyResource) and the R8 mask (D3DFMT_L8 = DXGI_FORMAT_R8_UNORM), scene resolution.
@@ -777,7 +793,7 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 			}
 		}
 
-		rt_dof = createUnique(r2_RT_dof, w, h, D3DFMT_A8R8G8B8);
+		rt_dof = createUnique(r2_RT_dof, w, h, genericFormat);
 
 		// pip rt_secondVP format must match rt_Generic_0/rt_Color so phase_svp_capture's CopyResource
 		// (and the legacy fakescope copy) have matching formats, else D3D rejects the copy
@@ -791,8 +807,12 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 		// format, Ascii must pick a UAV-capable SVP output for real DLSS. gate 0 keeps the stock target
 		m_svp_dlss_built = (!isMain && ps_r__svp_dlss != 0);
 		bool svp_uav = (m_svp_dlss_built && rt_Color->fmt == D3DFMT_A16B16G16R16F);
-		rt_secondVP = createUnique(r2_RT_secondVP, svp_out_w, svp_out_h, rt_Color->fmt, 1, svp_uav); //--#SM+#-- +SecondVP+
-		rt_ui_pda = createUnique(r2_RT_ui, svp_out_w, svp_out_h, D3DFMT_A8R8G8B8);
+		// The main HDR target also snapshots the 10-bit swapchain in RenderToTarget.
+		const D3DFORMAT secondVPFormat = RImplementation.o.dx11_hdr10 && isMain
+			? D3DFMT_A2R10G10B10 : rt_Color->fmt;
+		rt_secondVP = createUnique(r2_RT_secondVP, svp_out_w, svp_out_h, secondVPFormat, 1, svp_uav); //--#SM+#-- +SecondVP+
+		rt_ui_pda = createUnique(r2_RT_ui, svp_out_w, svp_out_h,
+			RImplementation.o.dx11_hdr10 ? D3DFMT_A2R10G10B10 : D3DFMT_A8R8G8B8);
 
 		// pip mipped svp color source, feeds the near-blur prefilter so each sparse ring area-averages
 		if (!isMain)
@@ -807,7 +827,11 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 			m_svp_nb_mip_tex = dxRenderDeviceRender::Instance().Resources->_CreateTexture("$user$svp_nb_mip");
 			m_svp_nb_mip_tex->surface_set(m_svp_nb_mip_surf);
 		}
-
+		// TODO: R11G11B10F? needs another horrible hack + cast + update to converter function
+		if (RImplementation.o.dx11_hdr10) {
+			rt_HDR10_HalfRes[0].create(r4_RT_HDR10_halfres0, w/2,  h/2,  D3DFMT_A16B16G16R16F);
+			rt_HDR10_HalfRes[1].create(r4_RT_HDR10_halfres1, w/2,  h/2,  D3DFMT_A16B16G16R16F);
+		}
 		// PDA, probably not ideal though
 // RT - KD
 		rt_sunshafts_0 = createUnique(r2_RT_sunshafts0, w, h, D3DFMT_A8R8G8B8);
@@ -881,8 +905,8 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 
 		if (RImplementation.o.dx10_msaa)
 		{
-            rt_Generic_0_r = createUnique(r2_RT_generic0_r, w, h, D3DFMT_A8R8G8B8, SampleCount);
-            rt_Generic_1_r = createUnique(r2_RT_generic1_r, w, h, D3DFMT_A8R8G8B8, SampleCount);
+			rt_Generic_0_r = createUnique(r2_RT_generic0_r, w, h, genericFormat, SampleCount);
+			rt_Generic_1_r = createUnique(r2_RT_generic1_r, w, h, genericFormat, SampleCount);
 			//rt_Generic.create		      (r2_RT_generic,w,h,   D3DFMT_A8R8G8B8, 1		);
 		}
 		//	Igor: for volumetric lights
@@ -891,6 +915,15 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 		if (RImplementation.o.advancedpp)
 			rt_Generic_2 = createUnique(r2_RT_generic2, w, h, D3DFMT_A16B16G16R16F, SampleCount);
 	}
+
+	s_hdr10_bloom_downsample.create(b_hdr10_bloom_downsample, "hdr10_bloom_downsample");
+	s_hdr10_bloom_blur.create(b_hdr10_bloom_blur, "hdr10_bloom_blur");
+	s_hdr10_bloom_upsample.create(b_hdr10_bloom_upsample, "hdr10_bloom_upsample");
+
+	s_hdr10_lens_flare_downsample.create(b_hdr10_lens_flare_downsample, "hdr10_lens_flare_downsample");
+	s_hdr10_lens_flare_fgen.create(b_hdr10_lens_flare_fgen, "hdr10_lens_flare_fgen");
+	s_hdr10_lens_flare_blur.create(b_hdr10_lens_flare_blur, "hdr10_lens_flare_blur");
+	s_hdr10_lens_flare_upsample.create(b_hdr10_lens_flare_upsample, "hdr10_lens_flare_upsample");
 
 	s_sunshafts.create(b_sunshafts, "r2\\sunshafts");
 	s_blur.create(b_blur, "r2\\blur");
@@ -903,6 +936,8 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 	s_fakescope.create(b_fakescope, "r2\\fakescope"); //crookr
 
 	s_heatvision.create(b_heatvision, "r2\\heatvision"); //--DSR-- HeatVision
+
+
 	s_lut.create(b_lut, "r2\\lut");
 	// OCCLUSION
 	s_occq.create(b_occq, "r2\\occq");
@@ -1100,6 +1135,7 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 		accum_volumetric_geom_create();
 		g_accum_volumetric.create(D3DFVF_XYZ, g_accum_volumetric_vb, g_accum_volumetric_ib);
 	}
+
 
 	// REFLECTED
 	{
@@ -1584,6 +1620,7 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 			t_noise[it] = dxRenderDeviceRender::Instance().Resources->_CreateTexture(name);
 			t_noise[it]->surface_set(t_noise_surf[it]);
 
+
 			//	Create noise mipped
 			{
 				//	Autogen mipmaps
@@ -1742,6 +1779,16 @@ CRenderTarget::~CRenderTarget()
 	xr_delete(b_ssfx_volumetric_blur); // Volumetric Phase
 	xr_delete(b_ssfx_ao); // AO Phase
 
+
+	// HDR10
+	xr_delete(b_hdr10_bloom_downsample);
+	xr_delete(b_hdr10_bloom_blur);
+	xr_delete(b_hdr10_bloom_upsample);
+	
+	xr_delete(b_hdr10_lens_flare_downsample);
+	xr_delete(b_hdr10_lens_flare_fgen);
+	xr_delete(b_hdr10_lens_flare_blur);
+	xr_delete(b_hdr10_lens_flare_upsample);
 	if (RImplementation.o.dx10_msaa)
 	{
 		int bound = RImplementation.o.dx10_msaa_samples;
