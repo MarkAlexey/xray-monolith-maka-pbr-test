@@ -618,6 +618,19 @@ HRESULT D3D12PresentBridge::SubmitFrame()
             m_timestampReadback.Get(), m_currentSlot * 2 * sizeof(UINT64));
         slot.timestampPending = true;
     }
+    // ReShade reads the exported depth during Present, later on this queue.
+    if (m_depthValid)
+    {
+        constexpr auto shaderResource = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        D3D12_RESOURCE_BARRIER depth[]{
+            Transition(slot.inputs12[0].Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_SOURCE),
+            Transition(m_depthExport12.Get(), shaderResource, D3D12_RESOURCE_STATE_COPY_DEST)};
+        slot.commands->ResourceBarrier(2, depth);
+        slot.commands->CopyResource(m_depthExport12.Get(), slot.inputs12[0].Get());
+        depth[0] = Transition(slot.inputs12[0].Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_COMMON);
+        depth[1] = Transition(m_depthExport12.Get(), D3D12_RESOURCE_STATE_COPY_DEST, shaderResource);
+        slot.commands->ResourceBarrier(2, depth);
+    }
     // FSR prepare is recorded into the same list, after the DX11 ready wait.
     bool fsrFailed = false;
     if (m_runtimeKind == PresentRuntime::Fsr && m_fsrFrameGeneration && !m_fgFailed)
@@ -650,7 +663,7 @@ HRESULT D3D12PresentBridge::SubmitFrame()
 HRESULT D3D12PresentBridge::BeginFrame(UINT frameLimitUs, bool allowGeneration)
 {
     m_allowGeneration = allowGeneration;
-    m_sceneValid = m_hudlessValid = false;
+    m_sceneValid = m_hudlessValid = m_depthValid = false;
     if (m_runtimeKind != PresentRuntime::Streamline || !m_streamline.IsReady() || m_fgFailed) return S_OK;
     return m_streamline.BeginFrame(frameLimitUs) ? S_OK : FailGeneration("Begin Reflex frame");
 }
@@ -683,10 +696,19 @@ HRESULT D3D12PresentBridge::CreateInputs(UINT width, UINT height, DXGI_FORMAT mo
         slot.depthUAV.Reset();
         slot.motionUAV.Reset();
         for (UINT i = 0; i < 3; ++i)
+        {
+            if (i && motionFormat == DXGI_FORMAT_UNKNOWN)
+            {
+                slot.inputs11[i].Reset();
+                slot.inputs12[i].Reset();
+                continue;
+            }
             BRIDGE_CHECK(CreateSharedTexture(i == 2 ? m_desc.Width : width, i == 2 ? m_desc.Height : height,
                 formats[i], i < 2, slot.inputs12[i], slot.inputs11[i]));
+        }
         BRIDGE_CHECK(m_device11->CreateUnorderedAccessView(slot.inputs11[0].Get(), nullptr, &slot.depthUAV));
-        BRIDGE_CHECK(m_device11->CreateUnorderedAccessView(slot.inputs11[1].Get(), nullptr, &slot.motionUAV));
+        if (slot.inputs11[1])
+            BRIDGE_CHECK(m_device11->CreateUnorderedAccessView(slot.inputs11[1].Get(), nullptr, &slot.motionUAV));
     }
     m_inputWidth = width;
     m_inputHeight = height;
@@ -761,13 +783,14 @@ RWTexture2D<float2> outputMotion : register(u1);
         m_depthSource = depth;
     }
     if (m_depthCopy) m_context11->CopyResource(m_depthCopy.Get(), depth);
-    if (m_motionSource.Get() != motion)
+    if (motion && m_motionSource.Get() != motion)
     {
         m_motionSRV.Reset(); m_motionSource.Reset();
         BRIDGE_CHECK(m_device11->CreateShaderResourceView(motion, nullptr, &m_motionSRV));
         m_motionSource = motion;
     }
-    ID3D11ShaderResourceView* srvs[]{m_depthSRV.Get(), m_motionSRV.Get()};
+    // Without motion (depth only), the unbound UAV ignores the shader's motion writes.
+    ID3D11ShaderResourceView* srvs[]{m_depthSRV.Get(), motion ? m_motionSRV.Get() : nullptr};
     ID3D11UnorderedAccessView* uavs[]{depthOut, motionOut};
     m_context11->CSSetShader(m_depthShader.Get(), nullptr, 0);
     m_context11->CSSetShaderResources(0, 2, srvs);
@@ -871,8 +894,82 @@ HRESULT D3D12PresentBridge::CaptureScene(ID3D11Resource* depth, ID3D11Resource* 
         m_inputWidth, m_inputHeight, true));
     m_inputs = inputs;
     m_sceneValid = true;
+    m_depthValid = m_depthExportWanted && SUCCEEDED(PrepareDepthExport());
     ++m_statistics.sceneCaptures;
     m_statistics.inputCopyBytes += UINT64(d.Width) * d.Height * 8;
+    return S_OK;
+}
+
+HRESULT D3D12PresentBridge::CaptureDepth(ID3D11Resource* depth)
+{
+    if (!m_depthExportWanted || m_depthExportFailed) return S_OK;
+    if (!m_acquired || m_submitted) return Check(E_UNEXPECTED, "Depth capture outside acquired frame");
+    if (!depth) return Check(E_INVALIDARG, "Null depth input");
+    ComPtr<ID3D11Texture2D> texture;
+    BRIDGE_CHECK(depth->QueryInterface(IID_PPV_ARGS(&texture)));
+    D3D11_TEXTURE2D_DESC d{};
+    texture->GetDesc(&d);
+    if (d.SampleDesc.Count != 1 || d.ArraySize != 1 || d.MipLevels != 1 ||
+        (d.Format != DXGI_FORMAT_R24G8_TYPELESS && d.Format != DXGI_FORMAT_R32_TYPELESS && d.Format != DXGI_FORMAT_R32_FLOAT && d.Format != DXGI_FORMAT_D24_UNORM_S8_UINT))
+        return Check(E_INVALIDARG, "Unsupported depth input dimensions/format");
+    // Keeps frame generation's inputs while they fit; otherwise builds depth only, and
+    // frame generation rebuilds the rest when it starts.
+    auto& slot = m_slots[m_currentSlot];
+    if (!slot.inputs11[0] || d.Width != m_inputWidth || d.Height != m_inputHeight)
+        BRIDGE_CHECK(CreateInputs(d.Width, d.Height, DXGI_FORMAT_UNKNOWN));
+    BRIDGE_CHECK(ConvertDepthMotion(texture.Get(), nullptr, slot.depthUAV.Get(), nullptr, m_inputWidth, m_inputHeight, false));
+    m_depthValid = SUCCEEDED(PrepareDepthExport());
+    m_statistics.inputCopyBytes += UINT64(d.Width) * d.Height * 4;
+    return S_OK;
+}
+
+// One texture for all slots, so ReShade rebinds it only when the render size changes.
+HRESULT D3D12PresentBridge::PrepareDepthExport()
+{
+    if (m_depthExportFailed) return E_FAIL;
+    if (m_depthExport12)
+    {
+        const D3D12_RESOURCE_DESC current = m_depthExport12->GetDesc();
+        if (current.Width == m_inputWidth && current.Height == m_inputHeight) return S_OK;
+        // ReShade may still read the old texture in a queued Present.
+        const HRESULT drained = WaitIdle();
+        if (FAILED(drained)) return drained;
+        m_depthExport12.Reset();
+    }
+    D3D12_HEAP_PROPERTIES heap{};
+    heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+    heap.CreationNodeMask = heap.VisibleNodeMask = 1;
+    D3D12_RESOURCE_DESC resource{};
+    resource.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    resource.Width = m_inputWidth;
+    resource.Height = m_inputHeight;
+    resource.DepthOrArraySize = resource.MipLevels = 1;
+    resource.SampleDesc.Count = 1;
+    resource.Format = DXGI_FORMAT_R32_FLOAT;
+    const HRESULT created = m_device12->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &resource,
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, nullptr,
+        IID_PPV_ARGS(&m_depthExport12));
+    if (FAILED(created))
+    {
+        // Not worth failing presentation over: ReShade just gets no depth.
+        m_depthExportFailed = true;
+        if (m_logger)
+        {
+            char message[128]{};
+            snprintf(message, sizeof(message), "! [DX12 bridge] ReShade depth export disabled: texture creation failed (0x%08lX)",
+                static_cast<unsigned long>(created));
+            m_logger(message);
+        }
+        return created;
+    }
+    ++m_depthExportGeneration;
+    // Only ever created with ReShade loaded: its absence in a log shows the copy is off.
+    if (m_logger)
+    {
+        char message[128]{};
+        snprintf(message, sizeof(message), "[DX12 bridge] Copying scene depth for ReShade (%ux%u)", m_inputWidth, m_inputHeight);
+        m_logger(message);
+    }
     return S_OK;
 }
 
@@ -1054,7 +1151,7 @@ HRESULT D3D12PresentBridge::AfterPresent()
     // the renderer explicitly acquires its next frame.
     m_nextSlot = (m_currentSlot + 1) % UINT(m_slots.size());
     m_acquired = m_submitted = m_submittedFG = false;
-    m_sceneValid = m_hudlessValid = false;
+    m_sceneValid = m_hudlessValid = m_depthValid = false;
     SampleDisplayedFrames();
     if (m_profiling && m_statistics.frames % 240 == 0) ReportStatistics();
     return S_OK;
@@ -1122,7 +1219,7 @@ HRESULT D3D12PresentBridge::Resize(UINT width, UINT height, DXGI_FORMAT format, 
     m_inputWidth = m_inputHeight = 0;
     m_timestampHeap.Reset();
     m_timestampReadback.Reset();
-    m_sceneValid = m_hudlessValid = false;
+    m_sceneValid = m_hudlessValid = m_depthValid = false;
     m_resetHistory = true;
     m_acquired = m_submitted = m_submittedFG = false;
     m_currentSlot = m_nextSlot = 0;
@@ -1451,7 +1548,8 @@ void D3D12PresentBridge::Shutdown()
     m_timestampHeap.Reset();
     m_timestampReadback.Reset();
     m_depthShader.Reset();
-    m_sceneValid = m_hudlessValid = m_allowGeneration = false;
+    m_depthExport12.Reset();
+    m_sceneValid = m_hudlessValid = m_allowGeneration = m_depthValid = false;
     m_resetHistory = true;
     m_swapChain.Reset();
     m_adapter.Reset();

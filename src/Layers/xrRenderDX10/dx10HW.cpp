@@ -545,7 +545,7 @@ void CHW::CreateDevice(HWND hwnd, bool move_window)
 #ifdef DEBUG
 	//createDeviceFlags |= D3Dxx_CREATE_DEVICE_DEBUG;
 #endif
-    HRESULT R;
+    HRESULT R = S_OK; // DX11: every creation failure is already R_CHK'd
     // Create the device
     //	DX10 don't need it?
 	//u32 GPU		= selectGPU();
@@ -1645,8 +1645,13 @@ void CHW::AcquirePresentationFrame()
     secret_pBaseRT = pBaseRT;
 }
 
+extern void reshade_set_scene_depth(void* resource, unsigned long long generation);
+
 HRESULT CHW::Present(UINT interval, UINT flags)
 {
+    // ReShade binds the scene depth while presenting (ReShadeCompat)
+    if (use_reshade && !(flags & DXGI_PRESENT_TEST))
+        reshade_set_scene_depth(m_presentBridge->ExportedDepth(), m_presentBridge->DepthExportGeneration());
     const HRESULT result = m_presentBridge->Present(interval, flags);
     if (!(flags & DXGI_PRESENT_TEST)) fg::EndPresent();
     return result;

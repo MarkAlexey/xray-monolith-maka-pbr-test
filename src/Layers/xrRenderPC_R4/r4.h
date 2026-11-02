@@ -127,6 +127,7 @@ public:
 		
 		// HDR10
 		u32 dx11_hdr10 : 1;
+		u32 dlss_hdr_input : 1; // available; dlss::HdrInput() says whether DLSS uses it
 		
 		float forcegloss_v;
 	} o;

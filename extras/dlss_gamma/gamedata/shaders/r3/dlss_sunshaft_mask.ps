@@ -1,0 +1,67 @@
+#include "common.h"
+#include "anomaly_shaders.h"
+
+// Screen-space sunshaft mask over time, for the post chain after reconstruction.
+// The mask comes from jittered, render-sized depth, so silhouettes change a little
+// every frame and nothing smooths them any more: the radial blur spreads each change
+// along a whole shaft. Blending the frames turns the jitter into coverage instead.
+Texture2D s_current; // this frame's mask
+Texture2D s_history;
+Texture2D s_motion_vectors;
+
+float4x4 m_current;
+float4x4 m_previous;
+float4 dlss_sunshaft_params; // x = weight of this frame
+
+#define DLSS_SUNSHAFT_SKY_DEPTH 10000.0f
+#define DLSS_SUNSHAFT_CLAMP_RADIUS 2.0f // display pixels; wider than a render pixel
+
+struct dlss_sunshaft_out
+{
+    float4 mask : SV_Target0;
+    float4 history : SV_Target1;
+};
+
+// Previous position in UV. The sky writes no motion vectors, so it follows the camera.
+float2 dlss_sunshaft_previous(float2 tc)
+{
+    float depth = s_position.Sample(smp_nofilter, tc).z;
+    if (is_not_sky(depth) > 0.5f)
+        return tc - s_motion_vectors.Sample(smp_nofilter, tc).xy;
+
+    float2 pixel = tc * screen_res.xy;
+    float4 P = float4(DLSS_SUNSHAFT_SKY_DEPTH * float3(pixel * pos_decompression_params.zw - pos_decompression_params.xy, 1.0f), 1.0f);
+    float4 current = mul(m_current, P);
+    float4 previous = mul(m_previous, P);
+    float2 motion = current.xy / current.w - previous.xy / previous.w;
+    return tc - float2(motion.x, -motion.y) * 0.5f;
+}
+
+dlss_sunshaft_out main(v2p_ssss I)
+{
+    float2 tc = I.tc0.xy;
+    float4 center = s_current.Sample(smp_nofilter, tc);
+
+    // Limits for the history, so that what moved away does not stay in the shafts.
+    float low = center.x, high = center.x;
+    float2 reach = DLSS_SUNSHAFT_CLAMP_RADIUS * screen_res.zw;
+    for (int y = -1; y <= 1; ++y)
+    {
+        for (int x = -1; x <= 1; ++x)
+        {
+            float value = s_current.Sample(smp_nofilter, tc + float2(x, y) * reach).x;
+            low = min(low, value);
+            high = max(high, value);
+        }
+    }
+
+    float2 previous = dlss_sunshaft_previous(tc);
+    bool inside = all(previous >= 0.0f) && all(previous <= 1.0f);
+    float history = clamp(s_history.Sample(smp_rtlinear, previous).x, low, high);
+    float mask = inside ? lerp(history, center.x, dlss_sunshaft_params.x) : center.x;
+
+    dlss_sunshaft_out O;
+    O.mask = float4(mask, mask, mask, center.w);
+    O.history = float4(mask, 0.0f, 0.0f, 1.0f);
+    return O;
+}
