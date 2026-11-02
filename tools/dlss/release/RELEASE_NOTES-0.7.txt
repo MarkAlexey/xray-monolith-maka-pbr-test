@@ -1,0 +1,152 @@
+DLSS / FSR experimental 0.7
+===========================
+
+UPDATE BOTH DOWNLOADS. Reinstall the compatibility patch with REPLACE and clear
+the shader cache. Without the new patch the post-processing changes below stay
+off and the log says why.
+
+CHANGES FROM 0.63
+Upscaling image quality
+- Post-processing now runs after the upscaler, at full output resolution:
+  sunshafts, fog scattering, motion blur, bloom, depth of field and colour
+  grading. They no longer enter the upscaler's history, which removes the
+  smearing and grid patterns it gave them.
+- Volumetric lights, see-through particles (smoke, fire, sparks, dust) and laser
+  beams are drawn after the upscaler too. Beam edges are no longer anti-aliased,
+  so a thin beam at a shallow angle can show small steps.
+- DLSS now receives a linear HDR image. Trails left on walls and other surfaces
+  by moving lights, such as NPC flashlights, are much weaker but still visible.
+  DLSS only. It is not used with HDR10 output.
+- Screen-space sunshafts: the sky mask is smoothed over several frames, because
+  the shafts shimmered more once they stopped going through the upscaler.
+- 3D shader scope lenses are drawn after the upscaler, and the seam around the
+  lens is covered.
+- Fixed motion vectors for rigid moving meshes.
+- Screen Space Shaders: volumetric buffers now match the volumetric viewport
+  size, and the beam noise moves every frame while upscaling, so it no longer
+  stays as static grain.
+
+Options (console)
+- r_upscaler_post_after 0, then vid_restart: post-processing, volumetric lights,
+  particles and laser beams go back before the upscaler, as in 0.63. This also
+  turns off the two options below.
+- r_dlss_hdr_input 0, then vid_restart: turns off the HDR image for DLSS.
+- r_upscaler_sunshaft_smooth 0: turns off the sunshaft smoothing immediately.
+All three are on by default. Post-processing at full resolution costs more GPU
+and video memory than 0.63 when upscaling; the first option is the one to try if
+your frame rate dropped. No performance figures were measured.
+
+DX12 executable
+- ReShade now gets the scene depth.
+- Frame generation no longer shows its "needs DLSS" error when upscaling is off.
+- The DLSS-G out-of-video-memory warning is no longer fatal.
+
+Compatibility patch
+- Glossy Puddles Overhaul add-on updated to v2.3 (v2.2 also works).
+
+Engine
+- Merged upstream Anomaly engine updates through 2026-10-31.
+
+KNOWN ISSUES
+- Moving lights still leave a faint trail on surfaces, and distant moving NPCs
+  can still ghost under DLSS.
+- A camouflage net on some props flickers at a distance while upscaling.
+- HDR10 output has not been tested with any of these changes, and does not get
+  the improvement to moving-light trails.
+
+DLSS / FSR experimental 0.63
+============================
+
+CHANGES FROM 0.61
+- Fixed AO and indirect light breaking when their render resolution is set
+  below 1 in MCM (Screen Space Shaders). Happened with or without an upscaler.
+- DX12 executable: when frame generation hits an error it can survive, it now
+  turns itself off (with a message) instead of closing the game, and can be
+  turned on again in Video settings. Previously some of these errors were fatal
+  and others needed a game restart to retry.
+- Compatibility patch: one Atmospherics option now covers RC7.5, RC7.6, RC7.7
+  and RC7.71, whatever AO, IL and SSR options you picked in its installer.
+  The installer no longer has an extra Atmospherics page.
+- Compatibility patch: no longer replaces the AO, indirect light, reflection,
+  contact shadow and water reflection shaders of Screen Space Shaders or
+  Atmospherics. Those mods now always use their own versions, so their updates
+  apply as released (the old overrides overwrote RC7.7's reworked GTAO, IL
+  and SSR). Side-by-side testing showed no visible difference from removing them.
+- Compatibility patch: new Glossy Puddles Overhaul v2.2 add-on. Keeps its
+  puddles and restores the ground motion vectors DLSS / FSR need (without
+  it, ground smears in motion). It picks the PBR or SSS version from your
+  Atmospherics choice.
+- Reinstall the compatibility patch with REPLACE so the removed files go away.
+
+DLSS / FSR experimental 0.61
+============================
+
+CHANGES FROM 0.6
+- DX12 executable: fixes a likely cause of a freeze ending in a "wait operation
+  timed out" / HW.Present fatal error with DLSS Frame Generation, reported on
+  RTX 50 GPUs. Not yet confirmed on that hardware.
+- DX12 executable: if a GPU wait times out or the device is lost, the log now
+  records a "[DX12 bridge] Stall report": which wait stopped, why the GPU was
+  reset, and video-memory use against the budget.
+- New "Ultra Quality" mode for DLSS and FSR (about 77% resolution, between
+  DLAA/Native AA and Quality).
+- Fixed the DX11 executables showing the renderer as "DirectX 12 (Bridge)".
+- The log now starts with a "[DLSS/FSR] ... 0.61" line naming the build, to
+  make support requests easier.
+
+DLSS / FSR experimental 0.6
+===========================
+
+CHANGES FROM 0.5
+- New experimental AnomalyDX12.exe. The game still renders in DX11 and
+  presents through DX12, which enables frame generation:
+  - DLSS Frame Generation 2x (RTX 40/50) with Reflex, via Streamline 2.14.16.
+    The bundled DLSS-G runtime (310.9.16) supports Preset C; force it with the
+    NVIDIA app or NVIDIA Profile Inspector if you want it (driver setting,
+    not changed by this mod).
+  - AMD FSR Frame Generation 2x (any DX12 GPU).
+  - AMD FSR upscaling through DX12 (FSR 4 on supported Radeon GPUs,
+    FSR 3.1 elsewhere).
+- Lens flares are drawn after upscaling. Fixes the sun glow over the hands
+  and weapon turning into a block/grid pattern with DLSS.
+- The video menu only lists the upscalers and frame generation your GPU
+  supports. On AnomalyDX12.exe the renderer shows as "DirectX 12 (Bridge)".
+- Fixes a crash when switching frame generation modes in the same session.
+- Atmospherics RC7.x: under an upscaler, AO noise is offset per 64-pixel
+  tile so the upscaler never sees the same tile repeat.
+- New console diagnostic r_upscaler_debug (1 = upscaler input,
+  2 = motion vectors; not saved).
+
+INSTALL
+1. Close the game and back up the files you are replacing.
+2. Extract the binaries ZIP into the Anomaly folder, merging bin and db.
+   New in 0.6: bin\D3D12, bin\streamline and three amd_fidelityfx DLLs.
+3. Install the compatibility ZIP through MO2. Choose REPLACE when updating.
+4. Choose your installed Atmospherics and add-ons in the installer.
+5. Enable the patch below your shader mods in MO2's left pane.
+6. Clear the shader cache through the launcher.
+7. Launch through MO2: AnomalyDX11 / AnomalyDX11AVX as before, or add
+   bin\AnomalyDX12.exe as an MO2 executable for frame generation.
+   Set MSAA/AA to Off, choose DLSS or FSR, and click Apply.
+
+FRAME GENERATION (DX12 executable only)
+- Needs an active upscaler (DLSS or FSR) and MSAA off.
+- DLSS-G only generates frames while the game window has focus.
+- After using FSR frame generation, DLSS frame generation needs a game
+  restart (the menu says so).
+- With frame generation on, r__framelimit counts displayed frames.
+
+CREDITS
+OGSR team and xrSimpAI - original DLSS implementation and the DX12
+presentation bridge this build adapts.
+https://github.com/OGSR/OGSR-Engine
+Full credits and licenses are included in the binaries package.
+
+TEST STATUS
+Built: DX11, DX11-AVX and DX12 Release.
+Played by the developer on GAMMA with Atmospherics RC7.71, using the DX11 and DX12
+executables with DLSS and FSR. The last build played differs from this release
+only in its version line and in r_upscaler_sunshaft_smooth now being saved.
+The patch's own shaders compile on SSS 23.5, stock Atmospherics and RC7.71.
+Not tested in game: the AVX executable, HDR10 output, stock Atmospherics, every
+installer combination.

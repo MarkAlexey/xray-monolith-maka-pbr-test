@@ -248,7 +248,6 @@ private:
 #endif
 
 public:
-
 #if defined(USE_DX11) && RENDER == R_R4
     void InvalidateAfterCommandList() { Invalidate(); }
     CTexture* shadow_texture_source = nullptr;
@@ -262,6 +261,11 @@ public:
     }
 #endif
 	void Invalidate(); // pip: SetActive needs a full cache reset per viewport (was private)
+
+	// Forget bound texture lists/stages so the next draw rebinds them
+	// (needed after a CTexture's surface was swapped while bound).
+	void InvalidateTextures();
+
 	struct _stats
 	{
 		u32 polys;

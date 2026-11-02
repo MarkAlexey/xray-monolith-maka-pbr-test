@@ -59,6 +59,8 @@ public:
     HRESULT GetRenderTargetView(ID3D11RenderTargetView** view) const;
     HRESULT FailGeneration(const char* reason);
     bool GenerationFailed() const { return m_fgFailed; }
+    // DLSS-G reported low video memory since generation last (re)started.
+    bool GenerationOutOfVram() const { return m_runtimeKind == PresentRuntime::Streamline && m_streamline.OutOfVram(); }
     // After an automatic disable, let FG start again when the player re-enables it.
     void ClearGenerationFailure();
     // Acquire BEFORE recording/executing any frame commands that touch the shared targets.
@@ -80,6 +82,15 @@ public:
     HRESULT CaptureScene(ID3D11Resource* depth, ID3D11Resource* motion, const FrameGenerationInputs& inputs);
     HRESULT CaptureHudless(bool valid);
     bool NeedsFGInputs() const;
+    // ReShade runs on this D3D12 device, which never sees the game's depth buffer. When
+    // enabled (only with ReShade loaded), the scene depth captured for the frame is also
+    // copied into one stable texture that ReShade can bind.
+    void SetDepthExport(bool enabled) { m_depthExportWanted = enabled; }
+    HRESULT CaptureDepth(ID3D11Resource* depth); // Frames whose depth FG does not capture.
+    // This frame's exported depth (R32_FLOAT, render size, shader-resource state while
+    // presenting), or null. The generation changes whenever the texture is recreated.
+    ID3D12Resource* ExportedDepth() const { return m_depthValid ? m_depthExport12.Get() : nullptr; }
+    UINT64 DepthExportGeneration() const { return m_depthExportGeneration; }
     void ResetHistory() { m_resetHistory = true; }
     HRESULT SuspendGeneration();
     void Shutdown();
@@ -150,7 +161,9 @@ private:
     HRESULT Check(HRESULT result, const char* stage);
     // Once per bridge: fence progress and device-removed reasons after a timeout or device loss.
     void ReportStall(const char* stage, HRESULT result);
+    // DXGI_FORMAT_UNKNOWN motion: depth only (ReShade export without frame generation).
     HRESULT CreateInputs(UINT width, UINT height, DXGI_FORMAT motionFormat);
+    HRESULT PrepareDepthExport();
     // Converts engine depth (D24S8/R32) and SSS motion (RGBA16F) to R32F/RG16F UAVs in a
     // private context state; optionally copies one more resource there (unbound source).
     HRESULT ConvertDepthMotion(ID3D11Texture2D* depth, ID3D11Texture2D* motion,
@@ -212,6 +225,9 @@ private:
     UINT64 m_diagnosticFrame{};
     FrameGenerationInputs m_inputs{};
     bool m_allowGeneration{}, m_sceneValid{}, m_hudlessValid{}, m_resetHistory{true};
+    ComPtr<ID3D12Resource> m_depthExport12;
+    UINT64 m_depthExportGeneration{};
+    bool m_depthExportWanted{}, m_depthValid{}, m_depthExportFailed{};
     Statistics m_statistics{};
     bool m_profiling{};
     UINT64 m_generatedPresents{}, m_enabledPresents{}, m_totalPresented{}, m_markerFrames{};

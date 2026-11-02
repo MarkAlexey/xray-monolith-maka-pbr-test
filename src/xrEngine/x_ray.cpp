@@ -1128,13 +1128,13 @@ int APIENTRY WinMain_impl(HINSTANCE hInstance,
 	// exe adds his DX12 presentation bridge with frame generation (DLSS-G / FSR FG) and FSR 4.
 #if defined(XR_DX12_BRIDGE)
 	const char* const binaryVariant = "DX12 bridge";
-	const char* const upscalerVariant = "DLSS 310.9.1 / FSR 3 / FSR 4, frame generation DLSS-G / FSR (brodrigz 0.5 + 0.6.3)";
+	const char* const upscalerVariant = "DLSS 310.9.1 / FSR 3 / FSR 4, frame generation DLSS-G / FSR (brodrigz 0.7)";
 #elif defined(__AVX__)
 	const char* const binaryVariant = "DX11-AVX";
-	const char* const upscalerVariant = "DLSS 310.9.1 / FSR 3 (brodrigz 0.5 + 0.6.3 fixes)";
+	const char* const upscalerVariant = "DLSS 310.9.1 / FSR 3 (brodrigz 0.7)";
 #else
 	const char* const binaryVariant = "DX11";
-	const char* const upscalerVariant = "DLSS 310.9.1 / FSR 3 (brodrigz 0.5 + 0.6.3 fixes)";
+	const char* const upscalerVariant = "DLSS 310.9.1 / FSR 3 (brodrigz 0.7)";
 #endif
 	Msg("[PBR-Test] %s build of %s; upscaler: %s", binaryVariant, __DATE__, upscalerVariant);
 

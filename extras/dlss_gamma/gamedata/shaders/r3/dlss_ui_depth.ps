@@ -1,0 +1,25 @@
+// Native-resolution depth for HUD screens drawn AFTER temporal reconstruction.
+// Jitter is in render pixels (+X right, +Y down). Sample the corresponding
+// jittered scene pixel; filtering depth would invent surfaces at silhouettes.
+Texture2D<float> s_scene_depth;
+float4 dlss_ui_depth_params; // render/display xy, current raster jitter zw
+float4 dlss_ui_depth_lens;   // x > 0: depth for 3D scope lenses
+
+float main(float4 position : SV_Position) : SV_Depth
+{
+    uint width, height;
+    s_scene_depth.GetDimensions(width, height);
+    const int2 last = int2(width, height) - 1;
+    int2 pixel = int2(floor(position.xy * dlss_ui_depth_params.xy + dlss_ui_depth_params.zw));
+    float depth = s_scene_depth.Load(int3(clamp(pixel, int2(0, 0), last), 0));
+    // The upscaler blends the scope body's rim with the unmagnified scene behind
+    // it, since the lens is not in the scene. Take the farthest depth around the
+    // pixel so the lens covers that strip, about one render pixel wide.
+    if (dlss_ui_depth_lens.x > 0)
+    {
+        [unroll] for (int y = -1; y <= 1; ++y)
+        [unroll] for (int x = -1; x <= 1; ++x)
+            depth = max(depth, s_scene_depth.Load(int3(clamp(pixel + int2(x, y), int2(0, 0), last), 0)));
+    }
+    return depth;
+}
