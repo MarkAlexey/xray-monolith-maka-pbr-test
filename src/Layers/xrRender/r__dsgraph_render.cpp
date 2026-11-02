@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include <mutex>
 
 #include "../../xrEngine/render.h"
 #include "../../xrEngine/irenderable.h"
@@ -206,32 +207,40 @@ struct PrevWorldXform
 	u32 frame;
 };
 static xr_unordered_map<const Fmatrix*, PrevWorldXform> g_prev_world_xforms;
+// Sun shadow cascades render the graph from worker threads in parallel
+static std::mutex g_prev_world_xforms_lock;
 
 static void set_dynamic_world_prev(const Fmatrix* M)
 {
 	if (!RImplementation.o.ssfx_motionvectors)
 		return;
 
-	const size_t count = g_prev_world_xforms.size();
-	PrevWorldXform& X = g_prev_world_xforms[M];
-	if (g_prev_world_xforms.size() != count)
+	Fmatrix prev;
 	{
-		X.prev = *M;
-		X.frame = Device.dwFrame;
+		std::lock_guard<std::mutex> lock(g_prev_world_xforms_lock);
+		const size_t count = g_prev_world_xforms.size();
+		PrevWorldXform& X = g_prev_world_xforms[M];
+		if (g_prev_world_xforms.size() != count)
+		{
+			X.prev = *M;
+			X.frame = Device.dwFrame;
+		}
+		else if (X.frame != Device.dwFrame)
+		{
+			// Not drawn last frame: no usable history, so assume no object motion
+			X.prev = (X.frame + 1 == Device.dwFrame) ? X.last : *M;
+			X.frame = Device.dwFrame;
+		}
+		X.last = *M;
+		prev = X.prev;
 	}
-	else if (X.frame != Device.dwFrame)
-	{
-		// Not drawn last frame: no usable history, so assume no object motion
-		X.prev = (X.frame + 1 == Device.dwFrame) ? X.last : *M;
-		X.frame = Device.dwFrame;
-	}
-	X.last = *M;
 
-	RCache.set_xform_world_prev(X.prev);
+	RCache.set_xform_world_prev(prev);
 }
 
 static void prune_dynamic_world_prev()
 {
+	std::lock_guard<std::mutex> lock(g_prev_world_xforms_lock);
 	static u32 last_prune = 0;
 	if (Device.dwFrame - last_prune < 600)
 		return;
