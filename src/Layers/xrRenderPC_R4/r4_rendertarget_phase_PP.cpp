@@ -232,23 +232,112 @@ void CRenderTarget::phase_dlss_scope(float jitterX, float jitterY)
 	RCache.InvalidateTextures();
 }
 
-void CRenderTarget::phase_dlss_postprocess()
+void CRenderTarget::dlss_post_twin(ref_rt& scene, float divisor, int resample)
+{
+	if (!scene) return;
+	string64 name;
+	xr_sprintf(name, "$user$dlss_display_%u", u32(dlss_post_twins.size()));
+	DlssPostTwin twin{&scene, {}, resample};
+	twin.display.create(name, u32(float(Device.dwWidth) / divisor), u32(float(Device.dwHeight) / divisor), scene->fmt);
+	dlss_post_twins.push_back(twin);
+}
+
+bool CRenderTarget::DlssPostAfterUpscale() const
+{
+	// Frames that are not reconstructed (scope views) keep the render-size chain.
+	return !dlss_post_twins.empty() && dlss::Active();
+}
+
+// Reconstruct the scene before sunshafts, fog scattering, motion blur, bloom,
+// DOF and the LUT. They then run at display resolution and stay out of the
+// upscaler's history, so they are no longer reprojected or smeared by it.
+void CRenderTarget::dlss_post_upscale()
 {
     // PiP scope viewport: its combine runs mid-frame at its own resolution; the main scene is still
     // open (inScene) and is evaluated/closed by the main combine that follows
     if (dlss::ScopePass()) return;
 #ifdef XR_DX12_BRIDGE
-    fg::CaptureScene();
+	fg::CaptureScene();
 #endif
-    if (!dlss::Configured())
-    {
-        dlss::EndScene();
-        return;
-    }
-    PROF_EVENT("Render.Upscaler.ResolveAndOverlays");
-	const auto sceneJitter = dlss::RasterJitter();
-	const bool dlssOutput = dlss::Evaluate(rt_Color->pSurface, rt_ssfx_motion_vectors->pSurface, reactive_texture());
+	if (!dlss::Configured())
+	{
+		dlss::EndScene();
+		return;
+	}
+	PROF_EVENT("Render.Upscaler.ResolveAndOverlays");
+	const auto jitter = dlss::RasterJitter();
+	dlss_post_jitter.set(jitter.x, jitter.y);
+	dlss_post_output = dlss::Evaluate(rt_Generic_0->pSurface, rt_ssfx_motion_vectors->pSurface, reactive_texture());
 	dlss::EndScene();
+	if (!reported_post_chain)
+	{
+		Msg("[Upscaler] Post-processing drawn after reconstruction: native=%ux%u, scene=%ux%u",
+			Device.dwWidth, Device.dwHeight, dlss::RenderWidth(), dlss::RenderHeight());
+		reported_post_chain = true;
+	}
+
+	const float w = float(Device.dwWidth), h = float(Device.dwHeight);
+	u32 offset;
+	FVF::TL* quad = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, offset);
+	quad[0].set(0, h, EPS_S, 1, 0xffffffff, 0, 1);
+	quad[1].set(0, 0, EPS_S, 1, 0xffffffff, 0, 0);
+	quad[2].set(w, h, EPS_S, 1, 0xffffffff, 1, 1);
+	quad[3].set(w, 0, EPS_S, 1, 0xffffffff, 1, 0);
+	RCache.Vertex.Unlock(4, g_combine->vb_stride);
+
+	// CAS stays fused into the resolve draw, ahead of bloom, DOF and the LUT.
+	const bool sharpen = dlss_post_output && ps_r_dlss_sharpness > 0.0f;
+	u_setrt(dlss_post_twins[0].display, nullptr, nullptr, nullptr);
+	RImplementation.rmNormal();
+	RCache.set_CullMode(CULL_NONE);
+	RCache.set_Stencil(FALSE);
+	RCache.set_ColorWriteEnable();
+	RCache.set_Element(s_dlss_copy->E[dlss_post_output ? (sharpen ? 2 : 0) : 4]);
+	if (sharpen) RCache.set_c("dlss_sharpening", ps_r_dlss_sharpness, 0.f, 0.f, 0.f);
+	RCache.set_Geometry(g_combine);
+	RCache.Render(D3DPT_TRIANGLELIST, offset, 0, 4, 0, 2);
+
+	for (DlssPostTwin& twin : dlss_post_twins)
+	{
+		if (twin.resample < 0) continue;
+		u_setrt(twin.display, nullptr, nullptr, nullptr);
+		RCache.set_Element(s_dlss_scope_copy->E[twin.resample]);
+		RCache.set_c("dlss_scope_copy_params", float(dlss::RenderWidth()) / w,
+			float(dlss::RenderHeight()) / h, jitter.x, jitter.y);
+		RCache.set_Geometry(g_combine);
+		RCache.Render(D3DPT_TRIANGLELIST, offset, 0, 4, 0, 2);
+	}
+
+	for (DlssPostTwin& twin : dlss_post_twins)
+		(*twin.scene)->swap_storage(*twin.display);
+	dlss_post_swapped = true;
+	RCache.InvalidateTextures();
+}
+
+void CRenderTarget::dlss_post_restore()
+{
+	if (!dlss_post_swapped) return;
+	for (DlssPostTwin& twin : dlss_post_twins)
+		(*twin.scene)->swap_storage(*twin.display);
+	dlss_post_swapped = false;
+	RCache.InvalidateTextures();
+}
+
+void CRenderTarget::phase_dlss_postprocess()
+{
+	// With the post chain after reconstruction, the scene targets hold its display-size result.
+	const bool postAfterUpscale = dlss_post_swapped;
+	dlss::Offset sceneJitter{dlss_post_jitter.x, dlss_post_jitter.y};
+	bool dlssOutput = dlss_post_output;
+	if (!postAfterUpscale)
+	{
+#ifdef XR_DX12_BRIDGE
+		fg::CaptureScene();
+#endif
+		sceneJitter = dlss::RasterJitter();
+		dlssOutput = dlss::Evaluate(rt_Color->pSurface, rt_ssfx_motion_vectors->pSurface);
+		dlss::EndScene();
+	}
 	if (!dlss::Configured()) return;
 
 	// Separate display-resolution overlay buffers. Never feed screen-locked
@@ -268,16 +357,20 @@ void CRenderTarget::phase_dlss_postprocess()
 	RCache.Vertex.Unlock(4, g_combine->vb_stride);
 	// Fuse optional CAS into the existing resolve draw: no extra target or copy.
 	// Zero retains the original copy shader; fallback/scope frames are unsharpened.
-	const bool sharpen = dlssOutput && ps_r_dlss_sharpness > 0.0f;
-	// r_upscaler_debug: 1 shows the upscaler's input, 2 its motion vectors. The upscaler still
-	// evaluates, so its history stays valid when the view is switched off. Element 3 needs
-	// dlss_debug_mv.ps; without it (older shader patch) the view falls back to the input.
+	// After an earlier reconstruction this only copies the post chain's result.
+	const bool sharpen = !postAfterUpscale && dlssOutput && ps_r_dlss_sharpness > 0.0f;
+	// r_upscaler_debug: 1 shows the upscaler's input, 2 its motion vectors. DLSS
+	// still evaluates, so its history stays valid when the view is switched off.
 	const bool mv_view = ps_r_upscaler_debug == 2 && s_dlss_copy->E[3];
-	const u32 element = mv_view ? 3 : ps_r_upscaler_debug ? 1 : dlssOutput ? (sharpen ? 2 : 0) : 1;
+	const u32 element = mv_view ? 3 : ps_r_upscaler_debug ? (postAfterUpscale ? 4 : 1) :
+		postAfterUpscale ? 4 : dlssOutput ? (sharpen ? 2 : 0) : 1;
+	// The debug views read the render-size scene targets.
+	if (ps_r_upscaler_debug == 1 || ps_r_upscaler_debug == 2) dlss_post_restore();
 	RCache.set_Element(s_dlss_copy->E[element]);
 	if (element == 2) RCache.set_c("dlss_sharpening", ps_r_dlss_sharpness, 0.f, 0.f, 0.f);
 	RCache.set_Geometry(g_combine);
 	RCache.Render(D3DPT_TRIANGLELIST, offset, 0, 4, 0, 2);
+	dlss_post_restore();
 
 	// 3D scope lenses magnify the frame around them. In the scene the zoom also
 	// magnified the jitter and was reconstructed with the world's motion vectors.

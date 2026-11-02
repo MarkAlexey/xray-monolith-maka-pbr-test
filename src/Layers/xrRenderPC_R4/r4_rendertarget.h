@@ -555,9 +555,23 @@ public:
 	ref_texture t_dlss_scene_depth;
 	bool reported_native_ui = false; // One diagnostic per target lifetime.
 	bool reported_native_scope = false;
+	bool reported_post_chain = false;
 	ref_rt rt_dlss_post_source;
 	ref_rt rt_dlss_post_color;
 	ref_texture t_dlss_output;
+	// Post chain after reconstruction: each scene target the chain uses has a
+	// display-size twin. Their storage is swapped for the chain, so the phases
+	// and shaders stay unchanged. Empty without the scope copy shader or with MSAA.
+	struct DlssPostTwin
+	{
+		ref_rt* scene;
+		ref_rt display;
+		int resample; // dlss_scope_copy element for inputs read by pixel, else -1
+	};
+	xr_vector<DlssPostTwin> dlss_post_twins;
+	bool dlss_post_swapped = false;
+	bool dlss_post_output = false; // Reconstruction succeeded this frame.
+	Fvector2 dlss_post_jitter{};
 	ref_shader s_postprocess_msaa;
 	ref_geom g_postprocess;
 	ref_shader s_menu;
@@ -806,6 +820,10 @@ public:
 	void phase_combine_volumetric();
 	void phase_pp();
 	void phase_dlss_postprocess();
+	void dlss_post_twin(ref_rt& scene, float divisor = 1.f, int resample = -1);
+	bool DlssPostAfterUpscale() const;
+	void dlss_post_upscale();
+	void dlss_post_restore();
 	ref_rt& PostprocessColor();
 	ref_rt& PostprocessSource();
 

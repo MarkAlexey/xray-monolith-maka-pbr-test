@@ -649,6 +649,7 @@ void CRenderTarget::phase_combine()
 				phase_combine_volumetric();
 		}
 	}
+	const bool postAfterUpscale = DlssPostAfterUpscale();
 
 	// Perform blooming filter and distortion if needed
 	RCache.set_Stencil(FALSE);
@@ -724,8 +725,14 @@ void CRenderTarget::phase_combine()
 	   */
 	RCache.set_Stencil(FALSE);
 
-
-
+	// With an upscaler, reconstruct here: the rest of the post chain runs at display resolution.
+	if (postAfterUpscale)
+	{
+		// Only scene passes read the previous positions: keep them render-sized.
+		if (ssfx_PrevPos_Requiered)
+			HW.pContext->CopyResource(rt_ssfx_prevPos->pTexture->surface_get(), rt_Position->pTexture->surface_get());
+		dlss_post_upscale();
+	}
 
 	if (!_menu_pp)
 	{
@@ -878,7 +885,7 @@ void CRenderTarget::phase_combine()
 	}
 
     //SMAA
-	if (ps_smaa_quality && !dlss::Active() && !svp_dlss_skip_aa) // pip skip on the DLSS SVP pass (eval reconstructs)
+	if (ps_smaa_quality && !postAfterUpscale && !dlss::Active() && !svp_dlss_skip_aa)
 	{
         //PIX_EVENT(SMAA);
         phase_smaa();
@@ -906,7 +913,7 @@ void CRenderTarget::phase_combine()
 		RImplementation.GMBase.RGraph.mapScopeHUDOverlay.clear();
 	}
 
-	if (ssfx_PrevPos_Requiered)
+	if (ssfx_PrevPos_Requiered && !postAfterUpscale)
 	{
 		svp_copy_begin(SVP_CP_HIST, rt_copy_bytes(rt_ssfx_prevPos));
 		HW.pContext->CopyResource(rt_ssfx_prevPos->pTexture->surface_get(), rt_Position->pTexture->surface_get());
