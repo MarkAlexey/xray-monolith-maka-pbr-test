@@ -1,0 +1,11 @@
+#include "common.h"
+#include "dlss_cas.h"
+#include "dlss_hdr.h"
+
+// DLSS's linear HDR output back to display values. CAS (strength 0 returns the
+// input unchanged) runs on the HDR values, as it does without HDR input.
+float4 main(p_screen I) : SV_Target
+{
+    float4 c = DlssCas(I.tc0);
+    return float4(saturate(DlssHdrToSrgb(DlssHdrCompress(max(c.rgb, 0.0)))), c.a);
+}

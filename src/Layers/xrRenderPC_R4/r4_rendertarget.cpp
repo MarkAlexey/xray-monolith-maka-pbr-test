@@ -118,6 +118,26 @@ public:
     }
 };
 
+class CBlender_dlss_hdr : public IBlender
+{
+public:
+    CBlender_dlss_hdr() { description.CLS = 0; }
+    LPCSTR getComment() override { return "DLSS HDR input encode / resolve"; }
+    BOOL canBeDetailed() override { return FALSE; }
+    BOOL canBeLMAPped() override { return FALSE; }
+    void Compile(CBlender_Compile& C) override
+    {
+        IBlender::Compile(C);
+        if (C.iElement > 1) return;
+        // 0: the finished scene to linear HDR; 1: the reconstruction back, with optional CAS
+        C.r_Pass("stub_screen_space", C.iElement == 0 ? "dlss_hdr_encode" : "dlss_hdr_decode", FALSE, FALSE, FALSE);
+        C.r_dx10Texture("s_image", C.iElement == 0 ? r2_RT_generic0 : "$user$dlss_output");
+        C.r_dx10Sampler("smp_nofilter");
+        C.r_dx10Sampler("smp_rtlinear");
+        C.r_End();
+    }
+};
+
 class CBlender_dlss_ui_depth : public IBlender
 {
 public:
@@ -1712,6 +1732,23 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 			dlss_post_twin(rt_ssfx_bloom_tmp32, 32.f);
 			dlss_post_twin(rt_ssfx_bloom_tmp32_2, 32.f);
 			dlss_post_twin(rt_ssfx_bloom_tmp64, 64.f);
+			if (dlss::HdrInput())
+			{
+				CBlender_dlss_hdr hdr;
+				s_dlss_hdr.create(&hdr, "dlss_hdr");
+				rt_dlss_hdr_input.create("$user$dlss_hdr_input", rt_Generic_0->dwWidth, rt_Generic_0->dwHeight,
+					D3DFMT_A16B16G16R16F);
+				// The water/glass copy must match the scene's format to stay valid.
+				for (ref_rt* rt : {&rt_Generic_0, &rt_Generic_temp})
+				{
+					string64 name;
+					xr_sprintf(name, "$user$dlss_hdr_%u", u32(dlss_hdr_twins.size()));
+					DlssPostTwin twin{rt, {}, -1};
+					twin.display.create(name, (*rt)->dwWidth, (*rt)->dwHeight, D3DFMT_A16B16G16R16F);
+					dlss_hdr_twins.push_back(twin);
+				}
+				Msg("[Upscaler] DLSS HDR input: floating-point scene, linear with a reversible highlight curve");
+			}
 		}
 		else
 		{
@@ -1739,6 +1776,7 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 CRenderTarget::~CRenderTarget()
 {
 	dlss_post_restore();
+	dlss_hdr_restore();
 	if (this == RImplementation.TargetMain)
 	{
 		// the upscaler's targets belong to the main target; the PiP SVP target is torn down and

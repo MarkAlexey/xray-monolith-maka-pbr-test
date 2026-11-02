@@ -1,0 +1,9 @@
+#include "common.h"
+#include "dlss_hdr.h"
+
+// The finished scene, in display values, to linear HDR for DLSS.
+float4 main(p_screen I) : SV_Target
+{
+    float4 c = s_image.SampleLevel(smp_nofilter, I.tc0, 0);
+    return float4(DlssHdrExpand(DlssHdrToLinear(saturate(c.rgb))), c.a);
+}

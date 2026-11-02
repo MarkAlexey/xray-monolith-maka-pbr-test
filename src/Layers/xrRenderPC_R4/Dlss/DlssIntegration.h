@@ -13,6 +13,8 @@ void BeginScene();
 void EndScene(bool invalidateHistory = false);
 bool Active();
 bool Configured();
+// DLSS takes linear HDR input on the post-after-upscale path (r_dlss_hdr_input)
+bool HdrInput();
 unsigned RenderWidth();
 unsigned RenderHeight();
 Offset RasterJitter();

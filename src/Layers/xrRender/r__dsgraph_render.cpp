@@ -919,7 +919,8 @@ void CDSGraphManager::r_dsgraph_render_sorted_hud()
 		D3D_TEXTURE2D_DESC dd, sd;
 		dst->GetDesc(&dd);
 		src->GetDesc(&sd);
-		if (dd.Format == sd.Format && dd.SampleDesc.Count == sd.SampleDesc.Count && dd.Width == sd.Width && dd.Height == sd.Height)
+		if (!RImplementation.Target->dlss_hdr_swapped &&
+			dd.Format == sd.Format && dd.SampleDesc.Count == sd.SampleDesc.Count && dd.Width == sd.Width && dd.Height == sd.Height)
 			HW.pContext->CopyResource(dst, src);
 	}
 #endif

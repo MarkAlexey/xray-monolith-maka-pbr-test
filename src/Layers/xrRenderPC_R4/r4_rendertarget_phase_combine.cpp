@@ -200,6 +200,10 @@ void CRenderTarget::phase_combine()
 		}
 	}
 
+	// With HDR upscaler input, the scene is combined into floating-point storage
+	if (DlssPostAfterUpscale())
+		dlss_hdr_begin();
+
 	FLOAT ColorRGBA[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 	// low/hi RTs
 	if (!RImplementation.o.dx10_msaa)

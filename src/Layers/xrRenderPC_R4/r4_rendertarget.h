@@ -573,6 +573,13 @@ public:
 	bool dlss_post_swapped = false;
 	bool dlss_post_output = false; // Reconstruction succeeded this frame.
 	Fvector2 dlss_post_jitter{};
+	// HDR input (dlss::HdrInput): until reconstruction, the scene and its copy for
+	// water and glass are held in floating point. DLSS receives them linear, with
+	// highlights expanded by a reversible curve that the resolve undoes.
+	xr_vector<DlssPostTwin> dlss_hdr_twins;
+	bool dlss_hdr_swapped = false;
+	ref_rt rt_dlss_hdr_input;
+	ref_shader s_dlss_hdr;
 	ref_shader s_postprocess_msaa;
 	ref_geom g_postprocess;
 	ref_shader s_menu;
@@ -826,6 +833,8 @@ public:
 	void dlss_post_upscale();
 	void dlss_post_restore();
 	void dlss_post_effects();
+	void dlss_hdr_begin();
+	void dlss_hdr_restore();
 	ref_rt& PostprocessColor();
 	ref_rt& PostprocessSource();
 

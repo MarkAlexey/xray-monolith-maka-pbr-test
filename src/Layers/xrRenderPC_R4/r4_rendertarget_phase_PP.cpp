@@ -267,7 +267,29 @@ void CRenderTarget::dlss_post_upscale()
 	PROF_EVENT("Render.Upscaler.ResolveAndOverlays");
 	const auto jitter = dlss::RasterJitter();
 	dlss_post_jitter.set(jitter.x, jitter.y);
-	dlss_post_output = dlss::Evaluate(rt_Generic_0->pSurface, rt_ssfx_motion_vectors->pSurface, reactive_texture());
+	ID3DTexture2D* color = rt_Generic_0->pSurface;
+	if (dlss_hdr_swapped)
+	{
+		// The finished scene, still in display values, to linear HDR at render size.
+		const float rw = float(rt_dlss_hdr_input->dwWidth), rh = float(rt_dlss_hdr_input->dwHeight);
+		u32 offset;
+		FVF::TL* quad = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, offset);
+		quad[0].set(0, rh, EPS_S, 1, 0xffffffff, 0, 1);
+		quad[1].set(0, 0, EPS_S, 1, 0xffffffff, 0, 0);
+		quad[2].set(rw, rh, EPS_S, 1, 0xffffffff, 1, 1);
+		quad[3].set(rw, 0, EPS_S, 1, 0xffffffff, 1, 0);
+		RCache.Vertex.Unlock(4, g_combine->vb_stride);
+		u_setrt(rt_dlss_hdr_input, nullptr, nullptr, nullptr);
+		RImplementation.rmNormal();
+		RCache.set_CullMode(CULL_NONE);
+		RCache.set_Stencil(FALSE);
+		RCache.set_ColorWriteEnable();
+		RCache.set_Element(s_dlss_hdr->E[0]);
+		RCache.set_Geometry(g_combine);
+		RCache.Render(D3DPT_TRIANGLELIST, offset, 0, 4, 0, 2);
+		color = rt_dlss_hdr_input->pSurface;
+	}
+	dlss_post_output = dlss::Evaluate(color, rt_ssfx_motion_vectors->pSurface, reactive_texture());
 	dlss::EndScene();
 	if (!reported_post_chain)
 	{
@@ -292,8 +314,17 @@ void CRenderTarget::dlss_post_upscale()
 	RCache.set_CullMode(CULL_NONE);
 	RCache.set_Stencil(FALSE);
 	RCache.set_ColorWriteEnable();
-	RCache.set_Element(s_dlss_copy->E[dlss_post_output ? (sharpen ? 2 : 0) : 4]);
-	if (sharpen) RCache.set_c("dlss_sharpening", ps_r_dlss_sharpness, 0.f, 0.f, 0.f);
+	if (dlss_post_output && dlss_hdr_swapped)
+	{
+		// Undo the curve and return to display values; CAS is applied in HDR first.
+		RCache.set_Element(s_dlss_hdr->E[1]);
+		RCache.set_c("dlss_sharpening", sharpen ? ps_r_dlss_sharpness : 0.f, 0.f, 0.f, 0.f);
+	}
+	else
+	{
+		RCache.set_Element(s_dlss_copy->E[dlss_post_output ? (sharpen ? 2 : 0) : 4]);
+		if (sharpen) RCache.set_c("dlss_sharpening", ps_r_dlss_sharpness, 0.f, 0.f, 0.f);
+	}
 	RCache.set_Geometry(g_combine);
 	RCache.Render(D3DPT_TRIANGLELIST, offset, 0, 4, 0, 2);
 
@@ -320,6 +351,26 @@ void CRenderTarget::dlss_post_restore()
 	for (DlssPostTwin& twin : dlss_post_twins)
 		(*twin.scene)->swap_storage(*twin.display);
 	dlss_post_swapped = false;
+	RCache.InvalidateTextures();
+}
+
+// Before the scene is combined: until reconstruction it is kept in floating point.
+// Restored after the post chain's twins, in reverse order.
+void CRenderTarget::dlss_hdr_begin()
+{
+	if (dlss_hdr_twins.empty() || dlss_hdr_swapped) return;
+	for (DlssPostTwin& twin : dlss_hdr_twins)
+		(*twin.scene)->swap_storage(*twin.display);
+	dlss_hdr_swapped = true;
+	RCache.InvalidateTextures();
+}
+
+void CRenderTarget::dlss_hdr_restore()
+{
+	if (!dlss_hdr_swapped) return;
+	for (DlssPostTwin& twin : dlss_hdr_twins)
+		(*twin.scene)->swap_storage(*twin.display);
+	dlss_hdr_swapped = false;
 	RCache.InvalidateTextures();
 }
 
@@ -394,6 +445,7 @@ void CRenderTarget::phase_dlss_postprocess()
 	RCache.set_Geometry(g_combine);
 	RCache.Render(D3DPT_TRIANGLELIST, offset, 0, 4, 0, 2);
 	dlss_post_restore();
+	dlss_hdr_restore();
 
 	// 3D scope lenses magnify the frame around them. In the scene the zoom also
 	// magnified the jitter and was reconstructed with the world's motion vectors.
