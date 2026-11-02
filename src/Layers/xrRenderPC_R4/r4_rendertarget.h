@@ -739,7 +739,6 @@ public:
 	void phase_ssfx_water_waves(); // Water Waves
 	void phase_ssfx_ao(); // AO
 	void phase_ssfx_il(); // IL
-	void set_viewport_size(ID3DDeviceContext* dev, float w, float h);
 	// HDR10
 	void phase_hdr10_bloom();
 	void phase_hdr10_lens_flare();

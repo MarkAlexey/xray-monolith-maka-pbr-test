@@ -68,21 +68,6 @@ bool svp_lens_fit(const std::vector<svp_v3>& candidates, const svp_v3& axis_seed
 	return out.ok;
 }
 
-#if defined(USE_DX10) || defined(USE_DX11)
-
-// lens naming the modeler committed, case-insensitive substring of lens or glass
-static bool svp_name_is_lens(LPCSTR n)
-{
-	if (!n)
-		return false;
-	string256 low;
-	xr_strcpy(low, n);
-	xr_strlwr(low);
-	return (strstr(low, "lens") != nullptr) || (strstr(low, "glass") != nullptr);
-}
-
-static inline svp_v3 svp_from(const Fvector& v) { return { v.x, v.y, v.z }; }
-
 // append each dedup vertex as its bind-pose model position with the global dominant bone id
 // the stored bone id is a global skeleton id, no palette remap (skinning indexes LL_GetTransform_R by it)
 void CSkeletonX::SVP_GatherVerts(xr_vector<Fvector>& positions, xr_vector<u16>& bones)
@@ -135,6 +120,21 @@ void CSkeletonX::SVP_GatherVerts(xr_vector<Fvector>& positions, xr_vector<u16>& 
 		}
 	}
 }
+
+#if defined(USE_DX10) || defined(USE_DX11)
+
+// lens naming the modeler committed, case-insensitive substring of lens or glass
+static bool svp_name_is_lens(LPCSTR n)
+{
+	if (!n)
+		return false;
+	string256 low;
+	xr_strcpy(low, n);
+	xr_strlwr(low);
+	return (strstr(low, "lens") != nullptr) || (strstr(low, "glass") != nullptr);
+}
+
+static inline svp_v3 svp_from(const Fvector& v) { return { v.x, v.y, v.z }; }
 
 #endif // USE_DX10 || USE_DX11
 

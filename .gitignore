@@ -65,3 +65,5 @@ __pycache__/
 
 # the vector reticle command-line tool (PiP), built by tools/reticle_vector/build-linux.sh
 tools/reticle_vector/svg_to_vector
+*.db0
+*.log
