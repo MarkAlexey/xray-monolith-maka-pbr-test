@@ -271,7 +271,7 @@ void CRenderTarget::dlss_post_upscale()
 	dlss::EndScene();
 	if (!reported_post_chain)
 	{
-		Msg("[Upscaler] Post-processing drawn after reconstruction: native=%ux%u, scene=%ux%u",
+		Msg("[Upscaler] Post-processing and volumetric lights drawn after reconstruction: native=%ux%u, scene=%ux%u",
 			Device.dwWidth, Device.dwHeight, dlss::RenderWidth(), dlss::RenderHeight());
 		reported_post_chain = true;
 	}

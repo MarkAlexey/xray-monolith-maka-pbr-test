@@ -636,20 +636,13 @@ void CRenderTarget::phase_combine()
 	//	Igor: for volumetric lights
 	//	combine light volume here
 	// pip r__svp_skip_volumetric drops god rays on the scope pass (subtle at magnification)
-	if (!(svp_pass && ps_r__svp_skip_volumetric))
-	{
-		if (RImplementation.o.ssfx_volumetric)
-		{
-			if (m_bHasActiveVolumetric || m_bHasActiveVolumetric_spot)
-				phase_combine_volumetric();
-		}
-		else
-		{
-			if (m_bHasActiveVolumetric)
-				phase_combine_volumetric();
-		}
-	}
+	const bool volumetric = !(svp_pass && ps_r__svp_skip_volumetric) &&
+		(RImplementation.o.ssfx_volumetric ?
+		(m_bHasActiveVolumetric || m_bHasActiveVolumetric_spot) : m_bHasActiveVolumetric);
+	// With the post chain after reconstruction, the volumetric lights are added after it too
 	const bool postAfterUpscale = DlssPostAfterUpscale();
+	if (volumetric && !postAfterUpscale)
+		phase_combine_volumetric();
 
 	// Perform blooming filter and distortion if needed
 	RCache.set_Stencil(FALSE);
@@ -732,6 +725,12 @@ void CRenderTarget::phase_combine()
 		if (ssfx_PrevPos_Requiered)
 			HW.pContext->CopyResource(rt_ssfx_prevPos->pTexture->surface_get(), rt_Position->pTexture->surface_get());
 		dlss_post_upscale();
+		// Beams and the volumetric sun change on their own but carry the motion
+		// of the scene behind them; in the upscaler's history they became grids.
+		// A distortion mask now fills rt_Generic_1; it used to overwrite their
+		// bloom overflow there, so skip that output.
+		if (volumetric)
+			phase_combine_volumetric(!bDistort);
 	}
 
 	if (!_menu_pp)
@@ -1223,7 +1222,7 @@ void CRenderTarget::phase_wallmarks()
 	RCache.set_ColorWriteEnable(D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE);
 }
 
-void CRenderTarget::phase_combine_volumetric()
+void CRenderTarget::phase_combine_volumetric(bool high)
 {
 	PIX_EVENT(phase_combine_volumetric);
 	u32 Offset = 0;
@@ -1233,7 +1232,7 @@ void CRenderTarget::phase_combine_volumetric()
 
 	//u_setrt(rt_Generic_0,0,0,HW.pBaseZB );			// LDR RT
 	if (!RImplementation.o.dx10_msaa)
-		u_setrt(rt_Generic_0, rt_Generic_1, 0, dlss::SceneDepth());
+		u_setrt(rt_Generic_0, high ? rt_Generic_1 : ref_rt(), 0, dlss::SceneDepth());
 	else
 		u_setrt(rt_Generic_0_r, rt_Generic_1_r, 0, RImplementation.Target->rt_MSAADepth->pZRT);
 	//	Sets limits to both render targets

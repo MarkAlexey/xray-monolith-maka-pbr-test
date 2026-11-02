@@ -1715,7 +1715,7 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 		}
 		else
 		{
-			Msg("! [Upscaler] %s: post-processing and 3D scope lenses stay before reconstruction",
+			Msg("! [Upscaler] %s: post-processing, volumetric lights and 3D scope lenses stay before reconstruction",
 				s_dlss_scope_copy ? "MSAA is on" : "shaders\\r3\\dlss_scope_copy.ps not found (outdated compatibility patch?)");
 		}
 	}

@@ -817,7 +817,7 @@ public:
 	void phase_bloom();
 	void phase_luminance();
 	void phase_combine();
-	void phase_combine_volumetric();
+	void phase_combine_volumetric(bool high = true); // high: also write the bloom overflow to rt_Generic_1
 	void phase_pp();
 	void phase_dlss_postprocess();
 	void dlss_post_twin(ref_rt& scene, float divisor = 1.f, int resample = -1);
