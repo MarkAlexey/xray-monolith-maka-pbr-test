@@ -535,9 +535,10 @@ void CRender::create()
 
 	// DLSS HDR input needs the post chain after reconstruction and the patch's shaders.
 	// The console options are read when DLSS is created, so vid_restart applies them.
-	string_path hdrShader, displayCopyShader;
+	string_path hdrShader, hdrDecodeShader, displayCopyShader;
 	o.dlss_hdr_input = !o.dx11_hdr10 && !o.dx10_msaa &&
 		FS.exist(hdrShader, "$game_shaders$", "r3\\dlss_hdr_encode", ".ps") &&
+		FS.exist(hdrDecodeShader, "$game_shaders$", "r3\\dlss_hdr_decode", ".ps") &&
 		FS.exist(displayCopyShader, "$game_shaders$", "r3\\dlss_display_copy", ".ps");
 
 	o.dx10_msaa_opt = ps_r2_ls_flags.test(R3FLAG_MSAA_OPT);

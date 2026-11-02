@@ -245,7 +245,7 @@ void CRenderTarget::dlss_post_twin(ref_rt& scene, float divisor, int resample)
 bool CRenderTarget::DlssPostAfterUpscale() const
 {
 	// Frames that are not reconstructed (scope views) keep the render-size chain.
-	return !dlss_post_twins.empty() && dlss::Active();
+	return ps_r_upscaler_post_after && !dlss_post_twins.empty() && dlss::Active();
 }
 
 // Reconstruct the scene before sunshafts, fog scattering, motion blur, bloom,
