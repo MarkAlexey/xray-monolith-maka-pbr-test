@@ -556,6 +556,7 @@ public:
 	bool reported_native_ui = false; // One diagnostic per target lifetime.
 	bool reported_native_scope = false;
 	bool reported_post_chain = false;
+	bool reported_post_effects = false;
 	ref_rt rt_dlss_post_source;
 	ref_rt rt_dlss_post_color;
 	ref_texture t_dlss_output;
@@ -824,6 +825,7 @@ public:
 	bool DlssPostAfterUpscale() const;
 	void dlss_post_upscale();
 	void dlss_post_restore();
+	void dlss_post_effects();
 	ref_rt& PostprocessColor();
 	ref_rt& PostprocessSource();
 

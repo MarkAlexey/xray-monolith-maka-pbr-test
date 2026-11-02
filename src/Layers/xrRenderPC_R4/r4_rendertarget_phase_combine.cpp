@@ -725,6 +725,7 @@ void CRenderTarget::phase_combine()
 		if (ssfx_PrevPos_Requiered)
 			HW.pContext->CopyResource(rt_ssfx_prevPos->pTexture->surface_get(), rt_Position->pTexture->surface_get());
 		dlss_post_upscale();
+		dlss_post_effects();
 		// Beams and the volumetric sun change on their own but carry the motion
 		// of the scene behind them; in the upscaler's history they became grids.
 		// A distortion mask now fills rt_Generic_1; it used to overwrite their

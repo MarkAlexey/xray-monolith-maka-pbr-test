@@ -323,6 +323,29 @@ void CRenderTarget::dlss_post_restore()
 	RCache.InvalidateTextures();
 }
 
+// Particles and laser beams held out of the scene, over the reconstructed frame.
+// Soft particles and laser dots read the display-size position copy; the depth
+// test uses the scene depth reprojected to display resolution.
+void CRenderTarget::dlss_post_effects()
+{
+	const auto& graph = RImplementation.GMBase.RGraph;
+	if (graph.mapDlssEffects.empty() && graph.mapDlssHudEffects.empty()) return;
+	if (!reported_post_effects)
+	{
+		Msg("[Upscaler] Particles and laser beams drawn after reconstruction: native=%ux%u, scene=%ux%u",
+			Device.dwWidth, Device.dwHeight, dlss::RenderWidth(), dlss::RenderHeight());
+		reported_post_effects = true;
+	}
+
+	phase_dlss_native_depth(dlss_post_jitter.x, dlss_post_jitter.y);
+	u_setrt(rt_Generic_0, nullptr, nullptr, HW.pBaseZB);
+	RImplementation.rmNormal();
+	RCache.set_CullMode(CULL_CCW);
+	RCache.set_Stencil(FALSE);
+	RCache.set_ColorWriteEnable();
+	RImplementation.GMBase.r_dsgraph_render_dlss_effects();
+}
+
 void CRenderTarget::phase_dlss_postprocess()
 {
 	// With the post chain after reconstruction, the scene targets hold its display-size result.

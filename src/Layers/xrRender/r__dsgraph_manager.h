@@ -176,6 +176,8 @@ public:
 #if RENDER == R_R4
 	void r_dsgraph_extract_native_ui();
 	void r_dsgraph_render_native_ui(bool renderHudUi);
+	void r_dsgraph_extract_dlss_effects();
+	void r_dsgraph_render_dlss_effects();
 #endif
 	void r_dsgraph_render_hud(bool _clear = true);
 	void r_dsgraph_render_physical_glass(bool deferred = false);
