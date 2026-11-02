@@ -1707,7 +1707,11 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 			CBlender_dlss_display_copy displayCopy;
 			s_dlss_display_copy.create(&displayCopy, "dlss_display_copy");
 		}
-		if (s_dlss_display_copy && !RImplementation.o.dx10_msaa)
+		if (!ps_r_upscaler_post_after)
+		{
+			Msg("[Upscaler] r_upscaler_post_after is off: post-processing, volumetric lights, particles and laser beams stay before reconstruction");
+		}
+		else if (s_dlss_display_copy && !RImplementation.o.dx10_msaa)
 		{
 			// Twins keep their scene target's format: the post shaders rely on the
 			// UNORM targets' [0,1] clamp. The reconstructed scene comes first; the

@@ -255,7 +255,7 @@ void InitializeTargets()
                 "Select a valid display resolution and DLSS quality, then Apply again.");
             return;
         }
-        hdrInput = ps_r_dlss_hdr_input && RImplementation.o.dlss_hdr_input;
+        hdrInput = ps_r_dlss_hdr_input && ps_r_upscaler_post_after && RImplementation.o.dlss_hdr_input;
         if (!backend.Create(quality, size, display, RImplementation.o.dx11_hdr10 || hdrInput, static_cast<Preset>(ps_r_dlss_preset)))
         {
             ActivationFailed(BackendReason("DLSS feature creation failed."),

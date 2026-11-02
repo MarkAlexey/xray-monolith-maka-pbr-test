@@ -562,7 +562,8 @@ public:
 	ref_texture t_dlss_output;
 	// Post chain after reconstruction: each scene target the chain uses has a
 	// display-size twin. Their storage is swapped for the chain, so the phases
-	// and shaders stay unchanged. Empty without the display copy shader or with MSAA.
+	// and shaders stay unchanged. Empty without the display copy shader, with MSAA or
+	// with r_upscaler_post_after off.
 	struct DlssPostTwin
 	{
 		ref_rt* scene;
