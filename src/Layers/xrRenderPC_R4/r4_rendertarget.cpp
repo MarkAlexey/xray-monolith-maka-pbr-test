@@ -155,11 +155,11 @@ public:
     }
 };
 
-class CBlender_dlss_scope_copy : public IBlender
+class CBlender_dlss_display_copy : public IBlender
 {
 public:
-    CBlender_dlss_scope_copy() { description.CLS = 0; }
-    LPCSTR getComment() override { return "Display-resolution scope lens inputs"; }
+    CBlender_dlss_display_copy() { description.CLS = 0; }
+    LPCSTR getComment() override { return "Display-resolution copies of scene inputs"; }
     BOOL canBeDetailed() override { return FALSE; }
     BOOL canBeLMAPped() override { return FALSE; }
     void Compile(CBlender_Compile& C) override
@@ -170,7 +170,7 @@ public:
         static constexpr LPCSTR sources[] = {r2_RT_P, r2_RT_heat, r2_RT_ssfx_motion_vectors, r2_RT_generic1,
             r2_RT_ssfx_bloom_emissive};
         if (C.iElement >= int(std::size(sources))) return;
-        C.r_Pass("stub_screen_space", "dlss_scope_copy", FALSE, FALSE, FALSE);
+        C.r_Pass("stub_screen_space", "dlss_display_copy", FALSE, FALSE, FALSE);
         C.r_dx10Texture("s_image", sources[C.iElement]);
         C.r_End();
     }
@@ -1701,13 +1701,13 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 		s_dlss_copy.create(&copy, "dlss_copy");
 		// Optional: older shader patches keep drawing 3D scope lenses and the post
 		// chain before reconstruction.
-		string_path scopeCopy;
-		if (FS.exist(scopeCopy, "$game_shaders$", "r3\\dlss_scope_copy", ".ps"))
+		string_path displayCopyShader;
+		if (FS.exist(displayCopyShader, "$game_shaders$", "r3\\dlss_display_copy", ".ps"))
 		{
-			CBlender_dlss_scope_copy scope;
-			s_dlss_scope_copy.create(&scope, "dlss_scope_copy");
+			CBlender_dlss_display_copy displayCopy;
+			s_dlss_display_copy.create(&displayCopy, "dlss_display_copy");
 		}
-		if (s_dlss_scope_copy && !RImplementation.o.dx10_msaa)
+		if (s_dlss_display_copy && !RImplementation.o.dx10_msaa)
 		{
 			// Twins keep their scene target's format: the post shaders rely on the
 			// UNORM targets' [0,1] clamp. The reconstructed scene comes first; the
@@ -1753,7 +1753,7 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 		else
 		{
 			Msg("! [Upscaler] %s: post-processing, volumetric lights and 3D scope lenses stay before reconstruction",
-				s_dlss_scope_copy ? "MSAA is on" : "shaders\\r3\\dlss_scope_copy.ps not found (outdated compatibility patch?)");
+				s_dlss_display_copy ? "MSAA is on" : "shaders\\r3\\dlss_display_copy.ps not found (outdated compatibility patch?)");
 		}
 	}
 	g_postprocess.create(D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_SPECULAR | D3DFVF_TEX3, RCache.Vertex.Buffer(),

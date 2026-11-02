@@ -129,7 +129,7 @@ ref_rt& CRenderTarget::PostprocessSource()
 
 bool CRenderTarget::ScopeAfterUpscale() const
 {
-	return dlss::Configured() && s_dlss_scope_copy._get() != nullptr;
+	return dlss::Configured() && s_dlss_display_copy._get() != nullptr;
 }
 
 void CRenderTarget::phase_dlss_native_depth(float jitterX, float jitterY, bool lens)
@@ -197,8 +197,8 @@ void CRenderTarget::phase_dlss_scope(float jitterX, float jitterY)
 	{
 		u_setrt(*copies[i], nullptr, nullptr, nullptr);
 		RCache.set_Geometry(g_combine);
-		RCache.set_Element(s_dlss_scope_copy->E[i]);
-		RCache.set_c("dlss_scope_copy_params", float(dlss::RenderWidth()) / fw,
+		RCache.set_Element(s_dlss_display_copy->E[i]);
+		RCache.set_c("dlss_display_copy_params", float(dlss::RenderWidth()) / fw,
 			float(dlss::RenderHeight()) / fh, jitterX, jitterY);
 		RCache.Render(D3DPT_TRIANGLELIST, offset, 0, 4, 0, 2);
 	}
@@ -332,8 +332,8 @@ void CRenderTarget::dlss_post_upscale()
 	{
 		if (twin.resample < 0) continue;
 		u_setrt(twin.display, nullptr, nullptr, nullptr);
-		RCache.set_Element(s_dlss_scope_copy->E[twin.resample]);
-		RCache.set_c("dlss_scope_copy_params", float(dlss::RenderWidth()) / w,
+		RCache.set_Element(s_dlss_display_copy->E[twin.resample]);
+		RCache.set_c("dlss_display_copy_params", float(dlss::RenderWidth()) / w,
 			float(dlss::RenderHeight()) / h, jitter.x, jitter.y);
 		RCache.set_Geometry(g_combine);
 		RCache.Render(D3DPT_TRIANGLELIST, offset, 0, 4, 0, 2);

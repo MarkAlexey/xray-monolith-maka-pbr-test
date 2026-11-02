@@ -548,7 +548,7 @@ public:
 	ref_shader s_dlss_ui_depth;
 	// 3D shader scope lenses drawn after reconstruction; null without the copy shader.
 	// The display-resolution targets are created on the first scoped frame.
-	ref_shader s_dlss_scope_copy;
+	ref_shader s_dlss_display_copy;
 	ref_rt rt_dlss_scope_color;
 	ref_rt rt_dlss_scope_position;
 	ref_rt rt_dlss_scope_heat;
@@ -562,12 +562,12 @@ public:
 	ref_texture t_dlss_output;
 	// Post chain after reconstruction: each scene target the chain uses has a
 	// display-size twin. Their storage is swapped for the chain, so the phases
-	// and shaders stay unchanged. Empty without the scope copy shader or with MSAA.
+	// and shaders stay unchanged. Empty without the display copy shader or with MSAA.
 	struct DlssPostTwin
 	{
 		ref_rt* scene;
 		ref_rt display;
-		int resample; // dlss_scope_copy element for inputs read by pixel, else -1
+		int resample; // dlss_display_copy element for inputs read by pixel, else -1
 	};
 	xr_vector<DlssPostTwin> dlss_post_twins;
 	bool dlss_post_swapped = false;
