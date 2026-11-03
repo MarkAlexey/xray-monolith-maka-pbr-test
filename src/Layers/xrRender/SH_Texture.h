@@ -41,6 +41,9 @@ public:
 
 	void surface_set(ID3DBaseTexture* surf);
 	ID3DBaseTexture* surface_get();
+	// Exchanges surfaces and views with another render target texture, without
+	// creating views. Shaders bound by name then read the other storage.
+	void surface_swap(CTexture& other);
 
 	IC BOOL isUser() { return flags.bUser; }
 	IC u32 get_Width()

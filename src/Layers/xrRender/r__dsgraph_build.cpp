@@ -244,10 +244,23 @@ void CDSGraphManager::r_dsgraph_insert_dynamic(dxRender_Visual *pVisual, Fmatrix
 	}
 #endif
 
+#ifdef USE_DX11
+	// Smoke and other particles change on their own but carry the motion of the
+	// scene behind them; the upscaler accumulated them into grids. With the post
+	// chain after reconstruction, draw them at display resolution with it.
+	// Opaque particles (priority 0) stay in the G-buffer.
+	if (ps_r_upscaler_particles_after && shader_priority == 1 && this == &RImplementation.GMBase &&
+		pVisual->dcast_ParticleCustom() && RImplementation.Target->DlssPostAfterUpscale())
+	{
+		RGraph.mapDlssEffects.emplace_back(distSQ, SSA, val_pObject, pVisual, xform, sh, false);
+		return;
+	}
+#endif
+
 	for (u32 iPass = 0; iPass < sh->passes.size(); ++iPass)
 	{
 		// the most common node
-		
+
 		if (sh->passes[iPass] == nullptr)
 		{
 			continue;

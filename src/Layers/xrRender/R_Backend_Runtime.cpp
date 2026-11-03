@@ -181,6 +181,21 @@ void CBackend::Invalidate()
 #endif
 }
 
+void CBackend::InvalidateTextures()
+{
+	T = NULL;
+#if defined(USE_DX10) || defined(USE_DX11)
+	for (u32 gs_it = 0; gs_it < mtMaxGeometryShaderTextures;) textures_gs[gs_it++] = 0;
+#ifdef USE_DX11
+	for (u32 hs_it = 0; hs_it < mtMaxHullShaderTextures;) textures_hs[hs_it++] = 0;
+	for (u32 ds_it = 0; ds_it < mtMaxDomainShaderTextures;) textures_ds[ds_it++] = 0;
+	for (u32 cs_it = 0; cs_it < mtMaxComputeShaderTextures;) textures_cs[cs_it++] = 0;
+#endif
+#endif	//	USE_DX10
+	for (u32 ps_it = 0; ps_it < mtMaxPixelShaderTextures;) textures_ps[ps_it++] = 0;
+	for (u32 vs_it = 0; vs_it < mtMaxVertexShaderTextures;) textures_vs[vs_it++] = 0;
+}
+
 void CBackend::set_ClipPlanes(u32 _enable, Fplane* _planes /*=NULL */, u32 count/* =0*/)
 {
 #if defined(USE_DX10) || defined(USE_DX11)

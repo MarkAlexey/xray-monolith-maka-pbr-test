@@ -125,6 +125,7 @@ public:
 		u32 forcegloss : 1;
 		u32 forceskinw : 1;
 		
+		u32 dlss_hdr_input : 1; // available; dlss::HdrInput() says whether DLSS uses it
 		float forcegloss_v;
 	} o;
 

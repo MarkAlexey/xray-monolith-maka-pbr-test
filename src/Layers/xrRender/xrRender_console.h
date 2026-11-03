@@ -9,6 +9,16 @@ extern ECORE_API u32 ps_r_fsr3_quality;
 extern ECORE_API u32 ps_r_dlss_preset;
 extern ECORE_API float ps_r_dlss_sharpness;
 extern ECORE_API int ps_r_upscaler_debug;
+extern ECORE_API int ps_r_upscaler_post_after;
+extern ECORE_API int ps_r_upscaler_particles_after;
+enum
+{
+	UPSCALER_SUNSHAFTS_UPSCALED,
+	UPSCALER_SUNSHAFTS_SMOOTHED,
+	UPSCALER_SUNSHAFTS_RAW,
+};
+extern ECORE_API u32 ps_r_upscaler_sunshafts;
+extern ECORE_API int ps_r_dlss_hdr_input;
 extern ECORE_API float ps_ssfx_fog_scattering;
 extern ECORE_API Fvector4 ps_ssfx_motionblur;
 extern ECORE_API Fvector4 ps_ssfx_taa;

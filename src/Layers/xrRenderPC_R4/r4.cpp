@@ -511,6 +511,13 @@ void CRender::create()
 	o.dx10_msaa = !!ps_r3_msaa;
 	o.dx10_msaa_samples = (1 << ps_r3_msaa);
 
+	// DLSS HDR input needs the patch's shaders.
+	// The console options are read when DLSS is created, so vid_restart applies them.
+	string_path hdrShader, displayCopyShader;
+	o.dlss_hdr_input = !o.dx10_msaa && // (no HDR10 output in this tree)
+		FS.exist(hdrShader, "$game_shaders$", "r3\\dlss_hdr_encode", ".ps") &&
+		FS.exist(displayCopyShader, "$game_shaders$", "r3\\dlss_display_copy", ".ps");
+
 	o.dx10_msaa_opt = ps_r2_ls_flags.test(R3FLAG_MSAA_OPT);
 	o.dx10_msaa_opt = o.dx10_msaa_opt && o.dx10_msaa && (HW.FeatureLevel >= D3D_FEATURE_LEVEL_10_1)
 		|| o.dx10_msaa && (HW.FeatureLevel >= D3D_FEATURE_LEVEL_11_0);

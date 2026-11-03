@@ -81,6 +81,8 @@ void CRender::Render()
 	dx10_annotate_frame();
 	dlss::EndScene();
 	GMBase.RGraph.mapHUDNativeUi.clear(); // Never retain packets across views/menu/reset.
+	GMBase.RGraph.mapDlssEffects.clear();
+	GMBase.RGraph.mapDlssHudEffects.clear();
 	GMBase.RGraph.hasNativeHudAttachments = false;
 
 	rmNormal();
@@ -234,6 +236,7 @@ void CRender::Render()
 		Target->phase_scene_begin();
 		GMBase.r_dsgraph_capture_hud();
 		if (dlss::Configured()) GMBase.r_dsgraph_extract_native_ui();
+		if (Target->DlssPostAfterUpscale()) GMBase.r_dsgraph_extract_dlss_effects();
 		GMBase.r_dsgraph_render_hud();
 		GMBase.r_dsgraph_render_lods(true,true);
 		if (Details) Details->Render();
@@ -425,6 +428,9 @@ void CRender::render_forward()
 		GMBase.r_dsgraph_render_static(1); // normal level, secondary priority
 		CParticlesAsync::Wait();
 		GMBase.r_dsgraph_render_dynamic(1);
+		// Effects held for after the upscaler, if this frame is not reconstructed after all
+		if (!Target->DlssPostAfterUpscale())
+			GMBase.r_dsgraph_render_dlss_effects();
 		GMBase.fade_render(); // faded-portals
 		GMBase.r_dsgraph_render_sorted(false); // strict-sorted geoms
 		g_pGamePersistent->Environment().RenderLast(); // rain/thunder-bolts

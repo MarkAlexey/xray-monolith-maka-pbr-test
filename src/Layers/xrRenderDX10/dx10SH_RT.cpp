@@ -210,6 +210,20 @@ void CRT::destroy()
 #endif
 }
 
+#ifdef USE_DX11
+void CRT::swap_storage(CRT& other)
+{
+	std::swap(pSurface, other.pSurface);
+	std::swap(pRT, other.pRT);
+	std::swap(pZRT, other.pZRT);
+	std::swap(pUAView, other.pUAView);
+	std::swap(dwWidth, other.dwWidth);
+	std::swap(dwHeight, other.dwHeight);
+	std::swap(fmt, other.fmt);
+	pTexture->surface_swap(*other.pTexture);
+}
+#endif
+
 void CRT::reset_begin()
 {
 	destroy();
