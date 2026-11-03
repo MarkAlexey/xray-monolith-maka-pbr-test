@@ -54,6 +54,13 @@ DEFINE_SETS = [
     ["SSAO_QUALITY=3", "USE_HDAO=1", "USE_SSLR_REFLECTIONS=1"],
 ]
 
+# Shaders the engine never compiles with MSAA: every dlss_* pass (DLSS / FSR, brodrigz's patch)
+# is created only while an upscaler is configured, and the upscaler refuses to start with MSAA
+# (DlssIntegration.cpp InitializeTargets). Their USE_MSAA set is skipped instead of compiled:
+# e.g. patch 0.71's dlss_sunshaft_mask.ps Samples s_position, which is a Texture2DMS there.
+# Matched case-insensitively against the start of the file name.
+NO_MSAA_PREFIXES = ("dlss_",)
+
 PROFILES = {"ps": "ps_6_0", "vs": "vs_6_0", "cs": "cs_6_0", "gs": "gs_6_0", "hs": "hs_6_0", "ds": "ds_6_0"}
 
 # ------------------------------------------------------------------------------------------
@@ -124,9 +131,17 @@ def run(dxc, layers, shaders, bindings):
             if not os.path.exists(os.path.join(d, sh)):
                 out[sh] = None
                 continue
-            for ds in DEFINE_SETS:
+            for ds in define_sets(sh):
                 out.setdefault(sh, {})[" ".join(ds) or "-"] = compile_one(dxc, d, sh, ds, bindings)
     return out
+
+
+def define_sets(shader):
+    """DEFINE_SETS for this shader, without the MSAA set for NO_MSAA_PREFIXES."""
+    name = os.path.basename(shader).lower()
+    if name.startswith(NO_MSAA_PREFIXES):
+        return [ds for ds in DEFINE_SETS if "USE_MSAA=1" not in ds]
+    return DEFINE_SETS
 
 
 def main():
@@ -151,7 +166,7 @@ def main():
         if a.define:
             print("extra defines:", " ".join(a.define))
         for sh in a.shaders:
-            for ds in DEFINE_SETS:
+            for ds in define_sets(sh):
                 print(f"  would compile {sh} [{' '.join(ds) or '-'}]")
         return 0
 
