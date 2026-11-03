@@ -1522,6 +1522,75 @@ DX12 defines: no new errors; every DX12 TU parses to its end (probe). The only e
 mingw lacking `WINTRUST_SIGNATURE_SETTINGS` in NVIDIA's `sl_security.h` (environment).
 Not built with MSVC here and untested in game.
 
+## brodrigz's DLSS / FSR 0.7 - 0.71 (perf branch, local)
+
+From [brodrigz/xray-monolith](https://github.com/brodrigz/xray-monolith) 0.7 (`fef9df87`, tag
+1.0.3) and 0.71 (`abeac190`). Release notes: his `tools/dlss/release/RELEASE_NOTES-0.71.txt`.
+
+**Taken one by one** (cherry-picks): `353e4bf4` motion vectors for rigid dynamic meshes,
+`6a23488c` DLSS-G out-of-VRAM warning non-fatal, `bace0fed` FS_file_list with a NULL list (crash
+fix, upstream), `fe611574` uninitialised HRESULT (upstream), `c2b51a55` / `fb499156` 3D scope
+lenses after the upscaler (and the seam around them), `d7771821` no "needs DLSS" FG error with
+upscaling off, `589e1e7e` ReShade gets the scene depth in the DX12 exe, `f512d5f9` SSS volumetric
+buffers sized to the `-volumetric` viewport.
+**Taken as one squashed diff** (`fa376c23..abeac190`, src and gamedata): the post chain after the
+upscaler (`e65bba30` and everything after it up to `5709ef02`), volumetric lights / particles / laser
+beams after it, DLSS Linear Input (linear HDR input with a reversible curve), the screen-space
+sunshaft mask over time and the Upscaled / Smoothed / Raw sunshaft modes, the Upscaling section
+of the video menu (his 0.71 `modxml_dlss_options.script` / `st_monolith_dlss.xml`).
+**Not taken:** the other upstream merges (`393a0c35`, `4fff35ff`; they arrive with the regular
+upstream merge), his packaging/docs commits.
+
+**How the post chain after the upscaler works.** Every scene target the post chain reads or
+writes (`rt_Generic_0`, `rt_Position`, motion vectors, bloom / blur / sunshaft / DOF targets ...)
+gets a display-size twin. At `dlss_post_upscale()` (in `phase_combine`, after distortion and
+before sunshafts) DLSS / FSR reconstructs `rt_Generic_0`, the inputs read by pixel are resampled
+into their twins (`dlss_display_copy.ps`), and the storage of each pair is swapped
+(`CRT::swap_storage`, `CTexture::surface_swap`): the phases and shaders run unchanged at display
+resolution. `phase_dlss_postprocess` swaps back. DLSS Linear Input swaps `rt_Generic_0`,
+`rt_Generic_temp`, `rt_Generic` to floating-point twins for the whole `phase_combine`.
+
+**Merged into this tree / differences from his.**
+- The reactive mask stays: both reconstruction points pass `reactive_texture()` (it marks what rain
+  and forward rendering changed in `rt_Generic_0`, which is the input in both paths).
+- DLSS Linear Input and our own copies of `rt_Generic_0`: IX-Ray SSLR's `rt_sslr_color` and the
+  reactive mask's `rt_upscaler_opaque` are filled with `CopyResource`, which needs equal formats.
+  With the scene in floating point those copies did nothing (SSLR would reflect a stale image, the
+  reactive mask would mark everything). Both get floating-point twins too, and `dlss_hdr_begin()`
+  moved from just before the scene is combined to before `phase_sslr()` (SSLR reads
+  `rt_sslr_color`; SSFX AO / IL, which run in between, touch none of the swapped targets).
+- No HDR10: `dx11_hdr10`, `rt_HDR10_HalfRes` dropped; DLSS's IsHDR flag means Linear Input only.
+- `r_upscaler_debug 2` still falls back to the input view when `dlss_debug_mv.ps` is missing.
+- Motion vectors for rigid meshes (`353e4bf4`): the previous-world map is touched on the main
+  render context only (our shadow maps record on worker contexts; the map is not thread-safe and
+  shadow passes write no motion vectors).
+- `D3D12PresentBridge`: `const` instead of `constexpr` for an OR of `D3D12_RESOURCE_STATES`.
+
+**Options** (all in Settings > Video > Basic > Upscaling, or the console): `r_upscaler_post_after`
+(default 1, vid_restart), `r_upscaler_sunshafts upscaled|smoothed|raw` (default smoothed),
+`r_upscaler_particles_after` (default 0), `r_dlss_hdr_input` (default 1, vid_restart). The 0.63
+behaviour: `r_upscaler_post_after 0`, `r_dlss_hdr_input 0`, `vid_restart`. Without patch 0.71
+(`dlss_display_copy.ps` missing) the post chain and the 3D scope lenses stay before the upscaler and
+the log says why; with MSAA nothing of this runs (the upscalers refuse MSAA).
+
+**Compatibility patch 0.71.** `.github/pbr-release/dlss/` carries his 0.71, built with his
+`package_compatibility.py` at `abeac190`, plus `PBR-Test-NOTES.txt`. New in the DLSS shader packs
+(top layers): `combine_volumetric.ps`, `particle.vs`, `particle-clip.vs`, `vert.vs` (jitter), the
+`dlss_display_copy` / `dlss_hdr_*` / `dlss_sunshaft_mask` shaders. The PBR overlay is unchanged (it
+overrides none of them). `tools/check_shaders.py` skips the MSAA define set for `dlss_*` shaders
+(the engine never compiles them with MSAA): `dlss_sunshaft_mask.ps` Samples `s_position`, a
+Texture2DMS there, and failed the pack build's top-layer check.
+
+**Checked:** `tools/check_cpp.py` on every changed TU (R4, R3, R4DX12, xrGame): no new errors except
+environment ones (mingw: `constexpr` enum OR, now `const`; ReShade's `static_cast` of a function
+pointer to `void*`, MSVC accepts it; `xr_vector<DlssPostTwin>` makes clang drop CRenderTarget's base,
+checked again with `std::vector`: clean). Every changed TU parses to its end (probe). Shader packs
+built locally with the 0.71 layers and compiled with DXC: no new errors. Not built with MSVC here,
+untested in game.
+**Known (his):** FSR frame generation leaves two dim afterimages of lasers / red dots on fast camera
+moves; volumetric sunshafts keep some static; DLSS Linear Input with the post chain before the
+upscaler can make foliage behind DOF shimmer at Performance and below.
+
 ## Opt-in tbbmalloc (`-tbbmalloc`) and two fixes from TheMockinJay's `maka-pbr-merged`
 
 Reviewed [TheMockinJay/xray-monolith `maka-pbr-merged`](https://github.com/TheMockinJay/xray-monolith/tree/maka-pbr-merged)

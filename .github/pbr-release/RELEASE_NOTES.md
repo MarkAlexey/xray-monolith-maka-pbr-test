@@ -30,7 +30,7 @@ plus engine support for Screen Space Shaders. DX11 only.
 | File | What it is |
 |---|---|
 | `*_latest.zip` / `*_<version>.zip` | the exes and NVIDIA's DLSS runtime `nvngx_dlss.dll` 310.9.1 (`bin/`), the frame-generation runtimes of `AnomalyDX12.exe` (`bin/streamline/`, `bin/D3D12/`, `bin/amd_fidelityfx_*_dx12.dll`, their licenses in `licenses/`), and the PBR gamedata (`db/mods/00_modded_exes_gamedata.db0`) |
-| `dlss-binaries-GAMMA-compatibility-patch-0.63.zip` | brodrigz's DLSS / FSR shader compatibility patch 0.63 (FOMOD for Mod Organizer), unchanged; its video menu matches these exes (see `PBR-Test-NOTES.txt` inside) |
+| `dlss-binaries-GAMMA-compatibility-patch-0.71.zip` | brodrigz's DLSS / FSR shader compatibility patch 0.71 (FOMOD for Mod Organizer), unchanged; its video menu matches these exes (see `PBR-Test-NOTES.txt` inside). Use it with these exes only: older exes and patch 0.71 do not match, nor do these exes and an older patch (the post chain after the upscaler then stays off, and the log says why) |
 | `*_pdb.zip` | debug symbols; put the `.pdb` files next to the exes for readable crash logs |
 | `*_tools.zip` | Python tools: SSS/ES compatibility patch generator, PBR overlay generator, shader pack builder, shader FOMOD builder, PBR texture packer |
 | `*_profiled.zip` | developers: `AnomalyDX11_Profiled.exe`, the DX11 exe with the Optick profiler compiled in (see its README) |
@@ -65,7 +65,7 @@ old choice).
 ### DLSS / FSR 3
 
 1. Install the main zip as above (`nvngx_dlss.dll` goes into `bin/` with the exes).
-2. Install `dlss-binaries-GAMMA-compatibility-patch-0.63.zip` in Mod Organizer (REPLACE an older one) and pick your
+2. Install `dlss-binaries-GAMMA-compatibility-patch-0.71.zip` in Mod Organizer (REPLACE an older one) and pick your
    Atmospherics version and add-ons in its installer (see its README). Put it below SSS,
    Atmospherics and the other shader mods in the left pane (higher priority).
 3. Install the PBR shader FOMOD with **With DLSS / FSR 3** on its second page. As an **overlay**, put
