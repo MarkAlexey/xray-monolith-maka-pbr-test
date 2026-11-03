@@ -622,7 +622,7 @@ xcopy /D /Y "$(xrSdkDir)binaries\tbbmalloc.dll" "$(OutDir)"</Command>
     </ResourceCompile>
     <Link>
       <AdditionalDependencies>vfw32.lib;libogg_static.lib;libtheora_static.lib;winmm.lib;OpenAL32.lib;giflib.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(OutDir)$(Platform)\VerifiedDX11ASAN\;$(SolutionDir)3rd party\luajit-2\src\;$(XRAY_16X_LIBS)OpenAutomate\libraries;$(SolutionDir)..\lib\$(Platform)\VerifiedDX11ASAN;$(SolutionDir)$(Platform)\VerifiedDX11ASAN;$(xrSdkDir)libraries\x64;$(xrLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(OutDir)$(Platform)\VerifiedDX11ASAN\;$(OutDir)$(Platform)\Verified\;$(SolutionDir)3rd party\luajit-2\src\;$(XRAY_16X_LIBS)OpenAutomate\libraries;$(SolutionDir)..\lib\$(Platform)\VerifiedDX11ASAN;$(SolutionDir)$(Platform)\VerifiedDX11ASAN;$(xrSdkDir)libraries\x64;$(xrLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
       <ImportLibrary>$(xrLibDir)$(TargetName).lib</ImportLibrary>
       <AdditionalOptions>/ignore:4099</AdditionalOptions>
