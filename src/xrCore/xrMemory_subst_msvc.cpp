@@ -64,9 +64,8 @@ ICF u32 get_pool(size_t size)
 //     and hand blocks it does not own to the CRT. Only new allocations follow the switch.
 //     Reason: a crash dump (level change, CCoverManager::clear) showed mem_free taking the CRT
 //     branch for a tbbmalloc block in a session that had run on tbbmalloc from the start, and
-//     _aligned_free / HeapFree on it faulted in ntdll. The switch is now also kept with a check
-//     copy (~choice); if they ever disagree the allocator recovers (tbbmalloc if it was loaded)
-//     and mem_compact() logs it once, with the value it read (xr_memory_heap_check()).
+//     _aligned_free / HeapFree on it faulted in ntdll. The switch itself now lives in a page of
+//     its own that is read-only once decided (tbb_heap_switch below).
 //
 // The zero-fill contract, kept for both heaps:
 //   mem_alloc(zeroMemory) returns zeroed memory, and mem_realloc zero-fills the part of a block
@@ -86,8 +85,6 @@ ICF u32 get_pool(size_t size)
 // ------------------------------------------------------------------------------------------
 namespace
 {
-// Plain data, zero-initialised before any code runs (static initialisation of other files may
-// allocate before this file's dynamic initialisers would)
 struct tbb_heap_api
 {
 	void* (__cdecl* aligned_malloc)(size_t, size_t);
@@ -101,30 +98,54 @@ struct tbb_heap_api
 	size_t (__cdecl* safer_aligned_msize)(void*, size_t, size_t, size_t (__cdecl*)(void*, size_t, size_t));
 };
 
-tbb_heap_api tbb_heap_storage;
-const char* tbb_heap_state = "CRT heap";
-// 0: not decided yet, 1: CRT heap, 2: tbbmalloc. tbb_heap_choice_check holds ~choice once decided.
-std::atomic<int> tbb_heap_choice{0};
-std::atomic<int> tbb_heap_choice_check{0};
-// tbbmalloc.dll with every export above: set once with the decision, never cleared. Frees and
-// reallocs consult it (not the switch) to find the owner of a block.
-std::atomic<bool> tbb_heap_loaded{false};
-// The switch read a value its check copy did not match: that value, for xr_memory_heap_check()
-std::atomic<int> tbb_heap_mismatch{0};
-std::atomic<bool> tbb_heap_mismatch_seen{false};
+// The allocator switch, in a section of its own (".xrheap": one page of the image, nothing else
+// in it) that is made read-only as soon as the switch is decided.
+// Why: two crash dumps (level change, CCoverManager::clear) showed mem_free sending a tbbmalloc
+// block to the CRT, i.e. the switch read "CRT heap" in a session that had run on tbbmalloc from
+// the start. Nothing in this file writes that after startup; the switch must have been
+// overwritten by a stray write elsewhere. Read-only, it cannot change any more, and a stray write
+// to it faults at the instruction that does it (the crash log then names the culprit).
+// Plain data with a constant initialiser, so it is set when the image loads: static
+// initialisation of other files may allocate before any dynamic initialiser of this file would
+// run (and a dynamic initialiser would now write to a read-only page).
+struct tbb_heap_switch
+{
+	volatile long choice; // 0: not decided, -1: being decided, 1: CRT heap, 2: tbbmalloc
+	unsigned long protect_error; // VirtualProtect's GetLastError(), 0 when the page is read-only
+	const char* state; // for the log
+	tbb_heap_api api; // valid when choice == 2
+};
+#pragma section(".xrheap", read, write)
+__declspec(allocate(".xrheap")) tbb_heap_switch tbb_switch = {0, 0, "CRT heap", {}};
+static_assert(std::is_trivially_copyable<tbb_heap_switch>::value, "tbb_heap_switch must stay plain data");
+
+// The switch, read: after a 2 the api fields (written before it was published) are read only
+// after this load (x64 keeps loads in order; the fence keeps the compiler from moving them up)
+inline long tbb_switch_choice()
+{
+	const long choice = tbb_switch.choice;
+	std::atomic_signal_fence(std::memory_order_acquire);
+	return choice;
+}
 
 const tbb_heap_api* tbb_heap_decide()
 {
 	// The first allocation happens during static initialisation, on the main thread, before any
-	// other thread exists. Should two threads still get here, both compute the same answer
-	// (same command line, same DLL; LoadLibrary only counts up), so the race is harmless.
-	int choice = 1;
+	// other thread exists. A second thread arriving meanwhile waits for the answer.
+	if (InterlockedCompareExchange(&tbb_switch.choice, -1, 0) != 0)
+	{
+		while (tbb_switch_choice() == -1)
+			SwitchToThread();
+		return tbb_switch_choice() == 2 ? &tbb_switch.api : nullptr;
+	}
+
+	long choice = 1;
 	const char* cmd = GetCommandLineA();
 	if (cmd && strstr(cmd, "-tbbmalloc"))
 	{
 		if (HMODULE module = LoadLibraryA("tbbmalloc.dll"))
 		{
-			tbb_heap_api& a = tbb_heap_storage;
+			tbb_heap_api& a = tbb_switch.api;
 			a.aligned_malloc = (decltype(a.aligned_malloc))GetProcAddress(module, "scalable_aligned_malloc");
 			a.aligned_realloc = (decltype(a.aligned_realloc))GetProcAddress(module, "scalable_aligned_realloc");
 			a.aligned_free = (decltype(a.aligned_free))GetProcAddress(module, "scalable_aligned_free");
@@ -134,52 +155,42 @@ const tbb_heap_api* tbb_heap_decide()
 			a.safer_aligned_msize = (decltype(a.safer_aligned_msize))GetProcAddress(module, "__TBB_malloc_safer_aligned_msize");
 			if (a.aligned_malloc && a.aligned_realloc && a.aligned_free && a.msize && a.safer_free && a.safer_aligned_msize)
 			{
-				tbb_heap_state = "tbbmalloc (-tbbmalloc)";
+				tbb_switch.state = "tbbmalloc (-tbbmalloc)";
 				choice = 2;
-				tbb_heap_loaded.store(true, std::memory_order_release);
 			}
 			else
-				tbb_heap_state = "CRT heap (-tbbmalloc: tbbmalloc.dll lacks the scalable_aligned_* / __TBB_malloc_safer_* exports)";
+				tbb_switch.state = "CRT heap (-tbbmalloc: tbbmalloc.dll lacks the scalable_aligned_* / __TBB_malloc_safer_* exports)";
 		}
 		else
-			tbb_heap_state = "CRT heap (-tbbmalloc: tbbmalloc.dll not found beside the exe)";
+			tbb_switch.state = "CRT heap (-tbbmalloc: tbbmalloc.dll not found beside the exe)";
 	}
-	tbb_heap_choice_check.store(~choice, std::memory_order_relaxed);
-	tbb_heap_choice.store(choice, std::memory_order_release);
-	return choice == 2 ? &tbb_heap_storage : nullptr;
-}
-
-// The switch and its check copy disagree: something overwrote one of them. Remember what was
-// read (reported by xr_memory_heap_check(), outside the allocator) and restore the decision from
-// tbb_heap_loaded. No logging here: Msg allocates.
-const tbb_heap_api* tbb_heap_recover(int seen)
-{
-	if (!tbb_heap_mismatch_seen.exchange(true, std::memory_order_relaxed))
-		tbb_heap_mismatch.store(seen, std::memory_order_relaxed);
-	const int choice = tbb_heap_loaded.load(std::memory_order_acquire) ? 2 : 1;
-	tbb_heap_choice_check.store(~choice, std::memory_order_relaxed);
-	tbb_heap_choice.store(choice, std::memory_order_release);
-	return choice == 2 ? &tbb_heap_storage : nullptr;
+	InterlockedExchange(&tbb_switch.choice, choice); // full barrier: api and state are visible first
+	// Freeze it. On failure (should not happen for an image page) it just stays writable; the
+	// error is written while the page still is.
+	DWORD old = 0;
+	if (!VirtualProtect(&tbb_switch, sizeof(tbb_switch), PAGE_READONLY, &old))
+		tbb_switch.protect_error = GetLastError();
+	return choice == 2 ? &tbb_switch.api : nullptr;
 }
 
 // nullptr: CRT heap. After the first call: one plain load and a compare (x64 acquire = mov),
 // no function-local static guard on the allocation path.
 inline const tbb_heap_api* tbb_heap()
 {
-	const int choice = tbb_heap_choice.load(std::memory_order_acquire);
-	if (choice == 0)
-		return tbb_heap_decide();
-	if (choice != ~tbb_heap_choice_check.load(std::memory_order_relaxed))
-		return tbb_heap_recover(choice);
-	return choice == 2 ? &tbb_heap_storage : nullptr;
+	const long choice = tbb_switch_choice();
+	if (choice == 2)
+		return &tbb_switch.api;
+	if (choice == 1)
+		return nullptr;
+	return tbb_heap_decide();
 }
 
-// tbbmalloc, if it is loaded at all (even if the switch says CRT): the owner test for frees and
-// reallocs. Makes sure the decision was taken first.
+// tbbmalloc, if it was loaded: the owner test for frees and reallocs. Same as tbb_heap() now that
+// the switch cannot change; kept separate because frees / reallocs must ask "who owns this
+// block", not "where do new blocks go".
 inline const tbb_heap_api* tbb_heap_any()
 {
-	tbb_heap();
-	return tbb_heap_loaded.load(std::memory_order_acquire) ? &tbb_heap_storage : nullptr;
+	return tbb_heap();
 }
 
 // Does tbbmalloc own this block? Its usable size, or 0 for a block of any other heap (CRT).
@@ -210,7 +221,7 @@ void tbb_zero_tail(const tbb_heap_api* api, void* block, size_t from)
 XRCORE_API const char* xr_memory_heap_name()
 {
 	tbb_heap();
-	return tbb_heap_state;
+	return tbb_switch.state;
 }
 
 // mem_compact(): give tbbmalloc's cached free memory back to the system
@@ -221,16 +232,18 @@ void xr_memory_heap_compact()
 			api->command(0 /* TBBMALLOC_CLEAN_ALL_BUFFERS */, nullptr);
 }
 
-// mem_compact(): report, once, that the allocator switch was found overwritten (see above)
+// mem_compact(): say once whether the switch page is read-only (see tbb_heap_switch)
 void xr_memory_heap_check()
 {
 	static bool reported = false;
-	if (reported || !tbb_heap_mismatch_seen.load(std::memory_order_relaxed))
+	if (reported || !tbb_heap())
 		return;
 	reported = true;
-	Msg("! [Memory] the allocator switch was found overwritten (read %d, expected %d) and was restored; "
-		"blocks still went back to their own heap. Please send this log.",
-		tbb_heap_mismatch.load(std::memory_order_relaxed), tbb_heap_loaded.load() ? 2 : 1);
+	if (tbb_switch.protect_error)
+		Msg("! [Memory] the allocator switch page could not be made read-only (VirtualProtect error %lu)",
+			tbb_switch.protect_error);
+	else
+		Msg("* [Memory] allocator switch page is read-only");
 }
 
 void* xrMemory::mem_alloc(size_t size
