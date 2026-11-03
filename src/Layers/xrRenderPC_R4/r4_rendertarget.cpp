@@ -92,7 +92,7 @@ public:
     void Compile(CBlender_Compile& C) override
     {
         IBlender::Compile(C);
-        if (C.iElement > 3) return;
+        if (C.iElement > 4) return;
         if (C.iElement == 3)
         {
             // r_upscaler_debug 2: motion vectors (dlss_debug_mv.ps, DLSS / FSR3 shader patch 0.63+).
@@ -106,8 +106,30 @@ public:
             C.r_End();
             return;
         }
+        // 4: the scene before the post chain (fallback/debug when post runs after reconstruction)
         C.r_Pass("stub_screen_space", C.iElement == 2 ? "dlss_sharpen" : "dlss_copy", FALSE, FALSE, FALSE);
-        C.r_dx10Texture("s_image", C.iElement == 1 ? r2_RT_albedo : "$user$dlss_output");
+        C.r_dx10Texture("s_image", C.iElement == 1 ? r2_RT_albedo : C.iElement == 4 ? r2_RT_generic0 : "$user$dlss_output");
+        C.r_dx10Sampler("smp_rtlinear");
+        C.r_End();
+    }
+};
+
+class CBlender_dlss_hdr : public IBlender
+{
+public:
+    CBlender_dlss_hdr() { description.CLS = 0; }
+    LPCSTR getComment() override { return "DLSS HDR input encode / resolve"; }
+    BOOL canBeDetailed() override { return FALSE; }
+    BOOL canBeLMAPped() override { return FALSE; }
+    void Compile(CBlender_Compile& C) override
+    {
+        IBlender::Compile(C);
+        if (C.iElement > 2) return;
+        // 0: the finished scene to linear HDR; 1: the reconstruction back, with optional CAS;
+        // 2: as 0, when the post chain stays before reconstruction and ends in rt_Color
+        C.r_Pass("stub_screen_space", C.iElement == 1 ? "dlss_hdr_decode" : "dlss_hdr_encode", FALSE, FALSE, FALSE);
+        C.r_dx10Texture("s_image", C.iElement == 0 ? r2_RT_generic0 : C.iElement == 2 ? r2_RT_albedo : "$user$dlss_output");
+        C.r_dx10Sampler("smp_nofilter");
         C.r_dx10Sampler("smp_rtlinear");
         C.r_End();
     }
@@ -126,6 +148,50 @@ public:
         if (C.iElement != 0) return;
         C.r_Pass("stub_screen_space", "dlss_ui_depth", FALSE, TRUE, TRUE);
         C.r_dx10Texture("s_scene_depth", "$user$dlss_scene_depth");
+        C.r_End();
+    }
+};
+
+class CBlender_dlss_display_copy : public IBlender
+{
+public:
+    CBlender_dlss_display_copy() { description.CLS = 0; }
+    LPCSTR getComment() override { return "Display-resolution copies of scene inputs"; }
+    BOOL canBeDetailed() override { return FALSE; }
+    BOOL canBeLMAPped() override { return FALSE; }
+    void Compile(CBlender_Compile& C) override
+    {
+        IBlender::Compile(C);
+        // Scope lenses and the post chain Load these with display pixel coordinates
+        // after reconstruction.
+        static constexpr LPCSTR sources[] = {r2_RT_P, r2_RT_heat, r2_RT_ssfx_motion_vectors, r2_RT_generic1,
+            r2_RT_ssfx_bloom_emissive};
+        if (C.iElement >= int(std::size(sources))) return;
+        C.r_Pass("stub_screen_space", "dlss_display_copy", FALSE, FALSE, FALSE);
+        C.r_dx10Texture("s_image", sources[C.iElement]);
+        C.r_End();
+    }
+};
+
+class CBlender_dlss_sunshaft_mask : public IBlender
+{
+public:
+    CBlender_dlss_sunshaft_mask() { description.CLS = 0; }
+    LPCSTR getComment() override { return "Screen-space sunshaft mask over time"; }
+    BOOL canBeDetailed() override { return FALSE; }
+    BOOL canBeLMAPped() override { return FALSE; }
+    void Compile(CBlender_Compile& C) override
+    {
+        IBlender::Compile(C);
+        // One element per history target: each reads one and writes the other.
+        if (C.iElement > 1) return;
+        C.r_Pass("ssss_notransform", "dlss_sunshaft_mask", FALSE, FALSE, FALSE);
+        C.r_dx10Texture("s_current", r2_RT_sunshafts1);
+        C.r_dx10Texture("s_history", C.iElement ? "$user$dlss_sunshaft_history_1" : "$user$dlss_sunshaft_history_0");
+        C.r_dx10Texture("s_position", r2_RT_P);
+        C.r_dx10Texture("s_motion_vectors", r2_RT_ssfx_motion_vectors);
+        C.r_dx10Sampler("smp_nofilter");
+        C.r_dx10Sampler("smp_rtlinear");
         C.r_End();
     }
 };
@@ -870,8 +936,11 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 			rt_ssfx_bloom_tmp4_2 = createUnique(r2_RT_ssfx_bloom_tmp4_2, w / 4.0f, h / 4.0f, D3DFMT_A16B16G16R16F); // Bloom / 4
 		}
 
-		rt_ssfx_volumetric = createUnique(r2_RT_ssfx_volumetric, w / 8.0f, h / 8.0f, D3DFMT_A16B16G16R16F); // Volumetric
-		rt_ssfx_volumetric_tmp = createUnique(r2_RT_ssfx_volumetric_tmp, w / 8.0f, h / 8.0f, D3DFMT_A16B16G16R16F); // Volumetric
+		// Volumetric lights are drawn and blurred with a 1/volsize viewport (-volumetric1/2/4,
+		// default 8): size the buffers to match (brodrigz 0.7, f512d5f9)
+		const float volsize = float(RImplementation.o.volsize);
+		rt_ssfx_volumetric = createUnique(r2_RT_ssfx_volumetric, w / volsize, h / volsize, D3DFMT_A16B16G16R16F); // Volumetric
+		rt_ssfx_volumetric_tmp = createUnique(r2_RT_ssfx_volumetric_tmp, w / volsize, h / volsize, D3DFMT_A16B16G16R16F); // Volumetric
 		rt_ssfx_rain = createUnique(r2_RT_ssfx_rain, w / 8.0f, h / 8.0f, D3DFMT_A8R8G8B8); // Rain refraction buffer
 		rt_ssfx_water_waves = createUnique(r2_RT_ssfx_water_waves, 512, 512, D3DFMT_A8R8G8B8); // Water Waves
 
@@ -1617,6 +1686,87 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 		s_dlss_postprocess.create(&blender, "dlss_postprocess");
 		CBlender_dlss_copy copy;
 		s_dlss_copy.create(&copy, "dlss_copy");
+		// Optional: older shader patches keep drawing 3D scope lenses and the post
+		// chain before reconstruction.
+		string_path displayCopyShader;
+		if (FS.exist(displayCopyShader, "$game_shaders$", "r3\\dlss_display_copy", ".ps"))
+		{
+			CBlender_dlss_display_copy displayCopy;
+			s_dlss_display_copy.create(&displayCopy, "dlss_display_copy");
+		}
+		if (!isMain)
+		{
+			// Bodycam: the PiP scope target is never reconstructed (dlss::ScopePass), so it gets no
+			// twins. Their names are global ($user$dlss_display_N, $user$dlss_hdr_N): created here
+			// they would resolve to the main target's twins, sized for the main target.
+		}
+		else if (!ps_r_upscaler_post_after)
+		{
+			Msg("[Upscaler] r_upscaler_post_after is off: post-processing, volumetric lights, particles and laser beams stay before reconstruction");
+		}
+		else if (s_dlss_display_copy && !RImplementation.o.dx10_msaa)
+		{
+			// Twins keep their scene target's format: the post shaders rely on the
+			// UNORM targets' [0,1] clamp. The reconstructed scene comes first; the
+			// inputs read by pixel are resampled.
+			dlss_post_twin(rt_Generic_0);
+			dlss_post_twin(rt_Position, 1.f, 0);
+			dlss_post_twin(rt_ssfx_motion_vectors, 1.f, 2);
+			dlss_post_twin(rt_Generic_1, 1.f, 3);
+			dlss_post_twin(rt_ssfx_bloom_emissive, 1.f, 4);
+			// Written by the post chain. Divisors match the scene targets above.
+			for (ref_rt* rt : {&rt_Generic, &rt_Color, &rt_sunshafts_0, &rt_sunshafts_1, &rt_pp_bloom, &rt_dof})
+				dlss_post_twin(*rt);
+			for (ref_rt* rt : {&rt_blur_h_2, &rt_blur_2, &rt_ssfx_bloom1, &rt_ssfx_bloom_tmp2}) // (no HDR10 targets here)
+				dlss_post_twin(*rt, 2.f);
+			for (ref_rt* rt : {&rt_blur_h_4, &rt_blur_4, &rt_ssfx_bloom_lens, &rt_ssfx_bloom_tmp4, &rt_ssfx_bloom_tmp4_2})
+				dlss_post_twin(*rt, 4.f);
+			for (ref_rt* rt : {&rt_blur_h_8, &rt_blur_8, &rt_ssfx_bloom_tmp8, &rt_ssfx_bloom_tmp8_2})
+				dlss_post_twin(*rt, 8.f);
+			dlss_post_twin(rt_ssfx_bloom_tmp16, 16.f);
+			dlss_post_twin(rt_ssfx_bloom_tmp16_2, 16.f);
+			dlss_post_twin(rt_ssfx_bloom_tmp32, 32.f);
+			dlss_post_twin(rt_ssfx_bloom_tmp32_2, 32.f);
+			dlss_post_twin(rt_ssfx_bloom_tmp64, 64.f);
+			string_path sunshaftMaskShader;
+			if (FS.exist(sunshaftMaskShader, "$game_shaders$", "r3\\dlss_sunshaft_mask", ".ps"))
+			{
+				rt_dlss_sunshaft_history[0].create("$user$dlss_sunshaft_history_0", Device.dwWidth, Device.dwHeight, D3DFMT_R16F);
+				rt_dlss_sunshaft_history[1].create("$user$dlss_sunshaft_history_1", Device.dwWidth, Device.dwHeight, D3DFMT_R16F);
+				CBlender_dlss_sunshaft_mask sunshaftMask;
+				s_dlss_sunshaft_mask.create(&sunshaftMask, "dlss_sunshaft_mask");
+			}
+			if (dlss::HdrInput())
+			{
+				// The water/glass copy must match the scene's format to stay valid, and so
+				// must rt_Generic: sunshafts before the upscaler copy their blend back from it.
+				// PBR-Test: also our own copies of rt_Generic_0 taken during the swap: IX-Ray SSLR's
+				// rt_sslr_color and the reactive mask's rt_upscaler_opaque (null when off; skipped).
+				for (ref_rt* rt : {&rt_Generic_0, &rt_Generic_temp, &rt_Generic, &rt_sslr_color, &rt_upscaler_opaque})
+				{
+					if (!*rt) continue;
+					string64 name;
+					xr_sprintf(name, "$user$dlss_hdr_%u", u32(dlss_hdr_twins.size()));
+					DlssPostTwin twin{rt, {}, -1};
+					twin.display.create(name, (*rt)->dwWidth, (*rt)->dwHeight, D3DFMT_A16B16G16R16F);
+					dlss_hdr_twins.push_back(twin);
+				}
+			}
+		}
+		else
+		{
+			Msg("! [Upscaler] %s: post-processing, volumetric lights and 3D scope lenses stay before reconstruction",
+				s_dlss_display_copy ? "MSAA is on" : "shaders\\r3\\dlss_display_copy.ps not found (outdated compatibility patch?)");
+		}
+		if (dlss::HdrInput() && isMain)
+		{
+			CBlender_dlss_hdr hdr;
+			s_dlss_hdr.create(&hdr, "dlss_hdr");
+			rt_dlss_hdr_input.create("$user$dlss_hdr_input", rt_Generic_0->dwWidth, rt_Generic_0->dwHeight,
+				D3DFMT_A16B16G16R16F);
+			Msg("[Upscaler] DLSS HDR input: %s scene, linear with a reversible highlight curve",
+				dlss_hdr_twins.empty() ? "8-bit" : "floating-point");
+		}
 	}
 	g_postprocess.create(D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_SPECULAR | D3DFVF_TEX3, RCache.Vertex.Buffer(),
 	                     RCache.QuadIB);
@@ -1637,6 +1787,9 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 
 CRenderTarget::~CRenderTarget()
 {
+	// never leave a swap behind (no-op unless swapped; only the main target ever swaps)
+	dlss_post_restore();
+	dlss_hdr_restore();
 	if (this == RImplementation.TargetMain)
 	{
 		// the upscaler's targets belong to the main target; the PiP SVP target is torn down and

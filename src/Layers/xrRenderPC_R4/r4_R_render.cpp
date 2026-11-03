@@ -172,7 +172,14 @@ void CRender::Render()
 	dx10_annotate_frame();
 	dlss::EndScene();
 	GMBase.RGraph.mapHUDNativeUi.clear(); // Never retain packets across views/menu/reset.
+	GMBase.RGraph.mapDlssEffects.clear();
+	GMBase.RGraph.mapDlssHudEffects.clear();
 	GMBase.RGraph.hasNativeHudAttachments = false;
+	// Bodycam + DLSS 0.71: a true-PiP scope pass draws the shared lists this frame, so nothing is held
+	// out of them for after the upscaler (the traverse below already reads this for particles).
+	// Raised again in renderViewports and after the HUD capture.
+	if (TargetMain)
+		TargetMain->dlss_scope_frame = Device.true_pip_on && Device.m_SecondViewport.IsSVPActive();
 
 	rmNormal();
 
@@ -419,6 +426,16 @@ void CRender::renderGBuffer(bool clearGraph)
 		{
 			GMBase.r_dsgraph_capture_hud();
 			if (dlss::Configured()) GMBase.r_dsgraph_extract_native_ui();
+			// Bodycam + DLSS 0.71: the scope lists are filled by the HUD capture; with any of them this
+			// frame keeps the render-size chain (CRenderTarget::dlss_scope_frame)
+			{
+				const auto& graph = GMBase.RGraph;
+				if (!graph.mapScopeHUDSorted.empty() || !graph.mapScopeHUDObjective.empty()
+					|| !graph.mapPhysicalScopeGlass.empty() || !graph.mapReflexHUDSorted.empty()
+					|| !graph.mapScopeHUDOverlay.empty())
+					TargetMain->dlss_scope_frame = true;
+			}
+			if (Target->DlssPostAfterUpscale()) GMBase.r_dsgraph_extract_dlss_effects();
 			svp_stats::cpu_begin(svp_stats::CPU_HUD);
 			const bool svp_scope_aimed = g_pGamePersistent
 				&& (g_pGamePersistent->m_pGShaderConstants->hud_params.y > 0.005f
@@ -845,6 +862,12 @@ void CRender::render_forward()
 		GMBase.r_dsgraph_render_static(1, fwd_clear); // normal level, secondary priority
 		CParticlesAsync::Wait();
 		GMBase.r_dsgraph_render_dynamic(1, fwd_clear);
+		// Effects held for after the upscaler, if this frame is not reconstructed after all.
+		// Bodycam: main pass only. The PiP scope pass draws these lists first and would otherwise
+		// draw the held effects into the scope image and clear them before the main view sees them
+		// (nothing is held on a frame with a scope pass: dlss_scope_frame; this covers a late flip)
+		if (!Target->DlssPostAfterUpscale() && !Device.m_SecondViewport.m_render_pass_is_svp)
+			GMBase.r_dsgraph_render_dlss_effects();
 		GMBase.fade_render(); // faded-portals
 		GMBase.r_dsgraph_render_sorted(false); // strict-sorted geoms
 		g_pGamePersistent->Environment().RenderLast(); // rain/thunder-bolts

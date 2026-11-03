@@ -13,11 +13,16 @@ void BeginScene();
 void EndScene(bool invalidateHistory = false);
 bool Active();
 bool Configured();
+// DLSS takes linear HDR input (r_dlss_hdr_input)
+bool HdrInput();
 unsigned RenderWidth();
 unsigned RenderHeight();
 Offset RasterJitter();
 // true while the PiP scope viewport (TargetSVP) is the active target; the upscaler is bypassed
 bool ScopePass();
+// Bodycam: drop the upscaler's history before the next evaluation (the main view switched between
+// the post chain after reconstruction and the render-size chain: dlss_scope_frame)
+void InvalidateHistory();
 Offset PreviousRasterJitter();
 ID3DDepthStencilView* SceneDepth();
 ID3D11Texture2D* SceneDepthTexture();

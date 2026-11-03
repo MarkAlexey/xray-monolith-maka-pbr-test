@@ -520,11 +520,60 @@ public:
 	ref_shader s_dlss_postprocess;
 	ref_shader s_dlss_copy;
 	ref_shader s_dlss_ui_depth;
+	// 3D shader scope lenses drawn after reconstruction; null without the copy shader.
+	// The display-resolution targets are created on the first scoped frame.
+	ref_shader s_dlss_display_copy;
+	ref_rt rt_dlss_scope_color;
+	ref_rt rt_dlss_scope_position;
+	ref_rt rt_dlss_scope_heat;
 	ref_texture t_dlss_scene_depth;
 	bool reported_native_ui = false; // One diagnostic per target lifetime.
+	bool reported_native_scope = false;
+	bool reported_post_chain = false;
+	bool reported_post_effects = false;
 	ref_rt rt_dlss_post_source;
 	ref_rt rt_dlss_post_color;
 	ref_texture t_dlss_output;
+	// Post chain after reconstruction: each scene target the chain uses has a
+	// display-size twin. Their storage is swapped for the chain, so the phases
+	// and shaders stay unchanged. Empty without the display copy shader, with MSAA or
+	// with r_upscaler_post_after off.
+	struct DlssPostTwin
+	{
+		ref_rt* scene;
+		ref_rt display;
+		int resample; // dlss_display_copy element for inputs read by pixel, else -1
+	};
+	xr_vector<DlssPostTwin> dlss_post_twins;
+	bool dlss_post_swapped = false;
+	bool dlss_post_output = false; // Reconstruction succeeded this frame.
+	// Bodycam: this frame's main view has PiP / 3D scope work (a scope pass, a lens, a reflex, an
+	// overlay or physical glass). Bodycam draws all of it into the scene at render resolution
+	// (phase_3DSSReticle calls SetActive and binds the render-size depth), so such a frame keeps the
+	// render-size post chain and is reconstructed at the end, as with 0.63. The PiP scope pass also
+	// draws the shared lists, so nothing may be held out of them for after the upscaler either.
+	// Main target only. Set at the start of CRender::Render from the scope pass state, raised in
+	// renderViewports and after the HUD capture (the scope lists fill there), never lowered within
+	// the frame: everything from the laser extraction to the end of the frame sees one value.
+	bool dlss_scope_frame = false;
+	// The chain the last reconstructed main frame used (-1 none yet, 0 render-size, 1 post after).
+	// A change restarts the upscaler's history: the two feed it differently processed images.
+	int dlss_chain_last = -1;
+	void dlss_note_chain(bool postAfter);
+	Fvector2 dlss_post_jitter{};
+	// HDR input (dlss::HdrInput): DLSS receives the finished scene linear, with
+	// highlights expanded by a reversible curve that the resolve undoes. With the post
+	// chain after reconstruction, the scene and its copy for water and glass are held
+	// in floating point until then.
+	xr_vector<DlssPostTwin> dlss_hdr_twins;
+	bool dlss_hdr_swapped = false;
+	ref_rt rt_dlss_hdr_input;
+	ref_shader s_dlss_hdr;
+	// Screen-space sunshaft mask over time, once it no longer goes through the upscaler.
+	ref_rt rt_dlss_sunshaft_history[2];
+	ref_shader s_dlss_sunshaft_mask;
+	u32 dlss_sunshaft_history = 0; // the target holding the latest mask
+	u32 dlss_sunshaft_frame = 0;
 	ref_shader s_postprocess_msaa;
 	ref_geom g_postprocess;
 	ref_shader s_menu;
@@ -605,6 +654,11 @@ public:
 	void phase_fakescope(); //crookr
 	void phase_heatvision(); //--DSR-- HeatVision
 	void phase_3DSSReticle(bool object_lens_pass); // PiP object lens early, reticle/depth overlays late
+	// brodrigz 0.7: 3D scope lenses after reconstruction. Bodycam keeps its lenses in the scene
+	// (ScopeAfterUpscale() is false); phase_dlss_native_depth also serves the HUD UI and effects
+	bool ScopeAfterUpscale() const;
+	void phase_dlss_native_depth(float jitterX, float jitterY, bool lens = false);
+	void phase_dlss_scope(float jitterX, float jitterY);
 	// 3DSS reticle glow, drawn into its own targets and added after bloom and tone mapping
 	// (r4_rendertarget_phase_3dss_reticle.cpp)
 	ref_rt rt_reticle_emission, rt_reticle_glow_source; // the lit cores, and the same weighted by glow strength
@@ -763,9 +817,19 @@ public:
 	void phase_bloom();
 	void phase_luminance();
 	void phase_combine();
-	void phase_combine_volumetric();
+	void phase_combine_volumetric(bool high = true); // high: also write the bloom overflow to rt_Generic_1
 	void phase_pp();
 	void phase_dlss_postprocess();
+	void dlss_post_twin(ref_rt& scene, float divisor = 1.f, int resample = -1);
+	bool DlssPostAfterUpscale() const;
+	void dlss_post_upscale();
+	void dlss_post_restore();
+	void dlss_post_effects();
+	bool DlssSunshaftMaskOverTime() const;
+	void dlss_sunshaft_mask(u32 Offset);
+	void dlss_hdr_begin();
+	ID3DTexture2D* dlss_hdr_encode(u32 element);
+	void dlss_hdr_restore();
 	ref_rt& PostprocessColor();
 	ref_rt& PostprocessSource();
 

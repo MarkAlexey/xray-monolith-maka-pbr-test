@@ -889,15 +889,53 @@ void CDSGraphManager::r_dsgraph_render_native_ui(bool renderHudUi)
 	r_dsgraph_render_graph_sorted(RGraph.mapHUDNativeUi, true);
 	RImplementation.rmNormal();
 }
+
+void CDSGraphManager::r_dsgraph_extract_dlss_effects()
+{
+	// Laser beams are thin and bright, and follow the weapon without motion
+	// vectors of their own; reconstructed, they flickered. Hold them, on the
+	// weapon and on NPCs, for the pass after the upscaler.
+	const auto isLaser = [](const auto& item)
+	{
+		for (const auto& pass : item.pSE->passes)
+		{
+			const char* name = pass->ps ? pass->ps->cName.c_str() : nullptr;
+			if (name && !strncmp(name, "models_laserbeam", 16)) return true;
+		}
+		return false;
+	};
+	dlss::ExtractNativeUi(RGraph.mapHUDSorted.Sorted, RGraph.mapDlssHudEffects, isLaser);
+	auto& world = RGraph.mapDynamicSorted.Sorted;
+	world.erase(std::remove_if(world.begin(), world.end(), [&](const auto& item)
+	{
+		if (!isLaser(item)) return false;
+		RGraph.mapDlssEffects.push_back(item);
+		return true;
+	}), world.end());
+}
+
+void CDSGraphManager::r_dsgraph_render_dlss_effects()
+{
+	PROF_EVENT("r_dsgraph_render_dlss_effects");
+	r_dsgraph_render_graph_sorted(RGraph.mapDlssEffects, true);
+	if (RGraph.mapDlssHudEffects.empty()) return;
+	CHudInitializer initializer(true);
+	RImplementation.rmNear();
+	r_dsgraph_render_graph_sorted(RGraph.mapDlssHudEffects, true);
+	RImplementation.rmNormal();
+}
 #endif
 
 void CDSGraphManager::r_dsgraph_render_sorted_hud()
 {
 	PROF_EVENT("r_dsgraph_render_sorted_hud");
 #if	RENDER==R_R4
+	// guard the seed CopyResource, it is a silent no-op + debug-layer spam when accum and generic0
+	// formats mismatch (MSAA vs 1x, or HDR-off A8 vs A16F).
+	// DLSS Linear Input (brodrigz 0.7): with an 8-bit scene the formats differ and the copy does
+	// nothing; keep it that way while the scene is held in the floating-point twin for the upscaler
+	if (!RImplementation.Target->dlss_hdr_swapped)
 	{
-		// guard the seed CopyResource, it is a silent no-op + debug-layer spam when accum and generic0
-		// formats mismatch (MSAA vs 1x, or HDR-off A8 vs A16F)
 		auto* dst = (ID3DTexture2D*)RImplementation.Target->rt_Accumulator->pSurface;
 		auto* src = (ID3DTexture2D*)RImplementation.Target->rt_Generic_0->pSurface;
 		D3D_TEXTURE2D_DESC dd, sd;

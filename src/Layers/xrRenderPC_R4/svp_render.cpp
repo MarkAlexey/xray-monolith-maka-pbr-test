@@ -70,6 +70,10 @@ void CRender::renderViewports(BOOL bSUN)
 	// creation can fail at VRAM exhaustion, fall back to the single stock pass this frame
 	if (svp && !TargetSVP)
 		svp = false;
+	// DLSS 0.71: a frame that may run the scope pass keeps the render-size post chain and holds
+	// nothing out of the shared lists (CRenderTarget::dlss_scope_frame; raised only, never lowered)
+	if (svp)
+		TargetMain->dlss_scope_frame = true;
 	// pip diag, an aimed weapon without an svp pass (y is nonzero even at hip, gate on x)
 	{
 		if (ps_r__svp_diag && Device.true_pip_on && !svp && g_pGamePersistent

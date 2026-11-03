@@ -175,6 +175,16 @@ ID3DBaseTexture* CTexture::surface_get()
 	return pSurface;
 }
 
+void CTexture::surface_swap(CTexture& other)
+{
+	wait_for_loading();
+	other.wait_for_loading();
+	std::swap(pSurface, other.pSurface);
+	std::swap(desc_cache, other.desc_cache);
+	std::swap(desc, other.desc);
+	std::swap(m_pSRView, other.m_pSRView);
+}
+
 void CTexture::PostLoad()
 {
 	if (pTheora) bind = xr_make_delegate(this, &CTexture::apply_theora);

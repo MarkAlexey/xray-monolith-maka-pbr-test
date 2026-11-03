@@ -1,20 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <string_table>
+    <string id="ui_mm_lst_renderer_r4_dx12_bridge"><text>DirectX 12 (Bridge)</text></string>
     <string id="ui_mm_video_basic_upscaler"><text>Temporal upscaler</text></string>
-    <string id="ui_mm_video_basic_upscaler_desc"><text>Select NVIDIA DLSS or AMD FSR 3 upscaling. Off retains the native renderer and its existing anti-aliasing settings. Both require MSAA off and the matching temporal shader override. Only the selected method runs; its quality setting is below. Apply restarts the renderer. No frame generation.</text></string>
-    <string id="ui_mm_video_basic_fsr3_mode"><text>AMD FSR 3 quality</text></string>
-    <string id="ui_mm_video_basic_fsr3_mode_desc"><text>Used only when the temporal upscaler is FSR 3. Native AA uses native resolution; Quality, Balanced, Performance and Ultra Performance use 1.5x, 1.7x, 2x and 3x scaling respectively. Native DX11 FSR 3.1.2 upscaling, including non-AMD GPUs. No NVIDIA runtime required. Replaces SSS TAA and SMAA while active. Apply restarts the renderer.</text></string>
+    <string id="ui_mm_video_basic_upscaler_desc"><text>Select NVIDIA DLSS or AMD FSR upscaling. Off retains the native renderer and its existing anti-aliasing settings. All methods require MSAA off and the matching temporal shader override. Only methods supported by this GPU are listed, and only the selected method runs; its quality setting is below. The experimental DX12 executable adds AMD's DX12 runtime: FSR 4 on Radeon RX 7000/9000, listed as FSR 3.1 (DX12) on other GPUs. Apply restarts the renderer.</text></string>
+    <string id="ui_mm_video_basic_fsr3_mode"><text>AMD FSR quality</text></string>
+    <string id="ui_mm_video_basic_fsr3_mode_desc"><text>Used when the temporal upscaler is FSR 3 or FSR 4. Native AA uses native resolution; Ultra Quality, Quality, Balanced, Performance and Ultra Performance use 1.3x, 1.5x, 1.7x, 2x and 3x scaling respectively. FSR 3 is native DX11 FSR 3.1.2 on any GPU. FSR 4 runs through the DX12 executable's AMD runtime. No NVIDIA runtime required. Replaces SSS TAA and SMAA while active. Apply restarts the renderer.</text></string>
+    <string id="ui_mm_lst_upscaler_fsr4"><text>AMD FSR 4 (DX12)</text></string>
+    <string id="ui_mm_lst_upscaler_fsr_dx12"><text>AMD FSR 3.1 (DX12)</text></string>
+    <string id="ui_mm_video_basic_dlss_linear_input"><text>DLSS Linear Input</text></string>
+    <string id="ui_mm_video_basic_dlss_linear_input_desc"><text>Reduces ghosting/smearing and other visual artifacts caused by DLSS on movement with bright effects, especially helpful for preset K/J.\nAlmost no performance cost, may cause shimmering behind DoF on Performance mode or below.</text></string>
     <string id="ui_mm_video_basic_dlss_sharpness"><text>Upscaling sharpening (CAS)</text></string>
     <string id="ui_mm_video_basic_dlss_sharpness_desc"><text>Shared Contrast Adaptive Sharpening after DLSS or FSR reconstruction, before display overlays and UI. 0 disables this filter; 1 is maximum. Applies without a renderer restart. Does not change Atmospherics clarity or night-vision effects. High values can emphasize noise and edges. Has no effect with upscaling off or during spatial fallback.</text></string>
     <string id="ui_mm_lst_upscaler_dlss"><text>NVIDIA DLSS</text></string>
     <string id="ui_mm_lst_upscaler_fsr3"><text>AMD FSR 3</text></string>
     <string id="ui_mm_lst_fsr3_native_aa"><text>Native AA</text></string>
     <string id="ui_mm_video_basic_dlss_mode"><text>NVIDIA DLSS quality</text></string>
-    <string id="ui_mm_video_basic_dlss_mode_desc"><text>DLAA renders at native resolution; Quality, Balanced, Performance and Ultra Performance upscale a smaller scene. Requires an RTX GPU, the NVIDIA DLSS runtime and the matching shader override. Turn MSAA off before enabling DLSS. DLSS replaces SSS TAA and SMAA while active. Apply restarts the renderer; Cancel leaves the current settings unchanged.</text></string>
+    <string id="ui_mm_video_basic_dlss_mode_desc"><text>DLAA renders at native resolution; Ultra Quality (1.3x), Quality, Balanced, Performance and Ultra Performance upscale a smaller scene. Requires an RTX GPU, the NVIDIA DLSS runtime and the matching shader override. Turn MSAA off before enabling DLSS. DLSS replaces SSS TAA and SMAA while active. Apply restarts the renderer; Cancel leaves the current settings unchanged.</text></string>
     <string id="ui_mm_video_basic_dlss_preset"><text>NVIDIA DLSS render preset</text></string>
     <string id="ui_mm_video_basic_dlss_preset_desc"><text>Selects the reconstruction model independently of scaling mode. Default lets NVIDIA select the recommended preset for each mode. J/K/L/M explicitly request that preset; NVIDIA driver overrides can affect the result. Requires the supplied DLSS 310.9.1 runtime. Apply restarts the renderer. Deprecated preset F is not offered.</text></string>
     <string id="ui_mm_lst_dlss_off"><text>Off</text></string>
     <string id="ui_mm_lst_dlss_dlaa"><text>DLAA (native)</text></string>
+    <string id="ui_mm_lst_dlss_ultra_quality"><text>Ultra Quality</text></string>
     <string id="ui_mm_lst_dlss_quality"><text>Quality</text></string>
     <string id="ui_mm_lst_dlss_balanced"><text>Balanced</text></string>
     <string id="ui_mm_lst_dlss_performance"><text>Performance</text></string>
@@ -24,4 +30,20 @@
     <string id="ui_mm_lst_dlss_k"><text>K</text></string>
     <string id="ui_mm_lst_dlss_l"><text>L</text></string>
     <string id="ui_mm_lst_dlss_m"><text>M</text></string>
+    <string id="ui_mm_video_basic_frame_generation"><text>Frame generation (experimental)</text></string>
+    <string id="ui_mm_video_basic_frame_generation_desc"><text>Adds one generated frame per rendered frame. Only methods supported by this GPU are listed. DLSS 2x requires an NVIDIA RTX 40/50 GPU, hardware-accelerated GPU scheduling and the supplied Streamline runtime. AMD FSR 2x works on any DX12 GPU (FSR 4 frame generation on Radeon RX 9000 with Windows 11, otherwise FSR 3.1); it has no Reflex, and after using it, DLSS 2x and Reflex need a game restart. Requires an upscaler and MSAA off. Pauses in menus and loading screens. With frame generation active the FPS limit applies to displayed frames. Apply restarts the renderer.</text></string>
+    <string id="ui_mm_lst_fg_dlss_2x"><text>DLSS 2x</text></string>
+    <string id="ui_mm_lst_fg_dlss_2x_restart"><text>DLSS 2x (restart the game)</text></string>
+    <string id="ui_mm_lst_fg_fsr_2x"><text>AMD FSR 3.1 2x</text></string>
+    <string id="ui_mm_lst_fg_fsr4_2x"><text>AMD FSR 4 2x</text></string>
+    <string id="ui_mm_header_upscaling"><text>Upscaling</text></string>
+    <string id="ui_mm_video_basic_upscaler_post_after"><text>Post-processing after upscaling</text></string>
+    <string id="ui_mm_video_basic_upscaler_post_after_desc"><text>Keeps post-processing effects at full resolution without upscaling, which reduces ghosting and smearing on them.\nCan cost FPS and VRAM, especially on weaker GPUs.</text></string>
+    <string id="ui_mm_video_basic_upscaler_sunshafts"><text>Sunshafts</text></string>
+    <string id="ui_mm_video_basic_upscaler_sunshafts_desc"><text>Choose how sunshafts are handled on the upscaler.\nUpscaled: Upscaled normally. Most stable, but can show smearing.\nRaw: Drawn after the upscaler. Sharpest, but can shimmer or look grainy.\nSmoothed: Same as Raw, with an extra smoothing pass to reduce shimmer.</text></string>
+    <string id="ui_mm_lst_upscaler_sunshafts_upscaled"><text>Upscaled</text></string>
+    <string id="ui_mm_lst_upscaler_sunshafts_smoothed"><text>Smoothed</text></string>
+    <string id="ui_mm_lst_upscaler_sunshafts_raw"><text>Raw</text></string>
+    <string id="ui_mm_video_basic_upscaler_particles_after"><text>Full resolution particles</text></string>
+    <string id="ui_mm_video_basic_upscaler_particles_after_desc"><text>Draws smoke, fire and dust at full resolution without upscaling, which reduces visual artifacts on them.\nCan cost FPS, especially on weaker GPUs.\nThe visual difference is small with DLSS.</text></string>
 </string_table>

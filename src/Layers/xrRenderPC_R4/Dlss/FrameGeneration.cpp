@@ -9,6 +9,7 @@ extern u32 ps_r_frame_generation;
 extern int ps_r_fg_diagnostics;
 extern int ps_framelimiter;
 extern bool IsMainMenuActive();
+extern bool use_reshade;
 
 namespace fg
 {
@@ -141,9 +142,34 @@ void EndPresent()
         SetFrameGenerationError(ps_r_frame_generation == Dlss && !StreamlineIntegration::CanInitialize() ?
             "DLSS frame generation needs a game restart after using FSR frame generation." :
             "Selected frame generation method is not active. Apply again or see the game log.");
-    else if (g_pGameLevel && !IsMainMenuActive() && !dlss::Configured())
-        SetFrameGenerationError("Frame generation needs DLSS or FSR upscaling enabled.");
+    // Upscaling Off is the player's choice, not an error: the menu hides the frame
+    // generation row then, and generation resumes when an upscaler is selected again.
+    // Eligible() logs why it is not generating.
     else SetFrameGenerationError(nullptr);
+}
+
+// ReShade on DX12 runs on the presenting D3D12 device and never sees the game's depth
+// buffer: the bridge copies the scene depth over. Only with ReShade loaded, so nobody
+// else pays for it. Frame generation's own capture covers the frames it runs on.
+static bool depthExportFailed{};
+
+static void CaptureDepth(D3D12PresentBridge& bridge)
+{
+    if (!use_reshade || depthExportFailed) return;
+    ID3D11Resource* depth = dlss::Active() ? dlss::SceneDepthTexture() : nullptr;
+    ID3D11Resource* native{};
+    if (!depth && HW.pBaseZB)
+    {
+        HW.pBaseZB->GetResource(&native);
+        depth = native;
+    }
+    if (depth && FAILED(bridge.CaptureDepth(depth)))
+    {
+        depthExportFailed = true;
+        bridge.SetDepthExport(false);
+        Msg("! [ReShade] Depth for DX12 disabled: %s", bridge.LastFailure());
+    }
+    _RELEASE(native);
 }
 
 void CaptureScene()
@@ -152,7 +178,8 @@ void CaptureScene()
     sceneCaptured = false;
     // The scope view has its own camera; leave the main view's history untouched.
     if (Device.m_SecondViewport.IsSVPFrame()) return;
-    if (!bridge || !Eligible() || !bridge->NeedsFGInputs()) { havePrevious = false; return; }
+    if (bridge) bridge->SetDepthExport(use_reshade && !depthExportFailed);
+    if (!bridge || !Eligible() || !bridge->NeedsFGInputs()) { havePrevious = false; if (bridge) CaptureDepth(*bridge); return; }
     // Main frames are not consecutive while a legacy 3D scope renders on alternate frames;
     // with true PiP the scope pass shares the main view's frame, so they are.
     const u32 maxGap = !Device.true_pip_on && Device.m_SecondViewport.IsSVPActive() ?
