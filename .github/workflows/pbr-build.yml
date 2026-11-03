@@ -35,8 +35,12 @@
 #     FSR3 is built into the exe and needs no DLL.
 #   - The DLSS / FSR3 shader compatibility patch (brodrigz, .github/pbr-release/dlss/) is
 #     attached to the release; the in-game DLSS/FSR3 shaders come only from it. It is brodrigz's
-#     0.63, unchanged (no longer replaces SSS's / Atmospherics' AO, IL, SSR, contact shadows and
-#     water reflections; one atmos_rc7 option covers RC7.5 - 7.71 and the October 2026 update).
+#     0.71, unchanged (built with his package_compatibility.py at abeac190, plus PBR-Test-NOTES.txt):
+#     no longer replaces SSS's / Atmospherics' AO, IL, SSR, contact shadows and water reflections;
+#     one atmos_rc7 option covers RC7.5 - 7.71 and the October 2026 update; 0.7 / 0.71 add the
+#     shaders of the post chain after the upscaler (dlss_display_copy, DLSS Linear Input, the
+#     sunshaft mask, volumetric / particle / blended-alpha jitter). The exes need it: its
+#     combine_volumetric.ps reads dlss_volumetric_params, which only 0.71+ exes set.
 #     Its video menu needs r_upscaler_support / r_frame_generation, which these exes have.
 #   - DX12 frame generation (brodrigz's DX12 presentation bridge, from OGSR): the build matrix has
 #     a "DX12" leg that builds bin/AnomalyDX12.exe (DX11 rendering, DX12 presentation through
@@ -145,7 +149,7 @@ env:
   # DLSS branches only (see above). NVIDIA DLSS 310.9.1, the runtime brodrigz's 0.5 build uses.
   DLSS_DLL_URL: https://raw.githubusercontent.com/NVIDIA/DLSS/v310.9.1/lib/Windows_x86_64/rel/nvngx_dlss.dll
   DLSS_DLL_SHA256: 3975567b8943c53acce397f2b72380092f84f162d00b0d2c7d08a1025c563983
-  DLSS_PATCH_ZIP: .github/pbr-release/dlss/dlss-binaries-GAMMA-compatibility-patch-0.63.zip
+  DLSS_PATCH_ZIP: .github/pbr-release/dlss/dlss-binaries-GAMMA-compatibility-patch-0.71.zip
   # DX12 frame-generation runtimes (DLSS branches, job dx12_runtime). Every file must carry a
   # valid Authenticode signature from its vendor, and every download is pinned by SHA-256 (an
   # empty *_SHA256 would not be checked; the job then prints the hash it got so it can be pinned).
