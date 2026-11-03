@@ -43,7 +43,11 @@
     <WholeProgramOptimization>true</WholeProgramOptimization>
   </PropertyGroup>
   <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='VerifiedDX11ASAN|x64'">
-    <EnableASAN>true</EnableASAN>
+    <!-- Not instrumented: LuaJIT reads past the ends of strings on purpose (lj_str.c str_fastcmp, 4 bytes at
+         a time, "innocuous access up to end of string + 3", guarded against page ends), which ASAN reports as
+         global-buffer-overflow on the first string literal it interns (luaopen_base, "__mode"). Its memory comes
+         from its own allocator anyway. The rest of the exe stays instrumented; mixing is supported. -->
+    <EnableASAN>false</EnableASAN>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
