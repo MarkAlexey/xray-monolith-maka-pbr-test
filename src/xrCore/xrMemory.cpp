@@ -168,6 +168,9 @@ void xrMemory::mem_compact()
 	// -tbbmalloc: return the allocator's cached free blocks (xrMemory_subst_msvc.cpp)
 	extern void xr_memory_heap_compact();
 	xr_memory_heap_compact();
+	// ... and say so once if the allocator switch was ever found overwritten
+	extern void xr_memory_heap_check();
+	xr_memory_heap_check();
 
 #ifdef DEBUG_MEMORY_MANAGER
 	// left debug-only: both stall for long enough to be visible

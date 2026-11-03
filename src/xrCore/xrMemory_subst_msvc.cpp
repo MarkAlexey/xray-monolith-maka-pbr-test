@@ -4,6 +4,7 @@
 #include "xrMemory_align.h"
 #include "xrMemory_pure.h"
 #include <atomic>
+#include <cerrno>
 
 #ifndef __BORLANDC__
 
@@ -56,6 +57,16 @@ ICF u32 get_pool(size_t size)
 //     and xr_memory_heap_name() says why (logged at startup).
 //   - mem_compact() (load boundaries) also hands tbbmalloc's cached free memory back to the
 //     system (TBBMALLOC_CLEAN_ALL_BUFFERS).
+//   - Every block goes back to the heap that allocated it, whatever the switch says at that
+//     moment: while tbbmalloc.dll is loaded, mem_free and mem_realloc ask tbbmalloc whether it
+//     owns the block (__TBB_malloc_safer_free / __TBB_malloc_safer_aligned_msize, the checks
+//     oneTBB's own malloc proxy runs on every CRT free; foreign pointers are probed under SEH)
+//     and hand blocks it does not own to the CRT. Only new allocations follow the switch.
+//     Reason: a crash dump (level change, CCoverManager::clear) showed mem_free taking the CRT
+//     branch for a tbbmalloc block in a session that had run on tbbmalloc from the start, and
+//     _aligned_free / HeapFree on it faulted in ntdll. The switch is now also kept with a check
+//     copy (~choice); if they ever disagree the allocator recovers (tbbmalloc if it was loaded)
+//     and mem_compact() logs it once, with the value it read (xr_memory_heap_check()).
 //
 // The zero-fill contract, kept for both heaps:
 //   mem_alloc(zeroMemory) returns zeroed memory, and mem_realloc zero-fills the part of a block
@@ -84,12 +95,23 @@ struct tbb_heap_api
 	void (__cdecl* aligned_free)(void*);
 	size_t (__cdecl* msize)(void*);
 	int (__cdecl* command)(int, void*);
+	// Ownership test and the free oneTBB's malloc proxy uses for CRT calls: they return / free
+	// only blocks tbbmalloc allocated, and pass anything else to the function given
+	void (__cdecl* safer_free)(void*, void (__cdecl*)(void*));
+	size_t (__cdecl* safer_aligned_msize)(void*, size_t, size_t, size_t (__cdecl*)(void*, size_t, size_t));
 };
 
 tbb_heap_api tbb_heap_storage;
 const char* tbb_heap_state = "CRT heap";
-// 0: not decided yet, 1: CRT heap, 2: tbbmalloc
+// 0: not decided yet, 1: CRT heap, 2: tbbmalloc. tbb_heap_choice_check holds ~choice once decided.
 std::atomic<int> tbb_heap_choice{0};
+std::atomic<int> tbb_heap_choice_check{0};
+// tbbmalloc.dll with every export above: set once with the decision, never cleared. Frees and
+// reallocs consult it (not the switch) to find the owner of a block.
+std::atomic<bool> tbb_heap_loaded{false};
+// The switch read a value its check copy did not match: that value, for xr_memory_heap_check()
+std::atomic<int> tbb_heap_mismatch{0};
+std::atomic<bool> tbb_heap_mismatch_seen{false};
 
 const tbb_heap_api* tbb_heap_decide()
 {
@@ -108,17 +130,34 @@ const tbb_heap_api* tbb_heap_decide()
 			a.aligned_free = (decltype(a.aligned_free))GetProcAddress(module, "scalable_aligned_free");
 			a.msize = (decltype(a.msize))GetProcAddress(module, "scalable_msize");
 			a.command = (decltype(a.command))GetProcAddress(module, "scalable_allocation_command");
-			if (a.aligned_malloc && a.aligned_realloc && a.aligned_free && a.msize)
+			a.safer_free = (decltype(a.safer_free))GetProcAddress(module, "__TBB_malloc_safer_free");
+			a.safer_aligned_msize = (decltype(a.safer_aligned_msize))GetProcAddress(module, "__TBB_malloc_safer_aligned_msize");
+			if (a.aligned_malloc && a.aligned_realloc && a.aligned_free && a.msize && a.safer_free && a.safer_aligned_msize)
 			{
 				tbb_heap_state = "tbbmalloc (-tbbmalloc)";
 				choice = 2;
+				tbb_heap_loaded.store(true, std::memory_order_release);
 			}
 			else
-				tbb_heap_state = "CRT heap (-tbbmalloc: tbbmalloc.dll lacks the scalable_aligned_* exports)";
+				tbb_heap_state = "CRT heap (-tbbmalloc: tbbmalloc.dll lacks the scalable_aligned_* / __TBB_malloc_safer_* exports)";
 		}
 		else
 			tbb_heap_state = "CRT heap (-tbbmalloc: tbbmalloc.dll not found beside the exe)";
 	}
+	tbb_heap_choice_check.store(~choice, std::memory_order_relaxed);
+	tbb_heap_choice.store(choice, std::memory_order_release);
+	return choice == 2 ? &tbb_heap_storage : nullptr;
+}
+
+// The switch and its check copy disagree: something overwrote one of them. Remember what was
+// read (reported by xr_memory_heap_check(), outside the allocator) and restore the decision from
+// tbb_heap_loaded. No logging here: Msg allocates.
+const tbb_heap_api* tbb_heap_recover(int seen)
+{
+	if (!tbb_heap_mismatch_seen.exchange(true, std::memory_order_relaxed))
+		tbb_heap_mismatch.store(seen, std::memory_order_relaxed);
+	const int choice = tbb_heap_loaded.load(std::memory_order_acquire) ? 2 : 1;
+	tbb_heap_choice_check.store(~choice, std::memory_order_relaxed);
 	tbb_heap_choice.store(choice, std::memory_order_release);
 	return choice == 2 ? &tbb_heap_storage : nullptr;
 }
@@ -130,7 +169,33 @@ inline const tbb_heap_api* tbb_heap()
 	const int choice = tbb_heap_choice.load(std::memory_order_acquire);
 	if (choice == 0)
 		return tbb_heap_decide();
+	if (choice != ~tbb_heap_choice_check.load(std::memory_order_relaxed))
+		return tbb_heap_recover(choice);
 	return choice == 2 ? &tbb_heap_storage : nullptr;
+}
+
+// tbbmalloc, if it is loaded at all (even if the switch says CRT): the owner test for frees and
+// reallocs. Makes sure the decision was taken first.
+inline const tbb_heap_api* tbb_heap_any()
+{
+	tbb_heap();
+	return tbb_heap_loaded.load(std::memory_order_acquire) ? &tbb_heap_storage : nullptr;
+}
+
+// Does tbbmalloc own this block? Its usable size, or 0 for a block of any other heap (CRT).
+// __TBB_malloc_safer_aligned_msize sets errno for foreign blocks; keep the caller's errno.
+size_t tbb_owned_size(const tbb_heap_api* api, void* block)
+{
+	const int saved = errno;
+	const size_t size = api->safer_aligned_msize(block, PURE_MEMORY_ALIGNMENT, 0, nullptr);
+	errno = saved;
+	return size;
+}
+
+// The CRT's free for blocks tbbmalloc does not own (passed to __TBB_malloc_safer_free)
+void __cdecl crt_aligned_free(void* block)
+{
+	_aligned_free(block);
 }
 
 // Zero [from, usable) of a tbbmalloc block: keeps the slack invariant described above
@@ -154,6 +219,18 @@ void xr_memory_heap_compact()
 	if (const tbb_heap_api* api = tbb_heap())
 		if (api->command)
 			api->command(0 /* TBBMALLOC_CLEAN_ALL_BUFFERS */, nullptr);
+}
+
+// mem_compact(): report, once, that the allocator switch was found overwritten (see above)
+void xr_memory_heap_check()
+{
+	static bool reported = false;
+	if (reported || !tbb_heap_mismatch_seen.load(std::memory_order_relaxed))
+		return;
+	reported = true;
+	Msg("! [Memory] the allocator switch was found overwritten (read %d, expected %d) and was restored; "
+		"blocks still went back to their own heap. Please send this log.",
+		tbb_heap_mismatch.load(std::memory_order_relaxed), tbb_heap_loaded.load() ? 2 : 1);
 }
 
 void* xrMemory::mem_alloc(size_t size
@@ -264,10 +341,11 @@ void xrMemory::mem_free(void* P)
 #endif // USE_MEMORY_MONITOR
 
 #ifdef PURE_ALLOC
-	if (const tbb_heap_api* api = tbb_heap())
+	// By owner, not by the switch: tbbmalloc frees its own blocks and passes the rest to the CRT
+	if (const tbb_heap_api* api = tbb_heap_any())
 	{
 		if (P)
-			api->aligned_free(P);
+			api->safer_free(P, &crt_aligned_free);
 		return;
 	}
 	{
@@ -324,11 +402,16 @@ void* xrMemory::mem_realloc(void* P, size_t size
 	}
 
 #ifdef PURE_ALLOC
-	if (const tbb_heap_api* api = tbb_heap())
+	// By owner, not by the switch: a tbbmalloc block is resized by tbbmalloc, any other block by
+	// the CRT below (it stays in the CRT heap)
+	const tbb_heap_api* owner = tbb_heap_any();
+	const size_t tbb_usable = owner ? tbb_owned_size(owner, P) : 0;
+	if (tbb_usable)
 	{
+		const tbb_heap_api* api = owner;
 		// Slack invariant: [requested, usable) of every block is zero, so growing from the old
 		// usable size zero-fills exactly the new bytes, as the CRT path below does
-		const size_t old_usable = api->msize(P);
+		const size_t old_usable = tbb_usable;
 		void* result = api->aligned_realloc(P, size, PURE_MEMORY_ALIGNMENT);
 		if (result)
 		{
