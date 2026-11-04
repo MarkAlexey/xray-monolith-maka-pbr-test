@@ -154,6 +154,17 @@ line out. The file is read when the game starts. The options the shaders here un
 
 Other options are passed through for future use.
 
+For a global alternative that keeps the material as it is, use the console variables
+`r4_pbr_reflection_blur_hud` (first-person models) and `r4_pbr_reflection_blur_world` (everything
+else), 0..1, default 0 = unchanged. They set the least roughness the reflected *image* (sky
+cubemaps, VSLR capture, SSLR) is looked up at, so a polished or metal surface stops showing a
+sharp mirror image of its surroundings. Unlike `HUD_REFLECT`, the metalness and roughness still
+apply: Fresnel, the metal tint, the ambient brightness and the sun and lamp highlights use the
+material's own roughness. SSLR fades out as the value goes to 1. They take effect immediately
+(no restart) and are saved in user.ltx. Caveat: first-person pixels are told apart by depth, the
+same test SSLR uses (`SSLR_HUD_DEPTH`, 1.2 m), so world geometry closer than that takes the HUD
+value. PBR textures only; legacy and pseudo-PBR pixels are unchanged.
+
 ### Global options and the debug view
 
 The top of `gamedata\shaders\r3\pbr_ixray.h` has commented-out defines that apply to every PBR

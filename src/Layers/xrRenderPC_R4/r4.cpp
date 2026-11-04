@@ -265,6 +265,16 @@ static class cl_vslr_params : public R_constant_setup
 	}
 } binder_vslr_params;
 
+// PBR reflection blur, read by pbr_ixray.h (pbr_reflection_blur): x = first-person models,
+// y = everything else; 0 = the material's own reflection, 1 = fully blurred, no SSLR
+static class cl_pbr_reflect_params : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		RCache.set_c(C, ps_r4_pbr_reflection_blur_hud, ps_r4_pbr_reflection_blur_world, 0.f, 0.f);
+	}
+} binder_pbr_reflect_params;
+
 // LEWD: localized VSLR lookup (Szirmay-Kalos et al. 2005, "Approximate Ray-Tracing on the GPU with
 // Distance Impostors"): xyz = world position the panorama was captured from, w = refinement steps
 // (0 = plain direction lookup, r4_vslr_localize)
@@ -681,6 +691,7 @@ void CRender::create()
 	RM->RegisterConstantSetup("water_intensity", &binder_water_intensity);
 	RM->RegisterConstantSetup("sslr_params", &binder_sslr_params);
 	RM->RegisterConstantSetup("vslr_params", &binder_vslr_params);
+	RM->RegisterConstantSetup("pbr_reflect_params", &binder_pbr_reflect_params);
 	RM->RegisterConstantSetup("skin_sss_params", &binder_skin_sss_params);
 	RM->RegisterConstantSetup("upscaler_reactive", &binder_upscaler_reactive);
 	RM->RegisterConstantSetup("skin_sss_proj", &binder_skin_sss_proj);

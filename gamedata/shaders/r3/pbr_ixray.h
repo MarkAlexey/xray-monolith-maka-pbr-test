@@ -776,6 +776,23 @@ float3 pbr_specular_irradiance( float3 R, float hemi, float roughness )
 	return pbr_specular_irradiance( R, hemi, roughness, (float3)0.0 );
 }
 
+// Reflection blur (r4_pbr_reflection_blur_hud / _world, 0..1, default 0 = unchanged): the
+// reflected image (sky cubemaps, VSLR capture, SSLR) is looked up at least this rough, so a
+// smooth or metallic surface no longer shows a sharp mirror image of its surroundings. Only the
+// image is blurred: the Fresnel term, the metal tint and the ambient brightness still use the
+// material's own roughness, and direct-light highlights (sun, lamps) are unchanged. SSLR (a sharp
+// screen-space mirror by nature) fades out as the blur goes to 1.
+// x = first-person models, y = everything else. Without an engine that binds it the constant
+// reads 0 and nothing changes.
+// Caveat: first-person pixels are told apart by depth (P.z < SSLR_HUD_DEPTH, 1.2 m, the same
+// test SSLR uses), so world geometry closer than that (hugging a wall) takes the HUD value.
+uniform float4	pbr_reflect_params;
+
+float pbr_reflection_blur( float3 P )
+{
+	return saturate( P.z < SSLR_HUD_DEPTH ? pbr_reflect_params.x : pbr_reflect_params.y );
+}
+
 // Linear ambient radiance (IX-Ray AmbientLightingImpl). occ = SSAO * material AO.
 // diffuse_scale multiplies the diffuse part only (SSS indirect light).
 float3 pbr_ambient_ex( pbr_material M, float3 P, float3 N, float hemi, float occ, float3 diffuse_scale )
@@ -788,7 +805,9 @@ float3 pbr_ambient_ex( pbr_material M, float3 P, float3 N, float hemi, float occ
 	float3 diffuse	= pbr_to_linear( pbr_diffuse_irradiance( N, hemi ) ) * M.diffuse * diffuse_scale;
 	// IX-Ray SSLR replaces the cubemap reflection where its rays hit something (gamma space,
 	// before linearisation; see sslr_apply.h). P is the unnormalised view position.
-	float3 specular	= pbr_to_linear( sslr_blend( pbr_specular_irradiance( R, hemi, M.roughness, P ), P ) );
+	float  blur		= pbr_reflection_blur( P );
+	float3 cube		= pbr_specular_irradiance( R, hemi, max( M.roughness, blur ), P );
+	float3 specular	= pbr_to_linear( lerp( sslr_blend( cube, P ), cube, blur ) );
 #if defined(PBR_UNIFIED) && defined(SSFX_NEWGLOSS)
 	// SSS "Improved gloss & wet surfaces": flora reflects a quarter of the environment
 	specular		*= M.flora ? 0.25 : 1.0;
