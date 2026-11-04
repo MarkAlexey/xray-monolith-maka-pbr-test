@@ -2002,7 +2002,12 @@ void player_hud::re_sync_anim(u8 part)
 					B->speed = BR->speed;
 				}
 			}
-			else if (pid != part)
+			// Syncing to the right hand the left model takes the clip on every part,
+			// as play_blend(1) plays it. Leaving its part 2 on the ended script clip
+			// (mask wipe) left the bones there, lead_gun among them, at the script
+			// pose; a hud anm pivoting on lead_gun then swung the whole left hand
+			// around that stale point. The right model is never driven on part 1.
+			else if (pid != part || part == 2)
 			{
 				CBlend* B = part == 1 ? m_model->PlayCycle(pid, M, TRUE) : m_model_2->PlayCycle(pid, M, TRUE);
 				if (B)
