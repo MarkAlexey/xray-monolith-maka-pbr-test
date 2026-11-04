@@ -10,6 +10,10 @@ Here is list of exe files for Anomaly 1.5.3 that contains all engine patches by 
 
 ## Credits
 
+**Animation**
+- Ser_Nailus ([His profile](https://www.moddb.com/members/ser-nailus)) : Fixes for desyncs on animation side, now pushed into the engine. Original mod that fixed those issues : https://www.moddb.com/mods/stalker-anomaly/addons/movement-mods-fixes (Give him some votes up, he did a great job!)
+
+
 **Base**
 - **themrdemonized** and the Modded Exes contributors: X-Ray Monolith, the base of this fork
 - **The Anomaly developers**
