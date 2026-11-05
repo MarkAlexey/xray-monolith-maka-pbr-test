@@ -25,6 +25,21 @@ void CRenderTarget::phase_nightvision()
 	//Set pass
 	RCache.set_Element(s_nightvision->E[ps_r2_nightvision]);
 #if defined(USE_DX11)
+	// With an upscaler the post chain draws night vision after dlss::EndScene(), where the
+	// dlss_params binder reports "not active". The NVG shader (Beef's NVGs + DLSS patch,
+	// night_vision.h blurred_depth) then reads the still render-sized position buffer at
+	// display-sized coordinates: inside the render rectangle every pixel got another pixel's
+	// depth (distance-darkened), outside it read 0 (sky, left bright). Report the position
+	// buffer's real size for this pass; at display size the constant stays as the binder set it.
+	if (rt_Position && rt_Position->pSurface)
+	{
+		D3D11_TEXTURE2D_DESC pos_desc{};
+		rt_Position->pSurface->GetDesc(&pos_desc);
+		if (pos_desc.Width != Device.dwWidth || pos_desc.Height != Device.dwHeight)
+			RCache.set_c("dlss_params", 1.f, float(pos_desc.Width), float(pos_desc.Height), 0.f);
+	}
+#endif
+#if defined(USE_DX11)
 
 	// Optical focus is admitted only after this frame's actual lens and image.
 	RCache.set_c("scope_glass_nvg_focus", (this == RImplementation.TargetMain
