@@ -28,6 +28,7 @@
 #include "ixray_brdf.h"	// shared IX-Ray BRDF and cubemap remap (also used by patched Enhanced Shaders)
 #include "sslr_apply.h"	// IX-Ray SSLR consumer (no-op unless r4_sslr_reflections 1)
 #include "hdr_ibl.h"	// HDR highlights reconstructed from the 8-bit cubemaps
+#include "pbr_surface.h"	// material alpha: PBR flag, subsurface, NO_MIRROR
 
 #ifdef PBR_GBUFFER
 
@@ -105,6 +106,7 @@ struct pbr_material
 	float	roughness;
 	float	ao;
 	float	sss;
+	float	mirror;		// 1 = reflects its surroundings, 0 = only the sky (NO_MIRROR, pbr_surface.h)
 	float3	diffuse;	// linear, albedo * (1 - metalness)
 	float3	specular;	// linear F0
 };
@@ -120,6 +122,7 @@ pbr_material pbr_load( float2 tc, float2 pos2d, uint iSample, float3 albedo )
 	M.roughness	= max( 0.02, S.y );
 	M.ao		= S.z;
 	M.sss		= saturate( S.w * 2.0 - 1.0 );
+	M.mirror	= pbr_surface_mirror( S.w );
 
 	float3 lin	= pbr_to_linear( albedo );
 	M.specular	= lerp( (float3)PBR_F0_DIELECTRIC, lin, S.x );
@@ -151,6 +154,7 @@ pbr_material pbr_from_legacy( float4 alb_gloss, float m )
 	M.roughness	= max( 0.02, rough );	// perceptual roughness, as in IX-Ray
 	M.ao		= 1.0;
 	M.sss		= 0.0;
+	M.mirror	= 1.0;
 	M.diffuse	= albedo;	// already linear, metals included
 	M.specular	= specular;
 	return M;
@@ -685,8 +689,9 @@ float3 pbr_diffuse_irradiance( float3 N, float hemi )
 
 float pbr_luminance( float3 c ) { return dot( c, float3( 0.2126, 0.7152, 0.0722 ) ); }
 
-// P = view-space position of the shaded pixel (LEWD: for the localized VSLR lookup)
-float3 pbr_specular_irradiance( float3 R, float hemi, float roughness, float3 P )
+// P = view-space position of the shaded pixel (LEWD: for the localized VSLR lookup).
+// mirror: 1 = the VSLR capture of the surroundings blends in, 0 = only the sky (NO_MIRROR).
+float3 pbr_specular_irradiance( float3 R, float hemi, float roughness, float3 P, float mirror )
 {
 	float3 rw	= mul( m_inv_V, R );
 
@@ -756,7 +761,7 @@ float3 pbr_specular_irradiance( float3 R, float hemi, float roughness, float3 P 
 		float3 vdir		= vslr_lookup_dir( normalize( rw ), pw, roughness );
 		float4 vslr		= s_env_fwd.SampleLevel( smp_linear, vslr_panorama_uv( vdir ), vslr_lod );
 		float3 vslr_sky	= lerp( sky, env, env_blend ) * saturate( hemi * 3.0 );
-		result			= lerp( result, vslr.rgb + vslr_sky * ( 1.0 - vslr.a ), vslr_params.x );
+		result			= lerp( result, vslr.rgb + vslr_sky * ( 1.0 - vslr.a ), vslr_params.x * saturate( mirror ) );
 #	ifdef VSLR_DEBUG
 		result			= vslr.rgb + float3( 1.0, 0.0, 1.0 ) * ( 1.0 - vslr.a );
 #	endif
@@ -770,10 +775,16 @@ float3 pbr_specular_irradiance( float3 R, float hemi, float roughness, float3 P 
 #endif
 }
 
+// The surroundings reflected as before (callers without a material)
+float3 pbr_specular_irradiance( float3 R, float hemi, float roughness, float3 P )
+{
+	return pbr_specular_irradiance( R, hemi, roughness, P, 1.0 );
+}
+
 // Without a position (callers that have none): the camera, i.e. the unlocalized lookup
 float3 pbr_specular_irradiance( float3 R, float hemi, float roughness )
 {
-	return pbr_specular_irradiance( R, hemi, roughness, (float3)0.0 );
+	return pbr_specular_irradiance( R, hemi, roughness, (float3)0.0, 1.0 );
 }
 
 // Reflection blur (r4_pbr_reflection_blur_hud / _world, 0..1, default 0 = unchanged): the
@@ -784,6 +795,8 @@ float3 pbr_specular_irradiance( float3 R, float hemi, float roughness )
 // screen-space mirror by nature) fades out as the blur goes to 1.
 // x = first-person models, y = everything else. Without an engine that binds it the constant
 // reads 0 and nothing changes.
+// zw: the same split for "no mirror" (r4_pbr_mirror_hud / _world 0, stored here as 1): every
+// PBR surface reflects only the sky, as a NO_MIRROR texture does (pbr_surface.h).
 // Caveat: first-person pixels are told apart by depth (P.z < SSLR_HUD_DEPTH, 1.2 m, the same
 // test SSLR uses), so world geometry closer than that (hugging a wall) takes the HUD value.
 uniform float4	pbr_reflect_params;
@@ -791,6 +804,14 @@ uniform float4	pbr_reflect_params;
 float pbr_reflection_blur( float3 P )
 {
 	return saturate( P.z < SSLR_HUD_DEPTH ? pbr_reflect_params.x : pbr_reflect_params.y );
+}
+
+// 1 = the pixel reflects its surroundings (VSLR, SSLR), 0 = only the sky: the texture's
+// NO_MIRROR option and the global switches together
+float pbr_reflection_mirror( pbr_material M, float3 P )
+{
+	float off	= saturate( P.z < SSLR_HUD_DEPTH ? pbr_reflect_params.z : pbr_reflect_params.w );
+	return M.mirror * ( 1.0 - off );
 }
 
 // Linear ambient radiance (IX-Ray AmbientLightingImpl). occ = SSAO * material AO.
@@ -806,8 +827,9 @@ float3 pbr_ambient_ex( pbr_material M, float3 P, float3 N, float hemi, float occ
 	// IX-Ray SSLR replaces the cubemap reflection where its rays hit something (gamma space,
 	// before linearisation; see sslr_apply.h). P is the unnormalised view position.
 	float  blur		= pbr_reflection_blur( P );
-	float3 cube		= pbr_specular_irradiance( R, hemi, max( M.roughness, blur ), P );
-	float3 specular	= pbr_to_linear( lerp( sslr_blend( cube, P ), cube, blur ) );
+	float  mirror	= pbr_reflection_mirror( M, P );
+	float3 cube		= pbr_specular_irradiance( R, hemi, max( M.roughness, blur ), P, mirror );
+	float3 specular	= pbr_to_linear( lerp( cube, sslr_blend( cube, P ), ( 1.0 - blur ) * mirror ) );
 #if defined(PBR_UNIFIED) && defined(SSFX_NEWGLOSS)
 	// SSS "Improved gloss & wet surfaces": flora reflects a quarter of the environment
 	specular		*= M.flora ? 0.25 : 1.0;

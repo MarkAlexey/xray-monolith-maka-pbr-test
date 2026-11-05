@@ -95,8 +95,8 @@ f_deffer 	main	( p_bumped I )
 #endif
 
 #if defined(USE_PBR) && defined(PBR_GBUFFER)
-	// IX-Ray PBR material: metalness, roughness, AO, PBR flag + subsurface
-	O.surface = float4( S.pbr.x, S.pbr.y, S.pbr.z, 0.5 + 0.5 * S.pbr.w );
+	// IX-Ray PBR material: metalness, roughness, AO, PBR flag + subsurface + NO_MIRROR (pbr_surface.h)
+	O.surface = float4( S.pbr.x, S.pbr.y, S.pbr.z, pbr_surface_w( S.pbr.w ) );
 #endif
 
 	return 	O	;

@@ -267,11 +267,13 @@ static class cl_vslr_params : public R_constant_setup
 
 // PBR reflection blur, read by pbr_ixray.h (pbr_reflection_blur): x = first-person models,
 // y = everything else; 0 = the material's own reflection, 1 = fully blurred, no SSLR
+// zw = the same split for "no mirror": 1 = only the sky (r4_pbr_mirror_hud / _world 0)
 static class cl_pbr_reflect_params : public R_constant_setup
 {
 	virtual void setup(R_constant* C)
 	{
-		RCache.set_c(C, ps_r4_pbr_reflection_blur_hud, ps_r4_pbr_reflection_blur_world, 0.f, 0.f);
+		RCache.set_c(C, ps_r4_pbr_reflection_blur_hud, ps_r4_pbr_reflection_blur_world,
+			ps_r4_pbr_mirror_hud ? 0.f : 1.f, ps_r4_pbr_mirror_world ? 0.f : 1.f);
 	}
 } binder_pbr_reflect_params;
 

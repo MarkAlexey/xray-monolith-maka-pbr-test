@@ -1,6 +1,8 @@
 #ifndef PBR_HUD_H
 #define PBR_HUD_H
 
+#include "pbr_surface.h"	// material alpha: PBR flag, subsurface, NO_MIRROR
+
 //////////////////////////////////////////////////////////////////////////////////////////
 // Monolith: IX-Ray PBR materials under Screen Space Shaders / Enhanced Shaders
 //
@@ -101,7 +103,7 @@ float4 pbr_hud_surface( float4 pbr )
 #ifdef SKIN_SSS
 	pbr.w = saturate( SKIN_SSS );
 #endif
-	return float4( pbr.x, pbr.y, pbr.z, 0.5 + 0.5 * pbr.w );
+	return float4( pbr.x, pbr.y, pbr.z, pbr_surface_w( pbr.w ) );
 }
 #endif
 

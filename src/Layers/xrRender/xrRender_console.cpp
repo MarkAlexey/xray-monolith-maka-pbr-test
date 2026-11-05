@@ -302,6 +302,8 @@ float ps_r4_vslr_far = 0.4f; // r4_vslr_far, capture distance as a fraction of t
 float ps_r4_vslr_intensity = 1.0f; // r4_vslr_intensity, how strongly the capture replaces the sky reflection
 float ps_r4_pbr_reflection_blur_hud = 0.f; // r4_pbr_reflection_blur_hud: PBR first-person models reflect a blurred image instead of a mirror (pbr_ixray.h)
 float ps_r4_pbr_reflection_blur_world = 0.f; // r4_pbr_reflection_blur_world: the same for everything else
+int ps_r4_pbr_mirror_hud = 1; // r4_pbr_mirror_hud: 0 = PBR first-person models reflect only the sky, not their surroundings (pbr_surface.h)
+int ps_r4_pbr_mirror_world = 1; // r4_pbr_mirror_world: the same for everything else
 int ps_r4_vslr_localize = 2; // LEWD r4_vslr_localize: 0 = direction lookup (IX-Ray), 1..4 = distance-impostor refinement steps
 
 // Reactive mask for DLSS / FSR 3 (r4_rendertarget_phase_reactive.cpp), no restart needed
@@ -1642,6 +1644,8 @@ void xrRender_initconsole()
 	CMD4(CCC_Float, "r4_vslr_intensity", &ps_r4_vslr_intensity, 0.f, 1.f);
 	CMD4(CCC_Float, "r4_pbr_reflection_blur_hud", &ps_r4_pbr_reflection_blur_hud, 0.f, 1.f);
 	CMD4(CCC_Float, "r4_pbr_reflection_blur_world", &ps_r4_pbr_reflection_blur_world, 0.f, 1.f);
+	CMD4(CCC_Integer, "r4_pbr_mirror_hud", &ps_r4_pbr_mirror_hud, 0, 1);
+	CMD4(CCC_Integer, "r4_pbr_mirror_world", &ps_r4_pbr_mirror_world, 0, 1);
 	CMD4(CCC_Integer, "r4_vslr_localize", &ps_r4_vslr_localize, 0, 4);
 
 	// Reactive mask for DLSS / FSR 3
