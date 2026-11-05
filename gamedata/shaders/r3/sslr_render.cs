@@ -112,7 +112,8 @@ void main( uint3 DTid : SV_DispatchThreadID )
 	float  gloss	= s_diffuse.Load( int3( DTid.xy, 0 ) ).w;
 	float  rough	= sslr_roughness( S, gloss );
 
-	[branch] if( rough > SSLR_ROUGHNESS_CUTOFF )
+	// NO_MIRROR textures (pbr_surface.h) reflect only the sky: nothing to trace either
+	[branch] if( rough > SSLR_ROUGHNESS_CUTOFF || pbr_surface_mirror( S.w ) < 0.5 )
 	{
 		u_sslr[DTid.xy]			= 0;
 		u_sslr_data[DTid.xy]	= float4( 0, 0, 0, rough );

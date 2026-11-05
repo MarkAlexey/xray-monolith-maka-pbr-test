@@ -212,6 +212,8 @@ extern ECORE_API float ps_r4_vslr_far;
 extern ECORE_API float ps_r4_vslr_intensity;
 extern ECORE_API float ps_r4_pbr_reflection_blur_hud;
 extern ECORE_API float ps_r4_pbr_reflection_blur_world;
+extern ECORE_API int ps_r4_pbr_mirror_hud;
+extern ECORE_API int ps_r4_pbr_mirror_world;
 extern ECORE_API int ps_r4_vslr_localize;
 
 // Reactive mask for DLSS / FSR 3

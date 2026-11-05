@@ -165,6 +165,22 @@ material's own roughness. SSLR fades out as the value goes to 1. They take effec
 same test SSLR uses (`SSLR_HUD_DEPTH`, 1.2 m), so world geometry closer than that takes the HUD
 value. PBR textures only; legacy and pseudo-PBR pixels are unchanged.
 
+To keep a surface reflective without it mirroring its surroundings (the look of the early
+PBR builds: the sky cubemaps blurred by roughness, nothing else), add to the texture's `.ltx`:
+
+```ini
+[shaders_options]
+NO_MIRROR = 1   ; reflect only the sky: no VSLR capture of nearby geometry, no SSLR
+```
+
+Metalness, roughness, the metal tint and every highlight stay as the material says; only the
+reflected image of the world around it goes. `r4_pbr_mirror_hud 0` / `r4_pbr_mirror_world 0`
+(console, default 1, immediate) do the same for every PBR surface on first-person models / in
+the world. The option travels in bit 0 of the material target's alpha (`pbr_surface.h`), so
+subsurface values keep 64 steps instead of 128. Caveats: PBR textures only; and a shader pack
+built from an older repository writes that alpha the old way, which sets the flag at random on
+skin (any texture with a subsurface value): rebuild the pack together with the exe.
+
 ### Global options and the debug view
 
 The top of `gamedata\shaders\r3\pbr_ixray.h` has commented-out defines that apply to every PBR

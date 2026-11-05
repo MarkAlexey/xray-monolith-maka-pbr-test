@@ -28,6 +28,7 @@
 //////////////////////////////////////////////////////////////////////////////////////////
 
 #include "sslr_settings.h"
+#include "pbr_surface.h"	// NO_MIRROR pixels are not traced (sslr_render.cs)
 
 #ifndef PI
 #	define PI 3.14159265359
