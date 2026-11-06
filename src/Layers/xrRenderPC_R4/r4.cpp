@@ -539,8 +539,9 @@ void CRender::create()
 	o.dx10_sm4_1 = o.dx10_sm4_1 && (HW.FeatureLevel >= D3D_FEATURE_LEVEL_10_1);
 
 	//	MSAA option dependencies
-	o.dx10_msaa = !!ps_r3_msaa;
-	o.dx10_msaa_samples = (1 << ps_r3_msaa);
+	// MSAA is not supported (xrRender_console.cpp, qmsaa_token): always off
+	o.dx10_msaa = false;
+	o.dx10_msaa_samples = 1;
 
 	// DLSS HDR input needs the patch's shaders.
 	// The console options are read when DLSS is created, so vid_restart applies them.
