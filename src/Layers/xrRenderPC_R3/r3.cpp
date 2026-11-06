@@ -371,8 +371,9 @@ void CRender::create()
 
 	//	MSAA option dependencies
 
-	o.dx10_msaa = !!ps_r3_msaa;
-	o.dx10_msaa_samples = (1 << ps_r3_msaa);
+	// MSAA is not supported (xrRender_console.cpp, qmsaa_token): always off
+	o.dx10_msaa = false;
+	o.dx10_msaa_samples = 1;
 
 	o.dx10_msaa_opt = ps_r2_ls_flags.test(R3FLAG_MSAA_OPT);
 	o.dx10_msaa_opt = o.dx10_msaa_opt && o.dx10_msaa && (HW.pDevice1 != 0);

@@ -106,11 +106,11 @@ xr_token qsun_quality_token [ ] = {
 };
 
 u32 ps_r3_msaa = 0; //	=	0;
+// MSAA is not supported: the PBR / SSS / Atmospherics shaders, IX-Ray SSLR / CSM, skin SSS and
+// DLSS / FSR 3 all need it off, and Atmospherics' SSR fails to compile with it (the game stops).
+// "Off" is the only choice; an old "r3_msaa 2x" in user.ltx is rejected and MSAA stays off.
 xr_token qmsaa_token [ ] = {
 	{"st_opt_off", 0},
-	{"2x", 1},
-	{"4x", 2},
-	{"8x", 3},
 	{0, 0}
 };
 
