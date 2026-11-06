@@ -1829,3 +1829,35 @@ Also taken, adapted (second commit):
   restores the opt-in behaviour. Cost: assets shared between levels load again.
 
 Not taken: the file system revert, the RDTSC timer and the native DDS loader.
+
+## Light volumetric sun shafts (optional, `extras/volumetric_lite`)
+
+Atmospherics (Hippobot, 2.69 RC7.x) replaces `accum_volumetric_sun.ps` with a ray march that
+reads a min-max tile, a 4-texel gather and, every other step, three more gathers per step:
+about 110 shadow-map reads per pixel at `r2_sunshafts_quality st_opt_high`, on a full-screen
+pass. `extras/volumetric_lite/gamedata/shaders/r3/accum_volumetric_sun.ps` is the original GSC
+march instead, the one vanilla, Screen Space Shaders and IX-Ray use (IX-Ray:
+`gamedata/shaders/d3d11/accum_volumetric_sun.ps.hlsl`): one hardware shadow compare per step,
+12 / 20 / 28 steps for low / medium / high, the steps closer than 0.1 m counted once instead of
+tested in the loop, and nothing marched when the weather has no shafts.
+
+- **Which shadow map.** IX-Ray keeps every sun cascade in one texture array and its shafts read
+  the far one (`m_shadow_sun[2]`, `s_smap_sun` slice 2). This engine's CSM (`r4_sun_csm 1`)
+  keeps the near and middle cascades in its array (`s_smap_csm`, `m_shadow_csm0/1`) and renders
+  the far cascade into the legacy sun map, which `accum_direct_volumetric` binds to the
+  volumetric pass as `s_smap` with `m_shadow`. The file reads that, so it reads the same cascade
+  IX-Ray does, with `r4_sun_csm` on or off.
+- **Look and output** are Screen Space Shaders' (saturation by sun height, fog fade, the weapon
+  fade, `USE_STRICT_GAMMA_CORRECTION`), so `combine_volumetric` and the weathers'
+  `sun_shafts_intensity` behave as with SSS. Not Atmospherics' look: no edge enhancement and no
+  phase function. `VOLSUN_GAIN` in the file scales the result for weathers tuned for
+  Atmospherics; `VOLSUN_OOB_LIT 1` counts steps beyond the far cascade as lit, as Atmospherics
+  does.
+- **Install** as its own Mod Organizer mod, higher priority than Atmospherics. Removing it
+  brings Atmospherics' shafts back.
+- Checked with DXC on vanilla, vanilla + SSS and vanilla + SSS + Atmospherics + this pack:
+  every quality level and define set compiles, and it binds `s_smap`, `jitter0` and
+  `s_position` only (the textures the installed `.s` provides).
+- Engine side, unchanged: volumetric shafts need the shadows cast into the air, so the far
+  cascade renders every caster in its box (no receiver pruning, `sun_cascade_needs_receiver_bounds`)
+  whatever shader draws the shafts.

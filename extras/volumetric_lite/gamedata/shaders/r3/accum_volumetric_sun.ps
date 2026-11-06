@@ -1,0 +1,160 @@
+/*
+	Volumetric sun shafts, light version (optional file of the Monolith PBR shader pack)
+
+	The original GSC ray march, the one vanilla Anomaly, Screen Space Shaders and IX-Ray use
+	(ixray-1.6-stcop, gamedata/shaders/d3d11/accum_volumetric_sun.ps.hlsl): walk from the pixel
+	back to the camera and count the steps the sun reaches, ONE hardware shadow compare per step
+	and nothing else in the loop. It replaces Atmospherics' shafts (min-max read, a 4-texel gather
+	and edge gathers every other step, ~110 shadow-map reads per pixel at high quality) with up
+	to 28 reads, and keeps Screen Space Shaders' look and output, so combine_volumetric and the
+	weathers' sun_shafts_intensity behave as with SSS.
+
+	Which shadow map: IX-Ray keeps every sun cascade in one texture array and reads the far
+	one, m_shadow_sun[2] / s_smap_sun slice 2. This engine's CSM (r4_sun_csm 1) keeps the near
+	and middle cascades in its array (s_smap_csm, m_shadow_csm0/1) and renders the far cascade
+	into the legacy sun map; the volumetric pass binds that far map as s_smap with m_shadow
+	(r4_rendertarget_accum_direct.cpp, accum_direct_volumetric). So this reads the same
+	cascade IX-Ray does, with r4_sun_csm on or off.
+
+	Install: as its own mod in Mod Organizer, BELOW (higher priority than) Atmospherics and any
+	other shader mod that ships accum_volumetric_sun.ps. Uninstall to get Atmospherics' shafts
+	back. Shader cache: the game recompiles it on the next start.
+
+	Settings: the defines below. Quality follows r2_sunshafts_quality (low / medium / high).
+
+	Caveats
+	  - The look is Screen Space Shaders' shafts, not Atmospherics': no edge enhancement, no
+	    phase function. Atmospherics' weathers tune sun_shafts_intensity for its own shader,
+	    so shafts can be dimmer or brighter than with Atmospherics; VOLSUN_GAIN scales them.
+	  - Steps outside the far cascade (beyond r2_sun_far / the last ssfx_shadow_cascades
+	    distance) are skipped as in SSS (VOLSUN_OOB_LIT 0); 1 counts them as lit, which
+	    brightens distant haze like Atmospherics does.
+	  - The jitter is the engine's static 64x64 jitter texture (stable without TAA); with few
+	    steps a fine pattern can show in thin shafts. Raise the step count for that quality.
+*/
+
+#include "common.h"
+
+#undef ULTRA_SHADOWS_ON
+#undef USE_ULTRA_SHADOWS
+
+//////////////////////////////////////////////////////////////////////////////////////////
+// Settings
+#define VOLSUN_STEPS_LOW		12		// r2_sunshafts_quality st_opt_low
+#define VOLSUN_STEPS_MEDIUM		20		// st_opt_medium
+#define VOLSUN_STEPS_HIGH		28		// st_opt_high (SSS: 15 / 25 / 30, IX-Ray: 20 / 20 / 40)
+#define VOLSUN_GAIN				1.0		// brightness on top of the weather's sun_shafts_intensity
+#define VOLSUN_NEAR_FADE		0.8		// fade-in per metre from the camera (keeps the weapon clear)
+#define VOLSUN_MIN_DEPTH		0.1		// steps closer than this (metres) are not sampled
+#define VOLSUN_OOB_LIT			0		// 1: steps outside the far cascade count as lit
+#define VOLSUN_DEBUG			0		// 1: the raw shaft term in grey
+//////////////////////////////////////////////////////////////////////////////////////////
+
+#define JITTER_TEXTURE_SIZE	64.0f
+
+#ifdef	SUN_SHAFTS_QUALITY
+	#if SUN_SHAFTS_QUALITY==1
+		#define	FILTER_LOW
+		#define RAY_SAMPLES	VOLSUN_STEPS_LOW
+	#elif SUN_SHAFTS_QUALITY==2
+		#define RAY_SAMPLES	VOLSUN_STEPS_MEDIUM
+	#else
+		#define RAY_SAMPLES	VOLSUN_STEPS_HIGH
+	#endif
+#endif
+
+#include "shadow.h"
+
+float4 volume_range;	//	x - near plane, y - far plane
+float4 sun_shafts_intensity;
+
+#ifdef MSAA_OPTIMIZATION
+float4 	main (v2p_volume  I, uint iSample : SV_SAMPLEINDEX  ) : SV_Target
+#else
+float4 	main (v2p_volume  I) : SV_Target
+#endif
+{
+#ifndef	SUN_SHAFTS_QUALITY
+	return float4(0,0,0,0);
+#else	//	SUN_SHAFTS_QUALITY
+
+	const float max_density = sun_shafts_intensity.x;
+
+	// Weathers without shafts: nothing to march
+	[branch] if (max_density <= 0.0)
+		return float4(0,0,0,0);
+
+	float2	tc  = I.tc.xy / I.tc.w;
+	float4	pos2d = I.hpos;
+
+	gbuffer_data gbd = gbuffer_load_data( GLD_P(tc, pos2d, ISAMPLE) );
+	float3	P = gbd.P;
+
+	// Variable ray length and step density, jittered start (GSC)
+	float4	J0 	= jitter0.Sample( smp_jitter, tc * screen_res.x / JITTER_TEXTURE_SIZE );
+	float	coeff = (RAY_SAMPLES - J0.x) / (RAY_SAMPLES * RAY_SAMPLES);
+	float3	direction = P * coeff;
+
+	float	depth = P.z;
+	float	deltaDepth = direction.z;
+
+	// View space -> far cascade texture space (orthographic, w = 1)
+	float4	current	= mul (m_shadow, float4(P, 1.0));
+	float4	delta 	= mul (m_shadow, float4(direction, 0.0));
+
+	// Volumetric offset when used with SSS extended shadows (as SSS)
+	current.z += 0.001f;
+
+	float	res = 0.0;
+	float	density = max_density / RAY_SAMPLES;
+
+	// Weapon / near fade (as SSS)
+	density *= saturate(depth * VOLSUN_NEAR_FADE);
+
+	if (depth < 0.0001)
+		res = max_density;
+
+	// Steps whose depth stays above VOLSUN_MIN_DEPTH: depth falls by deltaDepth per step, so
+	// count them once instead of testing every step
+	int steps = 0;
+	if (deltaDepth > 1e-5)
+		steps = (int)clamp(ceil((depth - VOLSUN_MIN_DEPTH) / deltaDepth), 0.0, (float)RAY_SAMPLES);
+
+	[loop]
+	for (int i = 0; i < steps; ++i)
+	{
+		if (current.x >= 0 && current.x <= 1 && current.y >= 0 && current.y <= 1)
+			res += density * s_smap.SampleCmpLevelZero(smp_smap, current.xy, current.z).x;
+#if VOLSUN_OOB_LIT
+		else
+			res += density;
+#endif
+		current -= delta;
+	}
+
+	// Saturation by sun height, 0.2..1 (as SSS)
+	float fSturation = -Ldynamic_dir.z;
+	fSturation = 0.5 * fSturation + 0.5;
+	fSturation = 0.80 * fSturation + 0.20;
+
+	res *= fSturation;
+
+	// Fade to the full density with the fog (as SSS)
+	float fog = saturate(length(P) * fog_params.w + fog_params.x);
+
+#ifdef USE_STRICT_GAMMA_CORRECTION
+	res = SRGBToLinear(res);
+	float3 SunColor = SRGBToLinear(Ldynamic_color.rgb);
+#else
+	float3 SunColor = Ldynamic_color.rgb;
+#endif
+
+	float3 result = lerp(SunColor * max_density * fSturation, SunColor * res, 1.0f - fog * fog);
+
+#if VOLSUN_DEBUG == 1
+	return float4((res / max(max_density, 1e-4)).xxx, 0);
+#endif
+
+	return float4(result * VOLSUN_GAIN, 0);
+#endif	//	SUN_SHAFTS_QUALITY
+}
