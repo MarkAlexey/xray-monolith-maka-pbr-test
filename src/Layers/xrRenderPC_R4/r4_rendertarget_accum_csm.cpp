@@ -244,3 +244,101 @@ void CRenderTarget::accum_direct_csm()
 	                   D3DSTENCILOP_KEEP);
 	RCache.Render(D3DPT_TRIANGLELIST, Offset, 0, 4, 0, 2);
 }
+
+
+//////////////////////////////////////////////////////////////////////////////////////////
+// Far sun cascade min/max tiles (r4_sun_far_minmax, LVutner's suggestion)
+//
+// With CSM the far cascade is the last shadow map rendered into rt_smap_depth, right before its
+// light pass (R_sun.cpp, render_sun_cascade). One compute dispatch in between (sun_far_minmax.cs)
+// writes, per 4x4 shadow-map texels, the min and max depth of that tile and of the two tiles
+// around it on every side (RG16 UNORM, min rounded down and max rounded up, so the tiles stay
+// conservative). The far light pass (sun_far_minmax.h, sun_far_shadow) reads one texel: a pixel
+// nearer to the sun than the minimum is fully lit, one farther than the maximum (plus a bias
+// margin) fully shadowed, and only the rest pays for the installed shadow filter (Screen Space
+// Shaders' PCF / PCSS). The dilation covers 8 or more shadow-map texels around the pixel, more
+// than any of those filters reads, so the result does not change.
+// Caveats:
+//   - CSM mode only (r4_sun_csm 1): with the legacy cascades rt_smap_depth is reused per cascade.
+//   - A shader pack without sun_far_minmax.cs / .h turns it off (o.sun_far_minmax, r4.cpp); an
+//     accum_sun_far.ps that does not include sun_far_minmax.h simply does not use the tiles.
+//   - r4_sun_far_minmax 0 skips the dispatch and the shader falls back to the filter (live).
+//   - Pixels within 1% of the shadow map's edge always use the filter.
+//////////////////////////////////////////////////////////////////////////////////////////
+
+class CBlender_sun_far_minmax : public IBlender
+{
+public:
+	virtual LPCSTR getComment() { return "INTERNAL: far sun cascade min/max tiles"; }
+	virtual BOOL canBeDetailed() { return FALSE; }
+	virtual BOOL canBeLMAPped() { return FALSE; }
+	virtual void Compile(CBlender_Compile& C)
+	{
+		IBlender::Compile(C);
+		C.r_ComputePass("sun_far_minmax");
+		C.r_dx10Texture("s_smap", r2_RT_smap_depth);
+		C.r_End();
+	}
+};
+
+void CRenderTarget::create_sun_far_minmax(u32 smap_size)
+{
+	const u32 size = _max(smap_size / 4u, 1u);
+	rt_sun_far_minmax.create(r2_RT_sun_far_minmax, size, size, D3DFMT_G16R16, 1, true);
+	if (!rt_sun_far_minmax || !rt_sun_far_minmax->pUAView)
+	{
+		Msg("! Far sun min/max tiles: cannot create the %ux%u target, off", size, size);
+		RImplementation.o.sun_far_minmax = FALSE;
+		return;
+	}
+	CBlender_sun_far_minmax blender;
+	s_sun_far_minmax.create(&blender, "sun_far_minmax");
+	if (!s_sun_far_minmax || !s_sun_far_minmax->E[0])
+	{
+		Msg("! Far sun min/max tiles: cannot create the compute pass, off");
+		RImplementation.o.sun_far_minmax = FALSE;
+		return;
+	}
+	Msg("- Far sun min/max tiles: %ux%u", size, size);
+}
+
+void CRenderTarget::phase_sun_far_minmax()
+{
+	sun_far_minmax_live = false;
+	if (!RImplementation.o.sun_far_minmax || !ps_r4_sun_far_minmax || !rt_sun_far_minmax
+		|| !rt_sun_far_minmax->pUAView || !s_sun_far_minmax || !s_sun_far_minmax->E[0])
+		return;
+	PIX_EVENT(sun_far_minmax);
+	PROF_EVENT("phase_sun_far_minmax");
+
+	// rt_smap_depth must not be an output while the compute pass reads it: a resource bound for
+	// output is dropped from the shader inputs (it would read zeros, every tile "shadowed")
+	ID3D11RenderTargetView* oldrtv[8] = {};
+	ID3D11DepthStencilView* olddsv = nullptr;
+	ID3D11RenderTargetView* nullrtv[8] = {};
+	HW.pContext->OMGetRenderTargets(8, oldrtv, &olddsv);
+	HW.pContext->OMSetRenderTargets(8, nullrtv, nullptr);
+
+	SPass& P = *(s_sun_far_minmax->E[0]->passes[0]);
+	RCache.set_States(P.state);
+	RCache.set_Constants(P.constants);
+	RCache.set_Textures(P.T);
+	RCache.set_CS(P.cs);
+
+	ID3D11UnorderedAccessView* uav[1] = { rt_sun_far_minmax->pUAView };
+	ID3D11UnorderedAccessView* nulluav[1] = { nullptr };
+	UINT counts[1] = { 0 };
+	HW.pContext->CSSetUnorderedAccessViews(0, 1, uav, counts);
+	RCache.Compute((rt_sun_far_minmax->dwWidth + 7u) / 8u, (rt_sun_far_minmax->dwHeight + 7u) / 8u, 1);
+	HW.pContext->CSSetUnorderedAccessViews(0, 1, nulluav, counts);
+	// Through the state caches, as the SSLR passes do (r4_rendertarget_phase_sslr.cpp)
+	RCache.unbind_CS_textures();
+	RCache.set_CS(nullptr);
+
+	HW.pContext->OMSetRenderTargets(8, oldrtv, olddsv);
+	for (auto& rtv : oldrtv)
+		_RELEASE(rtv);
+	_RELEASE(olddsv);
+
+	sun_far_minmax_live = true;
+}

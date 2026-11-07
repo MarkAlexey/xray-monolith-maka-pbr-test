@@ -101,7 +101,7 @@ PATCH_GRASS_INST = True
 # Copy this repository's PBR-only headers into the overlay (see the caveat above).
 INCLUDE_REPO_HEADERS = True
 REPO_HEADERS = ["pbr_ixray.h", "pbr_hud.h", "ixray_brdf.h", "hdr_ibl.h", "sslr_apply.h", "sslr_settings.h",
-                "vslr_common.h", "skin_sss.h", "skin_sss_kernel.h"]
+                "vslr_common.h", "skin_sss.h", "skin_sss_kernel.h", "sun_far_minmax.h", "sun_far_minmax.cs"]
 
 # Files whose failure stops the run: without them PBR textures are wrong. Any other file that
 # fails is left out with a warning.
@@ -119,7 +119,7 @@ PBR_FILES = {
     "deffer_base_hud_aref_bump.ps": compat.patch_hud,
     "accum_sun.ps": compat.make_light_patch("sun"),
     "accum_sun_near.ps": compat.make_light_patch("sun"),
-    "accum_sun_far.ps": compat.make_light_patch("sun"),
+    "accum_sun_far.ps": compat.make_sun_far_patch(),
     "accum_base.ps": compat.make_light_patch("local"),
     "accum_omni_unshadowed.ps": compat.make_light_patch("omni"),
     "accum_indirect.ps": compat.make_light_patch("indirect"),

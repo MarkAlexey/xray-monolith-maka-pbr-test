@@ -54,6 +54,7 @@ public:
 		u32 skin_sss : 1; // skin subsurface scattering (r4_skin_sss, no MSAA)
 		u32 es_installed : 1; // Enhanced Shaders present (r3\pbr_settings.h)
 		u32 sun_csm : 1; // IX-Ray single-pass cascaded sun (r4_sun_csm, no MSAA)
+		u32 sun_far_minmax : 1; // far sun cascade min/max tiles (r4_sun_far_minmax, CSM only)
 		u32 ssfx_terrain : 1;
 		u32 ssfx_volumetric : 1;
 		u32 ssfx_water : 1;

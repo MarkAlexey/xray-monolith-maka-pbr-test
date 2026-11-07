@@ -867,6 +867,9 @@ CRenderTarget::CRenderTarget()
 
 		u32 size = RImplementation.o.smapsize;
 		rt_smap_depth.create(r2_RT_smap_depth, size, size, depth_format);
+		// Before the far light shader is compiled below, which binds it by name
+		if (RImplementation.o.sun_far_minmax)
+			create_sun_far_minmax(size);
 
 		if (RImplementation.o.dx10_minmax_sm)
 		{
@@ -887,7 +890,10 @@ CRenderTarget::CRenderTarget()
 			if (csm_slices())
 				s_accum_csm.create(b_accum_csm);
 			else
+			{
 				RImplementation.o.sun_csm = FALSE;
+				RImplementation.o.sun_far_minmax = FALSE; // needs the CSM path (R_sun.cpp)
+			}
 		}
 
 		if (RImplementation.o.dx10_msaa)

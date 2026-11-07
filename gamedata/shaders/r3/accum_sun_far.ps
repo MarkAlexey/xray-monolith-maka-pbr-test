@@ -15,6 +15,7 @@
 #endif
 
 #include "shadow.h"
+#include "sun_far_minmax.h"	// far cascade min/max tiles: skips the filter where nothing changes
 uniform float3	view_shadow_proj;
 
 
@@ -60,7 +61,7 @@ float4 main ( v2p_volume I ) : SV_Target
 	float4 	PS	= mul( m_shadow, P4 );
 	float 	s 	= sunmask( P4 );
 
-			s *= shadow( PS );
+			s *= sun_far_shadow( PS );
 
 	// Far edge fading code
 	float2 	tc_f	= (PS.xy/PS.w)-float2(0.5,0.5);

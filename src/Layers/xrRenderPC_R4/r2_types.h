@@ -45,6 +45,7 @@
 
 #define		r2_RT_smap_surf		"$user$smap_surf"		// --- directional
 #define		r2_RT_smap_depth	"$user$smap_depth"		// ---directional
+#define		r2_RT_sun_far_minmax	"$user$sun_far_minmax"	// Monolith: far sun cascade min/max tiles (RG16, shadow map / 4)
 #define		r2_RT_smap_csm		"$user$smap_csm"		// Monolith: IX-Ray CSM, Texture2DArray of the near sun cascades
 #define		r2_RT_smap_depth_minmax	"$user$smap_depth_minmax"
 

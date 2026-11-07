@@ -319,6 +319,9 @@ int ps_r4_skin_sss_timer = 0; // r4_skin_sss_timer, 1 = log the blur's GPU time 
 
 // IX-Ray CSM
 int ps_r4_sun_csm = 1; // r4_sun_csm, needs a game restart (read in CRender::create)
+// r4_sun_far_minmax: min/max tiles of the far sun cascade; its light pass skips the shadow filter
+// where a tile is fully lit or fully shadowed (r4_rendertarget_accum_csm.cpp). CSM mode only. Live.
+int ps_r4_sun_far_minmax = 1;
 float ps_r4_sun_csm_blend = 0.1f; // cross-fade band between cascades, fraction of a cascade
 float ps_r2_sun_tsm_projection = 0.3f; // 0.18f
 float ps_r2_sun_tsm_bias = -0.01f; //
@@ -1596,6 +1599,7 @@ void xrRender_initconsole()
 	// IX-Ray CSM
 	CMD4(CCC_Integer, "r4_sun_csm", &ps_r4_sun_csm, 0, 1);
 	CMD4(CCC_Float, "r4_sun_csm_blend", &ps_r4_sun_csm_blend, 0.f, 0.3f);
+	CMD4(CCC_Integer, "r4_sun_far_minmax", &ps_r4_sun_far_minmax, 0, 1);
 
 	CMD3(CCC_Mask, "r2_zfill", &ps_r2_ls_flags, R2FLAG_ZFILL);
 	CMD4(CCC_Float, "r2_zfill_depth", &ps_r2_zfill, .001f, .5f);
