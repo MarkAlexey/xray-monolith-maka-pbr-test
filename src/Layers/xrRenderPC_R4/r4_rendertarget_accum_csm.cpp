@@ -246,25 +246,9 @@ void CRenderTarget::accum_direct_csm()
 }
 
 
-//////////////////////////////////////////////////////////////////////////////////////////
-// Far sun cascade min/max tiles (r4_sun_far_minmax, LVutner's suggestion)
-//
-// With CSM the far cascade is the last shadow map rendered into rt_smap_depth, right before its
-// light pass (R_sun.cpp, render_sun_cascade). One compute dispatch in between (sun_far_minmax.cs)
-// writes, per 4x4 shadow-map texels, the min and max depth of that tile and of the two tiles
-// around it on every side (RG16 UNORM, min rounded down and max rounded up, so the tiles stay
-// conservative). The far light pass (sun_far_minmax.h, sun_far_shadow) reads one texel: a pixel
-// nearer to the sun than the minimum is fully lit, one farther than the maximum (plus a bias
-// margin) fully shadowed, and only the rest pays for the installed shadow filter (Screen Space
-// Shaders' PCF / PCSS). The dilation covers 8 or more shadow-map texels around the pixel, more
-// than any of those filters reads, so the result does not change.
-// Caveats:
-//   - CSM mode only (r4_sun_csm 1): with the legacy cascades rt_smap_depth is reused per cascade.
-//   - A shader pack without sun_far_minmax.cs / .h turns it off (o.sun_far_minmax, r4.cpp); an
-//     accum_sun_far.ps that does not include sun_far_minmax.h simply does not use the tiles.
-//   - r4_sun_far_minmax 0 skips the dispatch and the shader falls back to the filter (live).
-//   - Pixels within 1% of the shadow map's edge always use the filter.
-//////////////////////////////////////////////////////////////////////////////////////////
+// Far sun cascade min/max tiles (r4_sun_far_minmax, CSM only, LVutner's suggestion).
+// Dispatched between the far cascade's shadow render and its light pass (R_sun.cpp), so the
+// light pass can skip the shadow filter where a pixel is fully lit or fully shadowed.
 
 class CBlender_sun_far_minmax : public IBlender
 {
@@ -311,8 +295,7 @@ void CRenderTarget::phase_sun_far_minmax()
 	PIX_EVENT(sun_far_minmax);
 	PROF_EVENT("phase_sun_far_minmax");
 
-	// rt_smap_depth must not be an output while the compute pass reads it: a resource bound for
-	// output is dropped from the shader inputs (it would read zeros, every tile "shadowed")
+	// Unbind the outputs: D3D drops rt_smap_depth from the inputs while it is bound as one
 	ID3D11RenderTargetView* oldrtv[8] = {};
 	ID3D11DepthStencilView* olddsv = nullptr;
 	ID3D11RenderTargetView* nullrtv[8] = {};
@@ -331,7 +314,6 @@ void CRenderTarget::phase_sun_far_minmax()
 	HW.pContext->CSSetUnorderedAccessViews(0, 1, uav, counts);
 	RCache.Compute((rt_sun_far_minmax->dwWidth + 7u) / 8u, (rt_sun_far_minmax->dwHeight + 7u) / 8u, 1);
 	HW.pContext->CSSetUnorderedAccessViews(0, 1, nulluav, counts);
-	// Through the state caches, as the SSLR passes do (r4_rendertarget_phase_sslr.cpp)
 	RCache.unbind_CS_textures();
 	RCache.set_CS(nullptr);
 

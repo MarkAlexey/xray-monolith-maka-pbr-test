@@ -24,12 +24,8 @@ void CRenderTarget::phase_nightvision()
 	//Set pass
 	RCache.set_Element(s_nightvision->E[ps_r2_nightvision]);
 #if defined(USE_DX11)
-	// With an upscaler the post chain draws night vision after dlss::EndScene(), where the
-	// dlss_params binder reports "not active". The NVG shader (Beef's NVGs + DLSS patch,
-	// night_vision.h blurred_depth) then reads the still render-sized position buffer at
-	// display-sized coordinates: inside the render rectangle every pixel got another pixel's
-	// depth (distance-darkened), outside it read 0 (sky, left bright). Report the position
-	// buffer's real size for this pass; at display size the constant stays as the binder set it.
+	// Drawn after the upscaler, where dlss_params says "inactive": give the NVG shader the
+	// position buffer's real (render) size, or it reads it at display-sized coordinates
 	if (rt_Position && rt_Position->pSurface)
 	{
 		D3D11_TEXTURE2D_DESC pos_desc{};

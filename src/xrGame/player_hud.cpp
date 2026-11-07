@@ -14,101 +14,6 @@
 
 extern int g_nearwall;
 
-// [HUD-SYNC] diagnostics for the hand that stays in bind pose after a one-hand
-// script motion (mask wipe) on some saves. hud_sync_debug 1 dumps the hand
-// blends when a one-hand script motion ends, and again half a second later.
-BOOL hud_sync_debug = TRUE;
-
-namespace
-{
-constexpr u32 kHudSyncDumpLimit = 32;
-constexpr u32 kHudSyncFollowupMs = 500;
-u32 s_hud_sync_dumps = 0;
-u32 s_hud_sync_followup_at = 0;
-
-// The motion file a MotionID names on this model, or why it names none.
-LPCSTR HudSyncSlotName(IKinematicsAnimated* model, const MotionID& id)
-{
-	if (!model || !id.valid())
-		return "<invalid id>";
-	if (id.slot >= model->LL_MotionsSlotCount())
-		return "<slot out of range>";
-	return model->LL_MotionsSlot(id.slot).id().c_str();
-}
-
-// The motion name a MotionID names on this model ("" when its index is not in that slot).
-LPCSTR HudSyncMotionName(IKinematicsAnimated* model, const MotionID& id)
-{
-	if (!model || !id.valid() || id.slot >= model->LL_MotionsSlotCount())
-		return "";
-	shared_motions& slot = const_cast<shared_motions&>(model->LL_MotionsSlot(id.slot));
-	accel_map* names = slot.motion_map();
-	if (!names)
-		return "";
-	for (auto it = names->begin(); it != names->end(); ++it)
-		if (it->second == id.idx)
-			return it->first.c_str();
-	return "<idx not in slot>";
-}
-
-void HudSyncDumpModel(LPCSTR tag, IKinematicsAnimated* model)
-{
-	if (!model)
-	{
-		Msg("  %s: <no model>", tag);
-		return;
-	}
-	xrCriticalSectionGuard lock(&model->dcast_PKinematics()->UCalc_Mutex);
-	const u16 parts = model->partitions().count();
-	Msg("  %s: %u part(s), %u motion slot(s)", tag, parts, model->LL_MotionsSlotCount());
-	for (u16 part = 0; part < parts; ++part)
-	{
-		const u32 count = model->LL_PartBlendsCount(part);
-		Msg("    part %u: %u blend(s)", part, count);
-		for (u32 i = 0; i < count; ++i)
-		{
-			const CBlend* B = model->LL_PartBlend(part, i);
-			if (!B)
-				continue;
-			Msg("      [%s] %s (slot %u idx %u) state=%d t=%.3f/%.3f speed=%.4f amount=%.3f power=%.3f stop_at_end=%d playing=%d",
-				HudSyncMotionName(model, B->motionID), HudSyncSlotName(model, B->motionID),
-				u32(B->motionID.slot), u32(B->motionID.idx), int(B->blend_state()), B->timeCurrent, B->timeTotal,
-				B->speed, B->blendAmount, B->blendPower, int(B->stop_at_end), int(B->playing));
-		}
-	}
-}
-
-// First slot at which the two models bind different motion files, or u16(-1).
-u16 HudSyncFirstSlotMismatch(IKinematicsAnimated* a, IKinematicsAnimated* b)
-{
-	const u16 na = a->LL_MotionsSlotCount(), nb = b->LL_MotionsSlotCount();
-	const u16 n = na < nb ? na : nb;
-	for (u16 i = 0; i < n; ++i)
-		if (a->LL_MotionsSlot(i).id() != b->LL_MotionsSlot(i).id())
-			return i;
-	return na == nb ? u16(-1) : n;
-}
-
-void HudSyncDump(player_hud& hud, LPCSTR when, u8 part)
-{
-	attachable_hud_item* right = hud.attached_item(0);
-	attachable_hud_item* left = hud.attached_item(1);
-	Msg("* [HUD-SYNC] %s: script part %u, hands [%s], right item [%s], left item [%s], frame %u",
-		when, u32(part), hud.section_name().c_str(), right ? right->m_sect_name.c_str() : "-",
-		left ? left->m_sect_name.c_str() : "-", Device.dwFrame);
-	if (hud.m_model && hud.m_model_2)
-	{
-		const u16 mismatch = HudSyncFirstSlotMismatch(hud.m_model, hud.m_model_2);
-		if (mismatch != u16(-1))
-			Msg("  ! visual and visual_2 bind different motion files from slot %u on (%s vs %s)", u32(mismatch),
-				mismatch < hud.m_model->LL_MotionsSlotCount() ? hud.m_model->LL_MotionsSlot(mismatch).id().c_str() : "<none>",
-				mismatch < hud.m_model_2->LL_MotionsSlotCount() ? hud.m_model_2->LL_MotionsSlot(mismatch).id().c_str() : "<none>");
-	}
-	HudSyncDumpModel("right model", hud.m_model);
-	HudSyncDumpModel("left model", hud.m_model_2);
-}
-}
-
 player_hud* g_player_hud = NULL;
 Fvector _ancor_pos;
 Fvector _wpn_root_pos;
@@ -985,41 +890,15 @@ void player_hud::load(const shared_str& player_hud_sect, bool force)
 			m_model->adopt_partition(m_model_2->partitions());
 	}
 
-	// Hand motion ids are a slot and an index into the motion files of the model
-	// they were looked up on. The containers outlive the model (attached items
-	// keep pointers to them), so look every id up again on the new model; ids
-	// from the old hands would name other clips wherever the slots differ.
-	// A model whose motions never bound (the exit prompt path) keeps the old ids.
+	// Cached hand motion ids index the old model's motion slots: look them up again
+	// on the new hands (skipped when its motions never bound, the exit prompt path).
 	if (m_model->LL_MotionsSlotCount() && m_model_2->LL_MotionsSlotCount())
 	{
-		u32 moved = 0, total = 0;
 		for (hand_motions* hm : m_hand_motions)
 		{
-			std::vector<u32> before;
-			for (const player_hud_motion& pm : hm->pm.m_anims)
-				for (const motion_descr& md : pm.m_animations)
-					before.push_back(md.mid.val);
 			hm->pm.m_anims.clear();
 			hm->pm.load(m_model, hm->section);
-			u32 i = 0;
-			for (const player_hud_motion& pm : hm->pm.m_anims)
-				for (const motion_descr& md : pm.m_animations)
-				{
-					if (i >= before.size() || before[i] != md.mid.val)
-						++moved;
-					++i;
-				}
-			if (i != before.size())
-				++moved;
-			total += i;
 		}
-		if (!m_hand_motions.empty())
-			Msg("* [HUD-SYNC] hands [%s]: looked up %u cached hand motion(s) of %u section(s) again, %u changed",
-				player_hud_sect.c_str(), total, u32(m_hand_motions.size()), moved);
-		const u16 mismatch = HudSyncFirstSlotMismatch(m_model, m_model_2);
-		if (mismatch != u16(-1))
-			Msg("! [HUD-SYNC] hands [%s]: visual and visual_2 bind different motion files from slot %u on (%u vs %u slots); left hand clips can play the wrong motion",
-				player_hud_sect.c_str(), u32(mismatch), u32(m_model->LL_MotionsSlotCount()), u32(m_model_2->LL_MotionsSlotCount()));
 	}
 
 	u16 l_arm = m_model->dcast_PKinematics()->LL_BoneID("l_clavicle");
@@ -1535,12 +1414,6 @@ void player_hud::update(const Fmatrix& cam_trans)
 	else
 		script_anim_offset_factor -= Device.fTimeDelta * 5.f;
 
-	if (s_hud_sync_followup_at && Device.dwTimeGlobal >= s_hud_sync_followup_at)
-	{
-		s_hud_sync_followup_at = 0;
-		HudSyncDump(*this, "half a second after re-sync", script_anim_part);
-	}
-
 	clamp(script_anim_offset_factor, 0.f, 1.f);
 }
 
@@ -1734,40 +1607,22 @@ void player_hud::StopScriptAnim()
         
 	if (part < 2 && !m_attached_items[part])
 	{
-		// The hand the script drove takes over the other hand's clip. When the
-		// other hand has none, nothing would play on it and it would hold the
-		// last frame of the script clip or fall to the bind pose.
+		// Re-sync the script hand to the other hand's clip; with none to copy, replay
+		// the idle (or lower the empty hand) so it does not fall to the bind pose.
 		const u8 source = part + 1; // 1 = left (m_model_2), 2 = right (m_model)
 		IKinematicsAnimated* source_model = source == 1 ? m_model_2 : m_model;
-		IKinematicsAnimated* hand_model = part == 1 ? m_model_2 : m_model;
-		const bool log = hud_sync_debug && s_hud_sync_dumps < kHudSyncDumpLimit;
-		if (log)
-		{
-			++s_hud_sync_dumps;
-			HudSyncDump(*this, "script motion ended, before re-sync", part);
-		}
-
 		const u32 source_blends = source_model->LL_PartBlendsCount(source);
 		re_sync_anim(source);
 		if (!source_blends)
 		{
-			Msg("! [HUD-SYNC] script part %u ended with no clip on part %u to re-sync to, replaying idle", u32(part), u32(source));
 			OnMovementChanged((ACTOR_DEFS::EMoveCommand)0);
-			// No item to replay an idle for: lower the hand, as detach_item() does.
 			if (!m_attached_items[0])
 			{
+				IKinematicsAnimated* hand_model = part == 1 ? m_model_2 : m_model;
 				const MotionID idle = hand_model->ID_Cycle_Safe("hand_idle_doun");
 				if (idle.valid())
 					play_blend(this, part == 1 ? 1 : 2, idle, TRUE, 1.f);
 			}
-		}
-
-		if (log)
-		{
-			HudSyncDump(*this, "after re-sync", part);
-			s_hud_sync_followup_at = Device.dwTimeGlobal + kHudSyncFollowupMs;
-			if (!s_hud_sync_followup_at)
-				s_hud_sync_followup_at = 1;
 		}
 	}
 	else
@@ -2002,11 +1857,8 @@ void player_hud::re_sync_anim(u8 part)
 					B->speed = BR->speed;
 				}
 			}
-			// Syncing to the right hand the left model takes the clip on every part,
-			// as play_blend(1) plays it. Leaving its part 2 on the ended script clip
-			// (mask wipe) left the bones there, lead_gun among them, at the script
-			// pose; a hud anm pivoting on lead_gun then swung the whole left hand
-			// around that stale point. The right model is never driven on part 1.
+			// The left model takes the right hand's clip on every part, as play_blend(1)
+			// does; a part left on the ended script clip kept lead_gun at the script pose.
 			else if (pid != part || part == 2)
 			{
 				CBlend* B = part == 1 ? m_model->PlayCycle(pid, M, TRUE) : m_model_2->PlayCycle(pid, M, TRUE);

@@ -766,8 +766,7 @@ void CRender::render_sun_cascade(u32 cascade_ind, const xr_vector<ISpatialShared
 	else
 	{
 #if RENDER == R_R4
-		// Far cascade min/max tiles for its light pass (r4_sun_far_minmax, CSM mode): rt_smap_depth
-		// holds the far cascade now, and only until the next shadow map is drawn into it
+		// rt_smap_depth holds the far cascade now: build its min/max tiles for the light pass
 		Target->phase_sun_far_minmax();
 #endif
 		Target->accum_direct_cascade(SE_SUN_FAR, cascade.xform,

@@ -245,9 +245,7 @@ static class cl_vslr_params : public R_constant_setup
 	}
 } binder_vslr_params;
 
-// PBR reflection blur, read by pbr_ixray.h (pbr_reflection_blur): x = first-person models,
-// y = everything else; 0 = the material's own reflection, 1 = fully blurred, no SSLR
-// zw = the same split for "no mirror": 1 = only the sky (r4_pbr_mirror_hud / _world 0)
+// pbr_ixray.h: xy = reflection blur (HUD, world), zw = 1 for reflect only the sky (HUD, world)
 static class cl_pbr_reflect_params : public R_constant_setup
 {
 	virtual void setup(R_constant* C)
@@ -257,8 +255,7 @@ static class cl_pbr_reflect_params : public R_constant_setup
 	}
 } binder_pbr_reflect_params;
 
-// Far sun cascade min/max tiles, read by sun_far_minmax.h: x = 1 while the tiles match the far
-// cascade being lit (set around that light pass, r4_rendertarget_accum_csm.cpp), else 0
+// sun_far_minmax.h: x = 1 while the tiles match the far cascade being lit
 static class cl_sun_far_minmax_params : public R_constant_setup
 {
 	virtual void setup(R_constant* C)
@@ -531,8 +528,7 @@ void CRender::create()
 	o.dx10_sm4_1 = o.dx10_sm4_1 && (HW.FeatureLevel >= D3D_FEATURE_LEVEL_10_1);
 
 	//	MSAA option dependencies
-	// MSAA is not supported (xrRender_console.cpp, qmsaa_token): always off
-	o.dx10_msaa = false;
+	o.dx10_msaa = false; // MSAA removed (qmsaa_token)
 	o.dx10_msaa_samples = 1;
 
 	// DLSS HDR input needs the patch's shaders.
@@ -680,8 +676,7 @@ void CRender::create()
 	o.sun_csm = (ps_r4_sun_csm != 0) && !o.dx10_msaa && !o.sunfilter && o.HW_smap && FS.exist(fn, "$game_shaders$", "r3\\accum_sun_csm", ".ps");
 	Msg("- IX-Ray CSM %s", o.sun_csm ? "ON" : "OFF");
 
-	// Far sun cascade min/max tiles (r4_rendertarget_accum_csm.cpp): CSM mode only, where the far
-	// cascade is the last shadow map rendered into rt_smap_depth before its light pass reads it
+	// Far sun cascade min/max tiles (r4_rendertarget_accum_csm.cpp), CSM only
 	o.sun_far_minmax = o.sun_csm && FS.exist(fn, "$game_shaders$", "r3\\sun_far_minmax", ".cs")
 		&& FS.exist(fn, "$game_shaders$", "r3\\sun_far_minmax", ".h");
 	Msg("- Far sun min/max tiles %s", o.sun_far_minmax ? "ON" : "OFF");
@@ -2291,7 +2286,6 @@ HRESULT CRender::shader_compile(
 	sh_name[len] = '0' + char(o.skin_sss);
 	++len;
 
-	// Far sun cascade min/max tiles: the far light pass reads s_sun_far_minmax (sun_far_minmax.h)
 	if (o.sun_far_minmax)
 	{
 		defines[def_it].Name = "USE_SUN_FAR_MINMAX";

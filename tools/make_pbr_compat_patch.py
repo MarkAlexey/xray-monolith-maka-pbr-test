@@ -472,11 +472,8 @@ def make_light_patch(kind):
 
 
 def patch_sun_far_minmax(text, what):
-    """accum_sun_far.ps: far sun cascade min/max tiles (sun_far_minmax.h; the exe builds them,
-    r4_sun_far_minmax). Includes the header after shadow.h and calls sun_far_shadow( PS )
-    instead of shadow( PS ), which skips the shadow filter where a tile is fully lit or fully
-    shadowed and returns the same value. A far shader without that include or call is left as it
-    is: it just does not use the tiles."""
+    """accum_sun_far.ps: include sun_far_minmax.h after shadow.h and call sun_far_shadow( PS )
+    instead of shadow( PS ). Files without either are left as they are."""
     if "sun_far_minmax.h" in text:
         return text
     inc = re.search(r'#include[ \t]+"shadow\.h"[^\n]*\n', text)
@@ -494,6 +491,7 @@ def make_sun_far_patch():
     def patch(text, what):
         return patch_sun_far_minmax(light(text, what), what)
     return patch
+
 
 def il_factor(text):
     """HLSL computing float3 pbr_il, the SSS Indirect Light factor for the PBR ambient diffuse

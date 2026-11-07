@@ -1,20 +1,6 @@
-//////////////////////////////////////////////////////////////////////////////////////////
-// Monolith: far sun cascade min/max tiles (r4_sun_far_minmax, LVutner's suggestion).
-// Engine side: r4_rendertarget_accum_csm.cpp (phase_sun_far_minmax), read by sun_far_minmax.h.
-//
-// One dispatch, right after the far cascade is rendered into the sun shadow map (CSM mode) and
-// before its light pass. Output: RG16 UNORM at a quarter of the shadow map's size, one texel per
-// 4x4 shadow-map texels ("tile"):
-//   r = the minimum depth of this tile and of the SFM_DILATE tiles around it on every side
-//   g = the maximum depth over the same tiles
-// The min is rounded down and the max up to 16 bits, so both stay conservative. With the default
-// dilation of 2 tiles, the window around any pixel reaches at least 8 shadow-map texels on every
-// side: more than the installed far shadow filters read (Screen Space Shaders' shadow_pcss 4x4
-// taps, its PCSS blocker search and filter, about 5 texels).
-// Each 8x8 group loads its 12x12 tiles (the 8x8 it writes plus the dilation border) into
-// groupshared memory once, 16 texels per tile; tiles past the map's edge repeat the edge tile,
-// like the shadow sampler's clamp addressing.
-//////////////////////////////////////////////////////////////////////////////////////////
+// Far sun cascade min/max tiles (r4_sun_far_minmax; engine: r4_rendertarget_accum_csm.cpp).
+// One texel per 4x4 shadow-map texels: r = min, g = max depth over the tile and SFM_DILATE
+// tiles around it (>= 8 texels, wider than any far shadow filter), rounded outwards to 16 bits.
 
 #define SFM_TILE	4		// shadow-map texels per output texel, each axis
 #define SFM_DILATE	2		// tiles folded in on every side
@@ -37,7 +23,7 @@ void main( uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID, uint gi : SV_G
 	const int2 last_tile = int2( dst_size ) - 1;
 	const int2 last_texel = int2( src_size ) - 1;
 
-	// Load: min / max of every apron tile (64 threads, 144 tiles)
+	// Min / max of every apron tile, edges clamped like the shadow sampler
 	for( uint i = gi; i < SFM_APRON * SFM_APRON; i += SFM_GROUP * SFM_GROUP )
 	{
 		const int2 tile = clamp( first + int2( i % SFM_APRON, i / SFM_APRON ), 0, last_tile );
@@ -76,6 +62,6 @@ void main( uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID, uint gi : SV_G
 		}
 	}
 
-	// Conservative 16-bit: exact multiples of 1/65535, so the UNORM store keeps them as written
+	// Exact multiples of 1/65535: the UNORM store keeps them as written
 	u_sun_far_minmax[ o ] = float2( floor( mn * 65535.0 ), ceil( mx * 65535.0 ) ) / 65535.0;
 }

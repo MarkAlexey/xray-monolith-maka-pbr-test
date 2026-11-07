@@ -316,10 +316,6 @@ void CDetailManager::UpdateVisibleM()
 	CFrustum View;
     View.CreateFromCamera(RDEVICE.mFullTransform_saved);
 
-	CFrustum View_old;
-	Fmatrix Viewm_old = RDEVICE.mFullTransform;
-	View_old.CreateFromMatrix(Viewm_old, FRUSTUM_P_LRTB + FRUSTUM_P_FAR);
-
 	float fade_limit = dm_fade;
 	fade_limit = fade_limit * fade_limit;
 	float fade_start = 1.f;

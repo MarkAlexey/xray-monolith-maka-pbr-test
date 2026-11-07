@@ -106,9 +106,7 @@ xr_token qsun_quality_token [ ] = {
 };
 
 u32 ps_r3_msaa = 0; //	=	0;
-// MSAA is not supported: the PBR / SSS / Atmospherics shaders, IX-Ray SSLR / CSM, skin SSS and
-// DLSS / FSR 3 all need it off, and Atmospherics' SSR fails to compile with it (the game stops).
-// "Off" is the only choice; an old "r3_msaa 2x" in user.ltx is rejected and MSAA stays off.
+// MSAA removed: PBR, CSM, SSLR, skin SSS and DLSS / FSR need it off (Atmospherics' SSR fails to compile)
 xr_token qmsaa_token [ ] = {
 	{"st_opt_off", 0},
 	{0, 0}
@@ -319,9 +317,7 @@ int ps_r4_skin_sss_timer = 0; // r4_skin_sss_timer, 1 = log the blur's GPU time 
 
 // IX-Ray CSM
 int ps_r4_sun_csm = 1; // r4_sun_csm, needs a game restart (read in CRender::create)
-// r4_sun_far_minmax: min/max tiles of the far sun cascade; its light pass skips the shadow filter
-// where a tile is fully lit or fully shadowed (r4_rendertarget_accum_csm.cpp). CSM mode only. Live.
-int ps_r4_sun_far_minmax = 1;
+int ps_r4_sun_far_minmax = 1; // r4_sun_far_minmax, far cascade min/max tiles (CSM only)
 float ps_r4_sun_csm_blend = 0.1f; // cross-fade band between cascades, fraction of a cascade
 float ps_r2_sun_tsm_projection = 0.3f; // 0.18f
 float ps_r2_sun_tsm_bias = -0.01f; //
