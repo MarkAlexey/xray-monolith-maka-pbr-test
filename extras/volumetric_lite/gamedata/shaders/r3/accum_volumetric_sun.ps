@@ -1,36 +1,10 @@
 /*
-	Volumetric sun shafts, light version (optional file of the Monolith PBR shader pack)
+	Volumetric sun shafts, light version (optional, Monolith PBR shader pack)
 
-	The original GSC ray march, the one vanilla Anomaly, Screen Space Shaders and IX-Ray use
-	(ixray-1.6-stcop, gamedata/shaders/d3d11/accum_volumetric_sun.ps.hlsl): walk from the pixel
-	back to the camera and count the steps the sun reaches, ONE hardware shadow compare per step
-	and nothing else in the loop. It replaces Atmospherics' shafts (min-max read, a 4-texel gather
-	and edge gathers every other step, ~110 shadow-map reads per pixel at high quality) with up
-	to 28 reads, and keeps Screen Space Shaders' look and output, so combine_volumetric and the
-	weathers' sun_shafts_intensity behave as with SSS.
-
-	Which shadow map: IX-Ray keeps every sun cascade in one texture array and reads the far
-	one, m_shadow_sun[2] / s_smap_sun slice 2. This engine's CSM (r4_sun_csm 1) keeps the near
-	and middle cascades in its array (s_smap_csm, m_shadow_csm0/1) and renders the far cascade
-	into the legacy sun map; the volumetric pass binds that far map as s_smap with m_shadow
-	(r4_rendertarget_accum_direct.cpp, accum_direct_volumetric). So this reads the same
-	cascade IX-Ray does, with r4_sun_csm on or off.
-
-	Install: as its own mod in Mod Organizer, BELOW (higher priority than) Atmospherics and any
-	other shader mod that ships accum_volumetric_sun.ps. Uninstall to get Atmospherics' shafts
-	back. Shader cache: the game recompiles it on the next start.
-
-	Settings: the defines below. Quality follows r2_sunshafts_quality (low / medium / high).
-
-	Caveats
-	  - The look is Screen Space Shaders' shafts, not Atmospherics': no edge enhancement, no
-	    phase function. Atmospherics' weathers tune sun_shafts_intensity for its own shader,
-	    so shafts can be dimmer or brighter than with Atmospherics; VOLSUN_GAIN scales them.
-	  - Steps outside the far cascade (beyond r2_sun_far / the last ssfx_shadow_cascades
-	    distance) are skipped as in SSS (VOLSUN_OOB_LIT 0); 1 counts them as lit, which
-	    brightens distant haze like Atmospherics does.
-	  - The jitter is the engine's static 64x64 jitter texture (stable without TAA); with few
-	    steps a fine pattern can show in thin shafts. Raise the step count for that quality.
+	The original GSC ray march (vanilla, Screen Space Shaders, IX-Ray): one hardware shadow
+	compare per step, up to 28 reads per pixel instead of Atmospherics' ~110. SSS look and
+	output. Reads the far cascade (s_smap / m_shadow), as IX-Ray does, with r4_sun_csm on or off.
+	Install BELOW (higher priority than) Atmospherics. Tune with the defines below.
 */
 
 #include "common.h"
@@ -114,8 +88,7 @@ float4 	main (v2p_volume  I) : SV_Target
 	if (depth < 0.0001)
 		res = max_density;
 
-	// Steps whose depth stays above VOLSUN_MIN_DEPTH: depth falls by deltaDepth per step, so
-	// count them once instead of testing every step
+	// Steps that stay farther than VOLSUN_MIN_DEPTH, counted once instead of tested per step
 	int steps = 0;
 	if (deltaDepth > 1e-5)
 		steps = (int)clamp(ceil((depth - VOLSUN_MIN_DEPTH) / deltaDepth), 0.0, (float)RAY_SAMPLES);

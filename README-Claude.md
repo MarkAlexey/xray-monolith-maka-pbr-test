@@ -154,16 +154,10 @@ line out. The file is read when the game starts. The options the shaders here un
 
 Other options are passed through for future use.
 
-For a global alternative that keeps the material as it is, use the console variables
-`r4_pbr_reflection_blur_hud` (first-person models) and `r4_pbr_reflection_blur_world` (everything
-else), 0..1, default 0 = unchanged. They set the least roughness the reflected *image* (sky
-cubemaps, VSLR capture, SSLR) is looked up at, so a polished or metal surface stops showing a
-sharp mirror image of its surroundings. Unlike `HUD_REFLECT`, the metalness and roughness still
-apply: Fresnel, the metal tint, the ambient brightness and the sun and lamp highlights use the
-material's own roughness. SSLR fades out as the value goes to 1. They take effect immediately
-(no restart) and are saved in user.ltx. Caveat: first-person pixels are told apart by depth, the
-same test SSLR uses (`SSLR_HUD_DEPTH`, 1.2 m), so world geometry closer than that takes the HUD
-value. PBR textures only; legacy and pseudo-PBR pixels are unchanged.
+Global alternative: `r4_pbr_reflection_blur_hud` / `r4_pbr_reflection_blur_world` (0..1, default
+0, live) blur only the reflected image (cubemaps, VSLR, SSLR fades out towards 1); Fresnel, metal
+tint and highlights keep the material's roughness. HUD vs world is told apart by depth
+(`SSLR_HUD_DEPTH`, 1.2 m), so world geometry closer than that takes the HUD value. PBR only.
 
 To keep a surface reflective without it mirroring its surroundings (the look of the early
 PBR builds: the sky cubemaps blurred by roughness, nothing else), add to the texture's `.ltx`:
@@ -173,13 +167,9 @@ PBR builds: the sky cubemaps blurred by roughness, nothing else), add to the tex
 NO_MIRROR = 1   ; reflect only the sky: no VSLR capture of nearby geometry, no SSLR
 ```
 
-Metalness, roughness, the metal tint and every highlight stay as the material says; only the
-reflected image of the world around it goes. `r4_pbr_mirror_hud 0` / `r4_pbr_mirror_world 0`
-(console, default 1, immediate) do the same for every PBR surface on first-person models / in
-the world. The option travels in bit 0 of the material target's alpha (`pbr_surface.h`), so
-subsurface values keep 64 steps instead of 128. Caveats: PBR textures only; and a shader pack
-built from an older repository writes that alpha the old way, which sets the flag at random on
-skin (any texture with a subsurface value): rebuild the pack together with the exe.
+`r4_pbr_mirror_hud 0` / `r4_pbr_mirror_world 0` (default 1, live) do the same for every PBR
+surface. The flag is bit 0 of the material alpha (`pbr_surface.h`); a shader pack built from an
+older repository sets it at random on skin, so rebuild the pack together with the exe.
 
 ### Global options and the debug view
 
@@ -1832,32 +1822,16 @@ Not taken: the file system revert, the RDTSC timer and the native DDS loader.
 
 ## Light volumetric sun shafts (optional, `extras/volumetric_lite`)
 
-Atmospherics (Hippobot, 2.69 RC7.x) replaces `accum_volumetric_sun.ps` with a ray march that
-reads a min-max tile, a 4-texel gather and, every other step, three more gathers per step:
-about 110 shadow-map reads per pixel at `r2_sunshafts_quality st_opt_high`, on a full-screen
-pass. `extras/volumetric_lite/gamedata/shaders/r3/accum_volumetric_sun.ps` is the original GSC
-march instead, the one vanilla, Screen Space Shaders and IX-Ray use (IX-Ray:
-`gamedata/shaders/d3d11/accum_volumetric_sun.ps.hlsl`): one hardware shadow compare per step,
-12 / 20 / 28 steps for low / medium / high, the steps closer than 0.1 m counted once instead of
-tested in the loop, and nothing marched when the weather has no shafts.
+`extras/volumetric_lite/gamedata/shaders/r3/accum_volumetric_sun.ps`: the original GSC ray march
+(vanilla, SSS, IX-Ray) instead of Atmospherics' (~110 shadow-map reads per pixel at high quality):
+one hardware compare per step, 12 / 20 / 28 steps, nothing marched when the weather has no shafts.
+It reads the far cascade (`s_smap` / `m_shadow`, as IX-Ray does) with `r4_sun_csm` on or off, and
+looks like SSS' shafts (`VOLSUN_GAIN`, `VOLSUN_OOB_LIT` to tune). Install as its own mod, higher
+priority than Atmospherics.
 
-- **Which shadow map.** IX-Ray keeps every sun cascade in one texture array and its shafts read
-  the far one (`m_shadow_sun[2]`, `s_smap_sun` slice 2). This engine's CSM (`r4_sun_csm 1`)
-  keeps the near and middle cascades in its array (`s_smap_csm`, `m_shadow_csm0/1`) and renders
-  the far cascade into the legacy sun map, which `accum_direct_volumetric` binds to the
-  volumetric pass as `s_smap` with `m_shadow`. The file reads that, so it reads the same cascade
-  IX-Ray does, with `r4_sun_csm` on or off.
-- **Look and output** are Screen Space Shaders' (saturation by sun height, fog fade, the weapon
-  fade, `USE_STRICT_GAMMA_CORRECTION`), so `combine_volumetric` and the weathers'
-  `sun_shafts_intensity` behave as with SSS. Not Atmospherics' look: no edge enhancement and no
-  phase function. `VOLSUN_GAIN` in the file scales the result for weathers tuned for
-  Atmospherics; `VOLSUN_OOB_LIT 1` counts steps beyond the far cascade as lit, as Atmospherics
-  does.
-- **Install** as its own Mod Organizer mod, higher priority than Atmospherics. Removing it
-  brings Atmospherics' shafts back.
-- Checked with DXC on vanilla, vanilla + SSS and vanilla + SSS + Atmospherics + this pack:
-  every quality level and define set compiles, and it binds `s_smap`, `jitter0` and
-  `s_position` only (the textures the installed `.s` provides).
-- Engine side, unchanged: volumetric shafts need the shadows cast into the air, so the far
-  cascade renders every caster in its box (no receiver pruning, `sun_cascade_needs_receiver_bounds`)
-  whatever shader draws the shafts.
+## Far sun cascade min/max tiles (`r4_sun_far_minmax`, default 1, CSM only)
+
+LVutner's suggestion. After the far cascade is rendered, one compute pass (`sun_far_minmax.cs`)
+writes the min / max depth per 4x4 shadow-map texels, dilated past the filter's reach. The far
+light pass (`sun_far_minmax.h`) returns lit / shadowed from one texel read and runs the shadow
+filter only at shadow edges. Same image; a pack without the two files turns it off.

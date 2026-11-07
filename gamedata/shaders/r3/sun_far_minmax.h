@@ -1,25 +1,11 @@
 #ifndef SUN_FAR_MINMAX_H
 #define SUN_FAR_MINMAX_H
 
-//////////////////////////////////////////////////////////////////////////////////////////
-// Monolith: far sun cascade min/max tiles (r4_sun_far_minmax, LVutner's suggestion)
-//
-// The far light pass (accum_sun_far.ps) calls sun_far_shadow( PS ) instead of shadow( PS ).
-// It reads one texel of s_sun_far_minmax (sun_far_minmax.cs): the min and max shadow-map depth
-// in a window of at least 8 texels around the pixel, more than the shadow filter reads.
-//   pixel depth <= min                      : every texel the filter can read passes: fully lit (1)
-//   pixel depth - SUN_FAR_MINMAX_BIAS > max  : every texel fails: fully shadowed (0)
-//   otherwise                                : the installed filter, shadow( PS ), as before
-// The shadow sampler compares LESS_EQUAL (lit when the pixel's depth <= the stored depth); the
-// filters only subtract a small bias from the pixel's depth (SSS: 0.000085, its PCSS blocker
-// search 0.0001), which SUN_FAR_MINMAX_BIAS covers with a wide margin. The result is therefore
-// the same as the filter's: only pixels at shadow edges, and the 1% next to the shadow map's
-// border (SUN_FAR_MINMAX_EDGE), still run it.
-// Off (always the filter) when the exe has no tiles (USE_SUN_FAR_MINMAX undefined), when
-// r4_sun_far_minmax is 0, or on a light pass the tiles were not built for (the scope's second
-// viewport on the bodycam branch): sun_far_minmax_params.x is 0 then.
+// Far sun cascade min/max tiles (r4_sun_far_minmax, built by sun_far_minmax.cs).
+// sun_far_shadow() returns 1 when the pixel is nearer than every texel the filter can read,
+// 0 when it is farther than all of them, and runs shadow() only in between (shadow edges and
+// the map's border). Without the tiles (no USE_SUN_FAR_MINMAX, params.x 0) it is shadow().
 // Include after shadow.h.
-//////////////////////////////////////////////////////////////////////////////////////////
 
 #define SUN_FAR_MINMAX_BIAS 0.0005	// shadow-map depth units
 #define SUN_FAR_MINMAX_EDGE 0.01	// fraction of the shadow map next to its border left to the filter
