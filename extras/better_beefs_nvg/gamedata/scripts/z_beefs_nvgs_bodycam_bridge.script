@@ -1,0 +1,185 @@
+-- ============================================================================
+-- Better Beef's NVGs settings bridge (PBR shaders installer, "Better Beef's NVGs")
+-- File: gamedata\scripts\z_beefs_nvgs_bodycam_bridge.script
+-- ============================================================================
+-- When another mod's z_beefs_nvgs.script wins over Better Beef's (Bodycam Shaders ships
+-- one, with stock Beef's packing and the bodycam / FDDA animations), Better Beef's shader
+-- gets none of its MCM settings: the PBR shaders then fall back to each generation's
+-- defaults. This wraps that script's pack_nvg_data / pack_nvg_data_2 and fills in Better
+-- Beef's MCM values (tint colour, washout, bloom, halo, image and near blur, per
+-- generation); flip-down and tube radius stay as that script computes them.
+--
+-- Does nothing when:
+--   - Better Beef's own z_beefs_nvgs.script is the active one (it packs these itself)
+--   - Better Beef's MCM (z_beefs_nvgs_mcm with the colour keys) is not installed
+-- Caveats:
+--   - Flip-down is capped at 99 (as Better Beef's does): shader_param_7.x above
+--     100 is rejected by the engine once bloom is added to its decimals.
+--   - Better Beef's in-game settings dialog (M) and brightness steps belong to
+--     its own script and stay unavailable; use MCM.
+-- ============================================================================
+
+-- Settings ------------------------------------------------------------------
+local DRY_RUN = false   -- true: log what would be written, write the stock values
+local LOG     = false   -- true: log every packed value
+
+-- Better Beef's colour presets (z_beefs_nvgs.script, color_presets)
+local PRESETS = {
+	[1] = {0.75, 1.00, 0.60},  -- Soft Green
+	[2] = {0.50, 1.00, 0.40},  -- Hard Green
+	[3] = {0.30, 0.40, 0.50},  -- Blue-Grey
+	[4] = {0.30, 1.00, 1.00},  -- Cyan
+	[5] = {1.00, 1.00, 1.00},  -- White
+	[6] = {1.00, 0.70, 0.10},  -- Amber
+	[7] = {0.00, 0.75, 0.00},  -- Pure Green
+	[8] = {0.35, 0.65, 0.50},  -- Muted Teal
+	[9] = {0.55, 0.75, 0.75},  -- Pale Cyan
+}
+
+-- Fallbacks when an MCM key is missing (Better Beef's script fallbacks)
+local FALLBACK = {
+	[1] = {preset = 7, r = 0.10, g = 0.75, b = 0.10, washout = 0.20, near_blur = 0.80, near_range = 2, bloom = 1.0, halo = 0.6, image_blur = 0.0},
+	[2] = {preset = 8, r = 0.35, g = 0.65, b = 0.50, washout = 0.10, near_blur = 0.80, near_range = 2, bloom = 1.0, halo = 0.6, image_blur = 0.0},
+	[3] = {preset = 9, r = 0.55, g = 0.75, b = 0.75, washout = 0.10, near_blur = 0.80, near_range = 2, bloom = 0.4, halo = 0.0, image_blur = 0.0},
+}
+-------------------------------------------------------------------------------
+
+local original_pack_1, original_pack_2
+local gen_settings = {}
+
+local function num(v, fallback)
+	v = tonumber(v)
+	if not v or v ~= v or v == math.huge or v == -math.huge then
+		return fallback
+	end
+	return v
+end
+
+local function clamp(v, lo, hi)
+	return math.max(lo, math.min(hi, v))
+end
+
+local function mcm(key, fallback)
+	local ok, v = pcall(z_beefs_nvgs_mcm.get_config, key)
+	if ok and v ~= nil then
+		return v
+	end
+	return fallback
+end
+
+local function read_generation(g)
+	local f = FALLBACK[g]
+	local p = "nvg_gen" .. g .. "_"
+	local s = {}
+
+	local preset = math.floor(num(mcm(p .. "color_preset_mcm"), f.preset) + 0.5)
+	local c = PRESETS[preset]
+	if c then
+		s.color = {c[1], c[2], c[3]}
+	else
+		s.color = {num(mcm(p .. "color_r_mcm"), 0.5), num(mcm(p .. "color_g_mcm"), 1.0), num(mcm(p .. "color_b_mcm"), 0.5)}
+	end
+
+	s.washout    = num(mcm(p .. "washout_thresh_mcm"), f.washout)
+	s.near_blur  = num(mcm(p .. "near_blur_mcm"), f.near_blur)
+	s.near_range = num(mcm(p .. "near_blur_range_mcm"), f.near_range)
+	s.bloom      = num(mcm(p .. "bloom_mcm"), f.bloom)
+	s.halo       = num(mcm(p .. "halo_mcm"), f.halo)
+	s.image_blur = num(mcm(p .. "image_blur_mcm"), f.image_blur)
+	return s
+end
+
+local function refresh()
+	for g = 1, 3 do
+		gen_settings[g] = read_generation(g)
+	end
+end
+
+-- Generation from the active script's shader_param_8 string: "(g.tubes,...)"
+local function current_generation()
+	local packed = original_pack_1()
+	local g = tonumber(string.match(packed, "^%(%s*(%d+)"))
+	return g and gen_settings[g] and g or nil
+end
+
+local function report(name, stock, packed)
+	if LOG or DRY_RUN then
+		printf("[NVG-BRIDGE] %s %s -> %s%s", name, stock, packed, DRY_RUN and " (dry run, not written)" or "")
+	end
+	return DRY_RUN and stock or packed
+end
+
+-- shader_param_8: per-generation washout in y's decimal (Better Beef's encoding)
+local function pack_1()
+	local stock = original_pack_1()
+	local g = current_generation()
+	local x, y_whole, rest = string.match(stock, "^(%([^,]+),%s*(%-?%d+)[^,]*,(.+)$")
+	if not (g and x and y_whole and rest) then
+		return stock
+	end
+	local digit = clamp(math.floor(gen_settings[g].washout * 20 + 0.5) - 1, 0, 9)
+	return report("shader_param_8", stock, x .. "," .. y_whole .. "." .. digit .. "," .. rest)
+end
+
+-- shader_param_7: Better Beef's layout
+--   x: flip_down . bloom      y: color_hi . tube_radius
+--   z: color_lo . near_range  w: halo*10+image_blur . near_blur (2 digits)
+local function pack_2()
+	local stock = original_pack_2()
+	local g = current_generation()
+	local x, y = string.match(stock, "^%(%s*([^,]+),%s*([^,]+),")
+	local radius = y and string.match(y, "%.(%d)")
+	if not (g and x and radius) then
+		return stock
+	end
+	local s = gen_settings[g]
+
+	local x_floor = clamp(math.floor(num(x, 1)), 0, 99)
+	local x_frac  = math.floor(clamp(s.bloom, 0, 1) * 9 + 0.5)
+
+	local r = math.floor(clamp(s.color[1], 0, 1) * 20 + 0.5)
+	local gr = math.floor(clamp(s.color[2], 0, 1) * 20 + 0.5)
+	local b = math.floor(clamp(s.color[3], 0, 1) * 20 + 0.5)
+	local P = r * 441 + gr * 21 + b
+	local color_hi = math.floor(P / 100)
+	local color_lo = P % 100
+
+	local z_frac  = clamp(math.floor(s.near_range), 1, 9)
+	local w_floor = math.floor(clamp(s.halo, 0, 1) * 9 + 0.5) * 10 + math.floor(clamp(s.image_blur, 0, 1) * 9 + 0.5)
+	local w_frac  = math.floor(clamp(s.near_blur, 0, 1) * 99 + 0.5)
+
+	return report("shader_param_7", stock, string.format("(%d.%d,%d.%s,%d.%d,%d.%02d)",
+		x_floor, x_frac, color_hi, radius, color_lo, z_frac, w_floor, w_frac))
+end
+
+local function on_option_change()
+	refresh()
+	if item_device and item_device.nv_state and z_beefs_nvgs.update_nvgs then
+		z_beefs_nvgs.update_nvgs()
+	end
+end
+
+function on_game_start()
+	if not (z_beefs_nvgs and z_beefs_nvgs.pack_nvg_data and z_beefs_nvgs.pack_nvg_data_2) then
+		return
+	end
+	-- Better Beef's own script is active: it packs these values itself
+	if z_beefs_nvgs.get_nvg_ui_config then
+		return
+	end
+	if not (z_beefs_nvgs_mcm and z_beefs_nvgs_mcm.get_default and z_beefs_nvgs_mcm.get_default("nvg_gen1_color_preset_mcm") ~= nil) then
+		printf("! [NVG-BRIDGE] Better Beef's NVGs MCM not found, bridge off")
+		return
+	end
+	if original_pack_1 then
+		return
+	end
+
+	original_pack_1 = z_beefs_nvgs.pack_nvg_data
+	original_pack_2 = z_beefs_nvgs.pack_nvg_data_2
+	z_beefs_nvgs.pack_nvg_data = pack_1
+	z_beefs_nvgs.pack_nvg_data_2 = pack_2
+	refresh()
+	RegisterScriptCallback("on_option_change", on_option_change)
+	printf("[NVG-BRIDGE] Better Beef's NVG settings applied to the bodycam NVG script")
+end

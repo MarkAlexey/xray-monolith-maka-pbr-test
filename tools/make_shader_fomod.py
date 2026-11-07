@@ -12,6 +12,11 @@ zips is easy; this tool puts them in one FOMOD that asks two questions and insta
   Page 1  Install type     Overlay (recommended) | Full pack
   Page 2  DLSS / FSR 3     With DLSS / FSR 3     | Without            (only with --dlss-* zips)
   Page 3  HUD blood        With (experiment)     | Without            (only with --blood)
+  Page 4  NVG mod          Beef's NVGs (GAMMA)   | Better Beef's NVGs (when extras/better_beefs_nvg exists)
+
+The NVG page installs nothing for Beef's NVGs: the shaders handle both NVG scripts (make_pbr_overlay.py,
+PATCH_NVG_STOCK_SCRIPT). Better Beef's NVGs adds extras/better_beefs_nvg (a script that applies Better
+Beef's MCM settings when another mod's NVG script wins, e.g. Bodycam Shaders'; it does nothing otherwise).
 
 HUD blood (--blood, the zip of tools/make_hud_blood_overlay.py) is installed on top of whichever
 variant was picked: its HUD shaders are the variants' own deffer_base_hud_bump.ps /
@@ -66,6 +71,10 @@ AUTHOR = "MarkAlexey / xray-monolith-maka-pbr-test"
 WEBSITE = "https://github.com/MarkAlexey/xray-monolith-maka-pbr-test"
 INSTALL_DOCS = False                        # ship docs/ and install it into DOCS_DEST
 DOCS_DEST = "PBR shaders - Instructions"     # folder in the mod for the docs (not game files)
+# Better Beef's NVGs option (page "NVG mod"): its gamedata/, relative to the repository. Missing
+# (e.g. the standalone tools zip) = no NVG page.
+NVG_BETTER_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "extras", "better_beefs_nvg")
+NVG_ID = "better_beefs_nvg"
 
 # Variant id -> (install type flag, dlss flag, label)
 VARIANTS = {
@@ -94,6 +103,12 @@ BLOOD_OFF_TEXT = "No HUD blood. The first-person shaders stay exactly as the PBR
 HUD_SHADERS = ("gamedata/shaders/r3/deffer_base_hud_bump.ps", "gamedata/shaders/r3/deffer_base_hud_aref_bump.ps")
 BLOOD_ID = "hud_blood"
 
+NVG_BEEF_TEXT = ("GAMMA's Beef's NVGs (\"189- Beef's NVG - theRealBeef\"), or any NVG mod that is not Better "
+                 "Beef's NVGs.\n\nNothing extra is installed: the PBR shaders detect Beef's NVG script and use each "
+                 "generation's default colour and Beef's brightness.")
+NVG_BETTER_TEXT = ("Better Beef's NVGs (indiesunpraiser) installed.\n\nAdds one script that applies Better Beef's MCM "
+                   "settings (colour, washout, bloom, halo, blur) when another mod's NVG script wins over Better Beef's "
+                   "(Bodycam Shaders ships one). With Better Beef's own script active it does nothing.")
 DLSS_OFF_TEXT = ("Plain GAMMA shaders, no DLSS / FSR3 shaders. Upscaling stays off; picking DLSS or FSR 3 "
                  "in the menu shows which shader is missing.")
 
@@ -112,7 +127,7 @@ INSTALL
 
 UPDATING OR CHANGING OPTIONS
 ---------------------------
-Reinstall this archive when changing the install type, the DLSS / FSR 3 or the HUD blood choice.
+Reinstall this archive when changing the install type, the DLSS / FSR 3, HUD blood or NVG choice.
 Choose REPLACE in MO2 so files from your old selections are removed.
 
 OTHER SHADER STACKS
@@ -202,7 +217,7 @@ def step(name, group, kind, plugins):
             '\n          </plugins>\n        </group>\n      </optionalFileGroups>\n    </installStep>')
 
 
-def module_config(variants, with_dlss, with_blood, version):
+def module_config(variants, with_dlss, with_blood, version, with_nvg=False):
     steps = [step("1. Install type", "Pick one", "SelectExactlyOne", [
         plugin("Overlay (recommended)", OVERLAY_TEXT, {"type": "overlay"}, "Recommended"),
         plugin("Full pack", FULL_TEXT, {"type": "full"}, "Optional")])]
@@ -214,6 +229,10 @@ def module_config(variants, with_dlss, with_blood, version):
         steps.append(step(f"{len(steps) + 1}. HUD blood", "Blood on hands and weapons", "SelectExactlyOne", [
             plugin("With HUD blood (experiment)", BLOOD_ON_TEXT, {"blood": "on"}, "Recommended"),
             plugin("Without HUD blood", BLOOD_OFF_TEXT, {"blood": "off"}, "Optional")]))
+    if with_nvg:
+        steps.append(step(f"{len(steps) + 1}. NVG mod", "Which night vision mod you use", "SelectExactlyOne", [
+            plugin("Beef's NVGs (GAMMA default)", NVG_BEEF_TEXT, {"nvg": "beef"}, "Recommended"),
+            plugin("Better Beef's NVGs", NVG_BETTER_TEXT, {"nvg": "better"}, "Optional")]))
     patterns = []
     for vid in variants:
         typ, dlss, _ = VARIANTS[vid]
@@ -231,6 +250,11 @@ def module_config(variants, with_dlss, with_blood, version):
         patterns.append('\n      <pattern>\n        <dependencies operator="And">'
                         '\n          <flagDependency flag="blood" value="on" />\n        </dependencies>'
                         f'\n        <files>\n          <folder source="components\\{BLOOD_ID}\\gamedata" '
+                        'destination="gamedata" priority="1" />\n        </files>\n      </pattern>')
+    if with_nvg:
+        patterns.append('\n      <pattern>\n        <dependencies operator="And">'
+                        '\n          <flagDependency flag="nvg" value="better" />\n        </dependencies>'
+                        f'\n        <files>\n          <folder source="components\\{NVG_ID}\\gamedata" '
                         'destination="gamedata" priority="1" />\n        </files>\n      </pattern>')
     return ('<?xml version="1.0" encoding="utf-8"?>\n'
             '<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
@@ -307,7 +331,18 @@ def main():
                   "   The full pack already has the DLSS shaders; the patch is optional there.\n"
                   "   In game: Settings > Video > Basic: MSAA Off, then DLSS or FSR 3, Apply.\n") if with_dlss else ""
     blood_line = (f"   - Page {3 if with_dlss else 2}: With HUD blood (experiment) or Without.\n") if blood else ""
-    readme = README.format(version=a.version, website=WEBSITE, dlss_line=dlss_line, blood_line=blood_line,
+    nvg = {}
+    nvg_root = os.path.join(NVG_BETTER_DIR, "gamedata")
+    for dp, _, fs in os.walk(nvg_root):
+        for f in fs:
+            full = os.path.join(dp, f)
+            with open(full, "rb") as fh:
+                nvg["gamedata/" + os.path.relpath(full, nvg_root).replace(os.sep, "/")] = fh.read()
+    if nvg:
+        print(f"{NVG_ID:13} {'Better Beef NVG bridge':24} {len(nvg):4} game files  <- {NVG_BETTER_DIR}")
+    nvg_page = 2 + bool(with_dlss) + bool(blood)
+    nvg_line = (f"   - Page {nvg_page}: Beef's NVGs (GAMMA default) or Better Beef's NVGs, the one you use.\n") if nvg else ""
+    readme = README.format(version=a.version, website=WEBSITE, dlss_line=dlss_line, blood_line=blood_line + nvg_line,
                            dlss_steps=dlss_steps,
                            reports="\n".join(reports) or "  (none)")
     credits = CREDITS.format(website=WEBSITE)
@@ -325,6 +360,8 @@ def main():
         for rel, data in (blood or {}).items():
             if rel.lower().startswith("gamedata/"):
                 z.writestr(f"components/{BLOOD_ID}/{rel}", data)
+        for rel, data in nvg.items():
+            z.writestr(f"components/{NVG_ID}/{rel}", data)
         z.writestr("docs/CREDITS.txt", crlf(credits))
         z.writestr("docs/README.txt", crlf(readme))
         for vid, (files, _) in packs.items():
@@ -335,7 +372,7 @@ def main():
             if not rel.lower().startswith("gamedata/"):
                 z.writestr(f"docs/{BLOOD_ID}_{rel}", data)
         z.writestr("fomod/info.xml", crlf(info_xml(a.version, bool(blood))))
-        z.writestr("fomod/ModuleConfig.xml", crlf(module_config(list(sources), with_dlss, bool(blood), a.version)))
+        z.writestr("fomod/ModuleConfig.xml", crlf(module_config(list(sources), with_dlss, bool(blood), a.version, bool(nvg))))
         z.writestr("README.txt", crlf(readme))
         for vid in packs:
             z.writestr(f"selections/{vid}.txt", crlf(selection_text(vid, a.version)))
