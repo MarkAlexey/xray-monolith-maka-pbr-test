@@ -1017,6 +1017,11 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 		const bool smap_alloc = isMain || ps_r__svp_smap_alloc != 0;
 		if (smap_alloc)
 			rt_smap_depth = createUnique(r2_RT_smap_depth, size, size, depth_format);
+		// Far sun cascade min/max tiles: the main target only, it renders the shadow maps (the SVP
+		// lights from them with its own flag off, so it keeps the shadow filter). Before the far
+		// light shader is compiled below, which binds it by name
+		if (isMain && RImplementation.o.sun_far_minmax)
+			create_sun_far_minmax(size);
 
 		if (RImplementation.o.dx10_minmax_sm)
 		{
@@ -1040,7 +1045,10 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 				if (csm_slices())
 					s_accum_csm.create(b_accum_csm);
 				else
+				{
 					RImplementation.o.sun_csm = FALSE;
+					RImplementation.o.sun_far_minmax = FALSE; // needs the CSM path (R_sun.cpp)
+				}
 			}
 			else if (RImplementation.TargetMain && RImplementation.TargetMain->csm_slices())
 			{

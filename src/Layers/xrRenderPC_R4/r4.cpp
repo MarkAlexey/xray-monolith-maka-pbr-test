@@ -277,6 +277,17 @@ static class cl_pbr_reflect_params : public R_constant_setup
 	}
 } binder_pbr_reflect_params;
 
+// Far sun cascade min/max tiles, read by sun_far_minmax.h: x = 1 while the tiles match the far
+// cascade being lit (set around that light pass, r4_rendertarget_accum_csm.cpp), else 0
+static class cl_sun_far_minmax_params : public R_constant_setup
+{
+	virtual void setup(R_constant* C)
+	{
+		const CRenderTarget* T = RImplementation.Target;
+		RCache.set_c(C, (T && T->sun_far_minmax_live) ? 1.f : 0.f, 0.f, 0.f, 0.f);
+	}
+} binder_sun_far_minmax_params;
+
 // LEWD: localized VSLR lookup (Szirmay-Kalos et al. 2005, "Approximate Ray-Tracing on the GPU with
 // Distance Impostors"): xyz = world position the panorama was captured from, w = refinement steps
 // (0 = plain direction lookup, r4_vslr_localize)
@@ -688,6 +699,12 @@ void CRender::create()
 	o.sun_csm = (ps_r4_sun_csm != 0) && !o.dx10_msaa && !o.sunfilter && o.HW_smap && FS.exist(fn, "$game_shaders$", "r3\\accum_sun_csm", ".ps");
 	Msg("- IX-Ray CSM %s", o.sun_csm ? "ON" : "OFF");
 
+	// Far sun cascade min/max tiles (r4_rendertarget_accum_csm.cpp): CSM mode only, where the far
+	// cascade is the last shadow map rendered into rt_smap_depth before its light pass reads it
+	o.sun_far_minmax = o.sun_csm && FS.exist(fn, "$game_shaders$", "r3\\sun_far_minmax", ".cs")
+		&& FS.exist(fn, "$game_shaders$", "r3\\sun_far_minmax", ".h");
+	Msg("- Far sun min/max tiles %s", o.sun_far_minmax ? "ON" : "OFF");
+
 	// constants
 	CResourceManager* RM = dxRenderDeviceRender::Instance().Resources;
 	RM->RegisterConstantSetup("parallax", &binder_parallax);
@@ -695,6 +712,7 @@ void CRender::create()
 	RM->RegisterConstantSetup("sslr_params", &binder_sslr_params);
 	RM->RegisterConstantSetup("vslr_params", &binder_vslr_params);
 	RM->RegisterConstantSetup("pbr_reflect_params", &binder_pbr_reflect_params);
+	RM->RegisterConstantSetup("sun_far_minmax_params", &binder_sun_far_minmax_params);
 	RM->RegisterConstantSetup("skin_sss_params", &binder_skin_sss_params);
 	RM->RegisterConstantSetup("upscaler_reactive", &binder_upscaler_reactive);
 	RM->RegisterConstantSetup("skin_sss_proj", &binder_skin_sss_proj);
@@ -2289,6 +2307,16 @@ void CRender::shader_compile_options(ShaderCompileOptions& options, int m_skinni
 		def_it++;
 	}
 	sh_name[len] = '0' + char(o.skin_sss);
+	++len;
+
+	// Far sun cascade min/max tiles: the far light pass reads s_sun_far_minmax (sun_far_minmax.h)
+	if (o.sun_far_minmax)
+	{
+		defines[def_it].Name = "USE_SUN_FAR_MINMAX";
+		defines[def_it].Definition = "1";
+		def_it++;
+	}
+	sh_name[len] = '0' + char(o.sun_far_minmax);
 	++len;
 
 	//Be carefull!!!!! this should be at the end to correctly generate

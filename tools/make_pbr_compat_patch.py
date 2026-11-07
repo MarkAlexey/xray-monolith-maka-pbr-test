@@ -471,6 +471,30 @@ def make_light_patch(kind):
     return patch
 
 
+def patch_sun_far_minmax(text, what):
+    """accum_sun_far.ps: far sun cascade min/max tiles (sun_far_minmax.h; the exe builds them,
+    r4_sun_far_minmax). Includes the header after shadow.h and calls sun_far_shadow( PS )
+    instead of shadow( PS ), which skips the shadow filter where a tile is fully lit or fully
+    shadowed and returns the same value. A far shader without that include or call is left as it
+    is: it just does not use the tiles."""
+    if "sun_far_minmax.h" in text:
+        return text
+    inc = re.search(r'#include[ \t]+"shadow\.h"[^\n]*\n', text)
+    if not inc or not re.search(r"\bshadow\([ \t]*PS[ \t]*\)", text):
+        return text
+    text = (text[:inc.end()] + '#include "sun_far_minmax.h"\t' + BANNER
+            + "far cascade min/max tiles (r4_sun_far_minmax)\n" + text[inc.end():])
+    return re.sub(r"\bshadow\(([ \t]*)PS([ \t]*)\)", r"sun_far_shadow(\1PS\2)", text)
+
+
+def make_sun_far_patch():
+    """The sun light patch, then the far cascade min/max tiles (accum_sun_far.ps only)"""
+    light = make_light_patch("sun")
+
+    def patch(text, what):
+        return patch_sun_far_minmax(light(text, what), what)
+    return patch
+
 def il_factor(text):
     """HLSL computing float3 pbr_il, the SSS Indirect Light factor for the PBR ambient diffuse
     (see patch_combine). 1 when the file has no SSS IL code (ES alone, vanilla)."""
@@ -767,13 +791,13 @@ JOBS = [
     ("sss", SSS_MV + "/deffer_base_aref_bump.ps", "sss_mv", patch_hud),
     ("es", ES_PBR + "/accum_sun.ps", "es", make_light_patch("sun")),
     ("es", ES_PBR + "/accum_sun_near.ps", "es", make_light_patch("sun")),
-    ("es", ES_PBR + "/accum_sun_far.ps", "es", make_light_patch("sun")),
+    ("es", ES_PBR + "/accum_sun_far.ps", "es", make_sun_far_patch()),
     ("es", ES_PBR + "/accum_base.ps", "es", make_light_patch("local")),
     ("es", ES_PBR + "/accum_omni_unshadowed.ps", "es", make_light_patch("omni")),
     ("es", ES_PBR + "/accum_indirect.ps", "es", make_light_patch("indirect")),
     ("es", ES_PBR + "/combine_1.ps", "es", patch_combine),
     ("sss", SSS_MAIN + "/accum_sun_near.ps", "sss_main", make_light_patch("sun")),
-    ("sss", SSS_MAIN + "/accum_sun_far.ps", "sss_main", make_light_patch("sun")),
+    ("sss", SSS_MAIN + "/accum_sun_far.ps", "sss_main", make_sun_far_patch()),
     ("sss", SSS_MAIN + "/combine_1.ps", "sss_main", patch_combine),
     ("sss", SSS_ESPATCH + "/combine_1.ps", "sss_es", patch_combine),
     ("sss", SSS_SSS + "/accum_base.ps", "sss_sss", make_light_patch("local")),

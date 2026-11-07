@@ -824,8 +824,16 @@ void CRender::render_sun_cascade(u32 cascade_ind, const xr_vector<ISpatialShared
 		                             m_sun_cascades[cascade_ind - 1].xform, cascade.bias);
 	else
 	{
+#if RENDER == R_R4
+		// Far cascade min/max tiles for its light pass (r4_sun_far_minmax, CSM mode): rt_smap_depth
+		// holds the far cascade now, and only until the next shadow map is drawn into it
+		Target->phase_sun_far_minmax();
+#endif
 		Target->accum_direct_cascade(SE_SUN_FAR, cascade.xform,
 		                             m_sun_cascades[cascade_ind - 1].xform, cascade.bias);
+#if RENDER == R_R4
+		Target->sun_far_minmax_live = false; // the SVP accumulation below keeps the shadow filter
+#endif
 #if defined(USE_DX11)
 		scope_vslr_sun_cascade(cascade.bias); // scope reflections keep the widest sun cascade
 #endif

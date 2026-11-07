@@ -192,6 +192,10 @@ public:
 	ref_texture t_smap_csm;
 	u32 smap_csm_slices = 0;
 	u32 smap_csm_size = 0;
+	// Far sun cascade min/max tiles (r4_sun_far_minmax, r4_rendertarget_accum_csm.cpp)
+	ref_rt rt_sun_far_minmax;
+	ref_shader s_sun_far_minmax;
+	bool sun_far_minmax_live = false; // the tiles match rt_smap_depth for the far light pass now
 	ref_rt rt_smap_depth_minmax; //	is used for min/max sm
 	//	TODO: DX10: CHeck if we need old-style SMAP
 	//	IDirect3DSurface9*			rt_smap_ZB;		//
@@ -797,6 +801,8 @@ public:
 	void phase_smap_csm(light* L, u32 slice);
 	void accum_direct_csm();
 	u32 csm_slices() const { return smap_csm_slices; }
+	void create_sun_far_minmax(u32 smap_size);
+	void phase_sun_far_minmax();
 	Fmatrix sun_clouds_xform(light* sun);
 	void accum_direct_f(u32 sub_phase);
 	void accum_direct_lum();
