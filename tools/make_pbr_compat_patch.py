@@ -484,6 +484,52 @@ def patch_sun_far_minmax(text, what):
     return re.sub(r"\bshadow\(([ \t]*)PS([ \t]*)\)", r"sun_far_shadow(\1PS\2)", text)
 
 
+NVG_STOCK_HELPER = """
+{b}stock Beef's NVGs script (or a copy of it): it packs only flip-down and tube
+// radius into shader_param_7, z stays 0. Better Beef's always writes the near-blur range (1..9)
+// in z's decimal. The stock script's values fall back to the generation's defaults below, and
+// the image's brightness is stock Beef's: the luma channel alone (gamma 0.85). Better Beef's
+// tonemap adds the light and albedo channels on top, which the stock settings were not made for.
+bool nvg_stock_script() {{ return shader_param_7.z < 0.05; }}
+#define NVG_STOCK_NEAR_BLUR       0.8
+#define NVG_STOCK_NEAR_BLUR_RANGE 2.0
+"""
+
+
+def patch_nvg_stock_script(text, what):
+    """night_vision.h (Better Beef's NVGs layout): work with the stock Beef's script too. The
+    stock script leaves the tint colour, bloom, halo, image and near blur at 0 (a black image
+    with white washout); with it they come from the generation's NVGParams defaults instead,
+    the washout digit is read the stock way (digit / 10) and the brightness is stock Beef's
+    (luma channel only, gamma 0.85; Better Beef's tonemap is brighter). Returns None for a header
+    without that layout (stock Beef's own header needs nothing)."""
+    if "unpack_nvg_color" not in text or "NVGParams" not in text:
+        return None
+    if "nvg_stock_script" in text:
+        return text
+    text = regex_once(text, r"(\nfloat3 unpack_nvg_color\(\)\n\{.*?\n\}\n)",
+                      lambda m: m.group(1) + NVG_STOCK_HELPER.format(b=BANNER), what)
+    text = replace_once(text, "\tfloat lua_image_blur = fmod(packed_w, 10.0) / 9.0;\n",
+                        "\tfloat lua_image_blur = fmod(packed_w, 10.0) / 9.0;\n"
+                        "\t[flatten] if (nvg_stock_script())\t" + BANNER + "stock Beef's script\n\t{\n"
+                        "\t\tlua_bloom_strength = params.bloom_strength;\n"
+                        "\t\tlua_halo_intensity = params.halo_intensity;\n"
+                        "\t\tlua_image_blur = params.image_blur;\n\t}\n", what)
+    text = replace_once(text, "float lua_near_blur_strength = round(",
+                        "float lua_near_blur_strength = nvg_stock_script() ? NVG_STOCK_NEAR_BLUR : round(", what)
+    text = replace_once(text, "float lua_near_blur_range = max(",
+                        "float lua_near_blur_range = nvg_stock_script() ? NVG_STOCK_NEAR_BLUR_RANGE : max(", what)
+    text = replace_once(text, "float washout_thresh = (round(frac(shader_param_8.y) * 10.0) + 1.0) / 20.0;",
+                        "float washout_thresh = nvg_stock_script()\n"
+                        "\t\t\t? clamp(round(frac(shader_param_8.y) * 10.0) / 10.0, 0.05, 0.5)\n"
+                        "\t\t\t: (round(frac(shader_param_8.y) * 10.0) + 1.0) / 20.0;", what)
+    text = replace_once(text, "float luma = saturate((image.r * 3.0f + image.b) / 4.0f + image.g);",
+                        "float luma = nvg_stock_script() ? pow(saturate(image.r), 0.85)\n"
+                        "\t\t\t: saturate((image.r * 3.0f + image.b) / 4.0f + image.g);", what)
+    return replace_once(text, "float3 packed_color = unpack_nvg_color();",
+                        "float3 packed_color = nvg_stock_script() ? params.saturation : unpack_nvg_color();", what)
+
+
 def make_sun_far_patch():
     """The sun light patch, then the far cascade min/max tiles (accum_sun_far.ps only)"""
     light = make_light_patch("sun")

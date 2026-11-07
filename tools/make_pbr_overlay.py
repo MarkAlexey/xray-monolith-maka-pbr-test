@@ -28,6 +28,9 @@ Files it can patch (the same edits as make_pbr_compat_patch.py, applied to the w
                                        cubemap remap, HDR reflections
     screenspace_common.h               SSS sky/env lookups through the cubemap remap
     ssfx_ssr_combine.ps                SSS SSR off where IX-Ray SSLR owns the pixel
+  NVG (PATCH_NVG_STOCK_SCRIPT)
+    night_vision.h                     Better Beef's / GAMMA's NVG header also works with the
+                                       stock Beef's script (colour, bloom, blur defaults)
   Instanced grass (PATCH_GRASS_INST)
     deffer_grass.vs, deffer_detail_s_flat.vs
                                        DT_INST paths for TheLostInPlace's instanced grass
@@ -98,6 +101,10 @@ PATCH_LEGACY_IXRAY = True
 # behave exactly like the originals there.
 PATCH_GRASS_INST = True
 
+# Let Better Beef's NVGs' night_vision.h (GAMMA's NVG header) work with the stock Beef's
+# script as well (patch_nvg_stock_script). A stock Beef's header is left alone.
+PATCH_NVG_STOCK_SCRIPT = True
+
 # Copy this repository's PBR-only headers into the overlay (see the caveat above).
 INCLUDE_REPO_HEADERS = True
 REPO_HEADERS = ["pbr_ixray.h", "pbr_hud.h", "ixray_brdf.h", "hdr_ibl.h", "sslr_apply.h", "sslr_settings.h",
@@ -137,6 +144,9 @@ LEGACY_FILES = {
 # (the exe's own shaders): nothing to patch.
 NATIVE_MARKERS = ('#include "pbr_ixray.h"', "#define PBR_GBUFFER", "ES_IXRAY_BRDF", "ixr_env_dir(",
                   '#include "dt_inst.h"')
+NVG_FILES = {
+    "night_vision.h": compat.patch_nvg_stock_script,
+}
 GRASS_FILES = {
     "deffer_grass.vs": compat.patch_grass_inst,
     "deffer_detail_s_flat.vs": compat.patch_grass_inst,
@@ -196,6 +206,8 @@ def main():
         jobs.update(LEGACY_FILES)
     if PATCH_GRASS_INST:
         jobs.update(GRASS_FILES)
+    if PATCH_NVG_STOCK_SCRIPT:
+        jobs.update(NVG_FILES)
 
     out, report, failed, stale = [], [], [], []
     for name, fn in jobs.items():
@@ -216,6 +228,9 @@ def main():
         except compat.PatchError as e:
             failed.append((name, str(e)))
             report.append(f"  {'FAILED ' if name in REQUIRED else 'skipped'}  {name}  <- {label}")
+            continue
+        if patched is None:
+            report.append(f"  n/a      {name}  <- {label}")
             continue
         out.append((rel, compat.encode(patched, crlf)))
         report.append(f"  patched  {name}  <- {label}")
