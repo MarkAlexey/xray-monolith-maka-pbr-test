@@ -109,8 +109,13 @@ bool csm_shadow( float4 P4, out float s, out uint cascade, out float fade )
 	s = 1; cascade = 0; fade = 0;
 	const uint count = (uint)csm_params.x;
 
-	[loop] for( uint i = 0; i < count; ++i )
+	// Unrolled over the most array cascades the engine makes (CSM_MAX_SLICES, 3): every
+	// csm_matrix() index is a constant. FXC can pick the wrong matrix from a loop index inside
+	// a branch, and the wrong cascade reads as lit: light through walls (IX-Ray 21eb022b).
+	[unroll] for( uint i = 0; i < 3; ++i )
 	{
+		if( i >= count )
+			break;
 		float4 t	= mul( csm_matrix( i ), P4 );
 		float3 tc	= t.xyz / t.w;
 		if( !csm_inside( tc ) )
@@ -123,7 +128,7 @@ bool csm_shadow( float4 P4, out float s, out uint cascade, out float fade )
 		// array cascade: the far cascade is lit by a separate pass.
 		float band	= max( csm_params.y * 0.5, 1e-4 );
 		float e		= csm_edge( tc );
-		[branch] if( e < band && i + 1 < count )
+		[branch] if( i + 1 < 3 && i + 1 < count && e < band )
 		{
 			float4 t2	= mul( csm_matrix( i + 1 ), P4 );
 			float3 tc2	= t2.xyz / t2.w;
