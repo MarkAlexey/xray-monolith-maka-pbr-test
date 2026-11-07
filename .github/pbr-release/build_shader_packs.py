@@ -168,6 +168,25 @@ def gamma_layers(sources):
     return [os.path.join(d, e) for e in order]
 
 
+def drop_stale_ssr_overrides(extras, atmospherics):
+    """Atmospherics 2.69 RC8 packs its SSR data (atmos_ssr_pack.h): ssfx_ssr_gloss.ps writes it
+    and ssfx_ssr_combine.ps reads it. A GAMMA override with an older ssfx_ssr_gloss.ps (GAMMA's
+    terrain puddles gloss) would break SSR above it, so that override is left out, as in an
+    install with Atmospherics above it. Older Atmospherics: nothing changes."""
+    atmos = next(iter(r3_files(atmospherics).values()), {})
+    if "atmos_ssr_pack.h" not in atmos:
+        return extras
+    keep = []
+    for e in extras:
+        gloss = next(iter(r3_files(e).values()), {}).get("ssfx_ssr_gloss.ps")
+        if gloss and b"ssr_pack" not in gloss[1]():
+            print(f"NOTE: GAMMA/{os.path.basename(e)} left out: its ssfx_ssr_gloss.ps predates"
+                  " Atmospherics' packed SSR data (atmos_ssr_pack.h) and would break SSR")
+            continue
+        keep.append(e)
+    return keep
+
+
 def find_r3(root):
     for dp, _, _ in os.walk(root):
         if os.path.basename(dp).lower() == "r3" and os.path.basename(os.path.dirname(dp)).lower() == "shaders":
@@ -361,6 +380,8 @@ def main():
                  + "\n  ".join(f"{k}: {v}" for k, v in forms.items()))
     mode = next(iter(forms.values()))
     extras = gamma_layers(a.sources)
+    if mode == "merged":
+        extras = drop_stale_ssr_overrides(extras, src["atmospherics"])
     for t in a.top_layer:
         if not os.path.exists(t):
             sys.exit(f"error: --top-layer {t} does not exist")
