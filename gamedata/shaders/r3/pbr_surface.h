@@ -24,4 +24,29 @@ float pbr_surface_mirror( float w )
 	return ( w > 0.25 && ( b & 1u ) != 0u ) ? 0.0 : 1.0;
 }
 
+// Atmospherics PBR packing (LTX "material = 4.5", PBR_ATMOS), decoded exactly as Atmospherics'
+// own sload.h does, so a texture looks the same with or without the PBR shaders.
+// Shared by sload.h and pbr_hud.h (the decode under SSS's / ES's / Atmospherics' sload.h).
+//   bump  : r = normal X, g = normal Y (used as stored: DirectX style), b = height, a unused
+//   bump# : r = ambient occlusion, g = roughness, b = metalness, a unused
+// Neither texture needs alpha, so both can be BC1 (BC7 for quality).
+float3 pbr_atmos_normal( float4 bump )
+{
+	float2 n = bump.xy * 2.0 - 1.0;
+	return float3( n, sqrt( saturate( 1.0 - dot( n, n ) ) ) );
+}
+
+// x = metalness, y = roughness, z = ambient occlusion, w = subsurface.
+// The packing has no subsurface channel: SKIN_SSS = 0..1 in the texture's .ltx
+// [shaders_options] sets it for the whole texture (default 0).
+float4 pbr_atmos_material( float4 bumpX )
+{
+#ifdef SKIN_SSS
+	const float sss = saturate( SKIN_SSS );
+#else
+	const float sss = 0.0;
+#endif
+	return float4( bumpX.z, bumpX.y, bumpX.x, sss );
+}
+
 #endif	//	PBR_SURFACE_H

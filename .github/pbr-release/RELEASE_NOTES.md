@@ -129,16 +129,27 @@ else alone. Install the result last. Every tool has `--dry-run` and documents it
 
 ## Making PBR textures
 
-`<name>.dds` (albedo), `<name>_bump.dds` (R height, G normal Y, A normal X) and `<name>_bump#.dds`
-(R metal, G roughness, B subsurface, A AO), all linear. Mark the base texture PBR either in its THM
-(material "PBR") or, without a THM, in `<name>.ltx`:
+The standard is the Atmospherics packing (the same textures work with Atmospherics' own PBR),
+all linear, BC7 or BC1, never sRGB:
 
-    [texture]
-    bump_mode = use
-    material = pbr
+- `<name>.dds`: albedo; alpha only for cut-out textures (opaque: white or no alpha)
+- `<name>_bump.dds`: R normal X, G normal Y (DirectX style), B height for parallax (else empty)
+- `<name>_bump#.dds`: R ambient occlusion (none = white), G roughness (not inverted: black =
+  polished), B metalness (white = bare metal)
+- `<name>.ltx`:
 
-`pack_pbr_textures.py` builds all three textures from separate maps, including Call of Duty
-exports (gloss is inverted to roughness, packed normals are unpacked).
+      [texture]
+      material  = 4.5
+      bump_mode = use
+
+      [shaders_options]
+      SKIN_SSS = 0.6    ; optional: subsurface for skin / leaves (no channel for it)
+
+The older IX-Ray packing (`material = pbr`, or THM material "PBR": `_bump` R height, G normal Y
+OpenGL, A normal X; `_bump#` R metal, G roughness, B subsurface, A AO) still works.
+`tools/convert_pbr_to_atmos.py` converts such textures to the standard (exactly, or BC7 with
+`--bc7`). `tools/pack_pbr_textures.py` builds textures in either packing from separate maps,
+including Substance and Call of Duty exports.
 
 ## Console
 

@@ -29,7 +29,8 @@
 //  - PBR-aware sload.h (this repository's; it defines SLOAD_HEIGHT): S is already decoded IX-Ray style, parallax and detail included.
 //    Its material is used as is.
 //  - SSS's own sload.h: S was decoded the legacy way. The normal, height, gloss and the
-//    material are re-read here from the IX-Ray texture layout (see sload.h):
+//    material are re-read here from the texture's packing (see sload.h): the Atmospherics
+//    packing for PBR_ATMOS (LTX "material = 4.5", pbr_surface.h), otherwise IX-Ray's:
 //        bump  : x = height, y = normal Y, w = normal X (z unused)
 //        bump# : x = metalness, y = roughness, z = subsurface, w = ambient occlusion
 //    Caveats on this path: no parallax offset and no detail bump on PBR textures (HUD models
@@ -69,6 +70,18 @@ float4 pbr_hud_decode( inout surface_bumped S, float2 tc )
 {
 #ifdef SLOAD_HEIGHT
 	return S.pbr;	// PBR-aware sload.h: already decoded
+#elif defined(PBR_ATMOS)
+	// Atmospherics packing, LTX "material = 4.5" (pbr_surface.h). Same decode as Atmospherics'
+	// own sload.h; under Atmospherics its own PBR branch is off here (xmaterial reads as a
+	// material = pbr texture, gbuffer_stage.h), so this is the only decode.
+	float4 Nu	= s_bump.Sample( smp_base, tc );
+	S.normal	= pbr_atmos_normal( Nu );
+	S.height	= Nu.z;
+
+	float4 pbr	= saturate( pbr_atmos_material( s_bumpX.Sample( smp_base, tc ) ) );
+	pbr.y		= max( 0.02, pbr.y );
+	S.gloss		= ( 1.0 - pbr.y ) * ( 1.0 - pbr.y );
+	return pbr;
 #else
 	float4 Nu	= s_bump.Sample( smp_base, tc );
 	float4 NuE	= s_bumpX.Sample( smp_base, tc );
@@ -92,8 +105,9 @@ float4 pbr_hud_decode( inout surface_bumped S, float2 tc )
 }
 
 #ifdef PBR_GBUFFER
-// Per-texture subsurface value, for skin textures whose bump# blue channel is empty. In the
-// texture's .ltx, section [shaders_options]:
+// Per-texture subsurface value, for skin textures whose bump# blue channel is empty, and the
+// only subsurface source for Atmospherics-packed textures (material = 4.5). In the texture's
+// .ltx, section [shaders_options]:
 //     SKIN_SSS = 0.8    0..1, replaces the bump# blue channel (subsurface) everywhere on it
 // It drives the sun's wrap-around translucency (pbr_ixray.h) and, on first-person models, the
 // skin subsurface scattering width (skin_sss.h, r4_skin_sss). Restart the game after editing.

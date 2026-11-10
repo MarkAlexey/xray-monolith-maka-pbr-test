@@ -105,7 +105,39 @@ marked as PBR are lit exactly as before, so a stock Anomaly install looks the sa
 
 ### Making a PBR texture
 
-PBR uses IX-Ray's texture conventions, so textures made for IX-Ray work as they are:
+Two packings are read. **New textures should use the Atmospherics packing (`material = 4.5`)**:
+it is the community standard and a texture made this way looks the same with Atmospherics' own
+PBR (Hippobot) and with these shaders. The IX-Ray packing keeps working for existing textures.
+
+**Atmospherics packing** (`<name>.ltx`: `material = 4.5`)
+
+| Texture | Channels |
+|---|---|
+| `name.dds` | albedo (RGB, as Substance exports it), alpha = transparency for cut-out textures only (opaque: white or no alpha) |
+| `name_bump.dds` | **r** = normal X, **g** = normal Y (DirectX style, used as stored), **b** = height (parallax, else empty), a unused |
+| `name_bump#.dds` | **r** = ambient occlusion (none = white), **g** = roughness (black = polished, white = matte, not inverted), **b** = metalness (white = bare metal), a unused |
+| `name.ltx` | `[texture]` `material = 4.5`, `bump_mode = use` |
+
+```ini
+[texture]
+material  = 4.5
+bump_mode = use
+
+[shaders_options]
+SKIN_SSS = 0.6   ; optional: subsurface for the whole texture (skin, ears, leaves); no channel for it
+```
+
+- BC7 for quality or BC1 for size, `*_UNORM`, never `*_SRGB`. Neither bump texture needs alpha.
+- LTX only: a texture that also has a `.thm` is described by the THM, which cannot say 4.5.
+- The engine keeps the material id at 4.5 (Atmospherics alone recognises it); under these shaders
+  `gbuffer_stage.h` makes every shader read it as a PBR texture (id 1), so it is lit exactly like
+  any other PBR texture. Atmospherics' own 4.5 branches stay off, except its parallax height.
+- `tools/pack_pbr_textures.py` writes this packing by default (`--layout atmos`), the `.ltx`
+  included. `tools/convert_pbr_to_atmos.py` converts existing `material = pbr` textures, exactly
+  (or `--bc7` / `--texconv` for compressed output).
+
+**IX-Ray packing** (THM material "PBR", or `<name>.ltx`: `material = pbr`), as IX-Ray's
+textures, so textures made for IX-Ray work as they are:
 
 | Texture | Channels |
 |---|---|
@@ -120,8 +152,12 @@ PBR uses IX-Ray's texture conventions, so textures made for IX-Ray work as they 
   (what Substance's "DirectX" preset and most game pipelines export), either flip its green
   channel or add the per-texture option `USE_DX_NORMAL_MAP` described below. A map in the wrong
   convention lights bumps and bevels from the wrong side.
-- A detail texture's bump is read the PBR way only when the detail texture's own THM is also
-  marked PBR; otherwise it is treated as a normal Anomaly detail bump.
+
+Both packings:
+
+- A detail texture's bump is read the PBR way only when the detail texture is also PBR (in its own
+  packing, which may differ from the main texture's); otherwise it is treated as a normal Anomaly
+  detail bump.
 - Non-metals use a fixed F0 of 0.04 (IX-Ray's `F0_BASE`). IX-Ray's optional IOR texture is not
   ported.
 
@@ -767,8 +803,10 @@ metal; if it is bright, the roughness channel holds gloss (smoothness) and must 
 
 ## PBR texture packer (tools/pack_pbr_textures.py)
 
-Builds `<name>.dds`, `<name>_bump.dds` (R height, G normal Y, A normal X) and `<name>_bump#.dds`
-(R metal, G roughness, B subsurface, A AO) from separate maps, including Call of Duty exports:
+Builds `<name>.dds`, `<name>_bump.dds`, `<name>_bump#.dds` and `<name>.ltx` in the Atmospherics
+packing (`--layout atmos`, the default, `material = 4.5`) or the IX-Ray packing (`--layout ixray`)
+from separate maps, Substance exports (say `--input-normal directx` for a DirectX normal map) or
+Call of Duty exports:
 `--gloss` inverts gloss to roughness, `--nog` reads the packed CoD normal (R gloss, G Y, B Z, A X).
 Writes uncompressed DDS with renormalised, Toksvig-widened mips, or BC through texconv. `--dry-run`
 prints per-channel statistics and warns when a "roughness" map looks like gloss. See the header

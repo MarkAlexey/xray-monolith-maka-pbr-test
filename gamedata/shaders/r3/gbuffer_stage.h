@@ -18,6 +18,16 @@
 #	endif
 #endif
 
+// Atmospherics-packed PBR textures (LTX "material = 4.5", PBR_ATMOS): the engine keeps their
+// material id at 4.5, so Atmospherics' own shaders still recognise them when these shaders are
+// not installed. Here they are PBR textures like any other: every shader reads them as a
+// "material = pbr" texture (id 1, xmaterial 0.375), which also keeps Atmospherics' own PBR
+// branches off. common.h defines xmaterial as L_material.w after including this file.
+#if defined(USE_PBR) && defined(PBR_ATMOS)
+float4 pbr_atmos_l_material() { return float4( L_material.xyz, ( 1.0 + 0.5 ) / 4.0 ); }
+#	define L_material pbr_atmos_l_material()
+#endif
+
 //GBuffer targets struct
 struct f_deffer        		
 {

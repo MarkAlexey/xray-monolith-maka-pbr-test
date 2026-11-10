@@ -30,12 +30,23 @@ struct	surface_bumped
 #endif
 };
 
-// Monolith: IX-Ray PBR. USE_PBR is set by the engine for textures whose THM material is
-// "PBR (metallic/roughness)". Their bump textures follow IX-Ray's layout (sload.hlsli):
+// Monolith: PBR. USE_PBR is set by the engine for PBR textures, in one of two packings:
+//
+// Atmospherics packing (PBR_ATMOS), LTX "material = 4.5", the community standard. Same
+// decode as Atmospherics' own sload.h, so a texture looks the same with Atmospherics alone:
+//   bump  : r = normal X, g = normal Y (used as stored, DirectX style), b = height, a unused
+//   bump# : r = ambient occlusion, g = roughness, b = metalness, a unused
+//   subsurface: none in the textures; [shaders_options] SKIN_SSS = 0..1 in the .ltx (default 0)
+//
+// IX-Ray packing, LTX "material = pbr" or THM material "PBR (metallic/roughness)" (sload.hlsli):
 //   bump  : x = height, y = normal Y, w = normal X (z is unused)
 //   bump# : x = metalness, y = roughness, z = subsurface, w = ambient occlusion
+//
 // The parallax code below reads the height from the matching channel.
-#ifdef USE_PBR
+#if defined(USE_PBR) && defined(PBR_ATMOS)
+#	define SLOAD_HEIGHT(tc)		s_bump.Sample( smp_base, tc ).z
+#	define SLOAD_HEIGHT_LOD0(tc)	s_bump.SampleLevel( smp_base, tc, 0 ).z
+#elif defined(USE_PBR)
 #	define SLOAD_HEIGHT(tc)		s_bump.Sample( smp_base, tc ).x
 #	define SLOAD_HEIGHT_LOD0(tc)	s_bump.SampleLevel( smp_base, tc, 0 ).x
 #else
@@ -147,12 +158,49 @@ void UpdateTC( inout p_bumped I)
 #endif	//	USE_PARALLAX
 
 #ifdef USE_PBR
+#include "pbr_surface.h"	// Atmospherics packing helpers (PBR_ATMOS)
+
 // Port of IX-Ray's SloadNew() USE_PBR path. Called at the end of sload_i(), after the legacy
 // code, so it only has to replace the fields that mean something else for PBR textures.
-// Detail bump textures are decoded IX-Ray style only when they are PBR too (USE_PBR_DETAIL);
-// legacy detail bumps keep their normal and do not touch the material.
+// Detail bump textures are decoded as PBR only when they are PBR too (USE_PBR_DETAIL, in their
+// own packing: PBR_ATMOS_DETAIL); legacy detail bumps keep their normal and do not touch the
+// material. Every detail normal is brought to the main texture's convention before it is added.
 void sload_pbr( inout surface_bumped S, p_bumped I, float4 Nu, float4 NuE )
 {
+#ifdef PBR_ATMOS
+	// Atmospherics packing (pbr_surface.h): the normal is used as stored, no flip below
+	float3 N	= pbr_atmos_normal( Nu );
+	S.height	= Nu.z;
+	S.pbr		= pbr_atmos_material( NuE );
+
+#	if defined(USE_TDETAIL) && defined(USE_TDETAIL_BUMP)
+	float4 NDetail		= s_detailBump.Sample( smp_base, I.tcdbump );
+	float4 NDetailX		= s_detailBumpX.Sample( smp_base, I.tcdbump );
+#		if defined(USE_PBR_DETAIL) && defined(PBR_ATMOS_DETAIL)
+	N			+= pbr_atmos_normal( NDetail );
+	S.pbr.x		*= NDetailX.z * 2.0;	// metalness
+	S.pbr.y		*= NDetailX.y * 2.0;	// roughness
+	S.pbr.z		*= NDetailX.x;			// ambient occlusion
+#		elif defined(USE_PBR_DETAIL)
+	// IX-Ray packed detail: OpenGL style unless USE_DX_NORMAL_MAP, flipped to this convention
+	float3 ND;
+	ND.xy		= NDetail.wy * 2.0 - 1.0;
+	ND.z		= sqrt( 1.0 - saturate( dot( ND.xy, ND.xy ) ) );
+#			ifndef USE_DX_NORMAL_MAP
+	ND.y		= -ND.y;
+#			endif
+	N			+= ND;
+	S.pbr.x		*= NDetailX.x * 2.0;
+	S.pbr.y		*= NDetailX.y * 2.0;
+	S.pbr.w		*= NDetailX.z;
+	S.pbr.z		*= NDetailX.w;
+#		else
+	N			+= NDetail.wzy + NDetailX.xyz - 1.0;	// legacy detail, already in this convention
+#		endif
+#	endif
+	S.normal	= N;
+
+#else	//	PBR_ATMOS
 	float3 N;
 	N.xy		= Nu.wy * 2.0 - 1.0;
 	N.z			= sqrt( 1.0 - saturate( dot( N.xy, N.xy ) ) );
@@ -163,7 +211,17 @@ void sload_pbr( inout surface_bumped S, p_bumped I, float4 Nu, float4 NuE )
 #if defined(USE_TDETAIL) && defined(USE_TDETAIL_BUMP)
 	float4 NDetail		= s_detailBump.Sample( smp_base, I.tcdbump );
 	float4 NDetailX		= s_detailBumpX.Sample( smp_base, I.tcdbump );
-#	ifdef USE_PBR_DETAIL
+#	if defined(USE_PBR_DETAIL) && defined(PBR_ATMOS_DETAIL)
+	// Atmospherics packed detail (DirectX style): pre-flipped, the flip below restores it
+	float3 ND	= pbr_atmos_normal( NDetail );
+#		ifndef USE_DX_NORMAL_MAP
+	ND.y		= -ND.y;
+#		endif
+	N			+= ND;
+	S.pbr.x		*= NDetailX.z * 2.0;	// metalness
+	S.pbr.y		*= NDetailX.y * 2.0;	// roughness
+	S.pbr.z		*= NDetailX.x;			// ambient occlusion
+#	elif defined(USE_PBR_DETAIL)
 	float3 ND;
 	ND.xy		= NDetail.wy * 2.0 - 1.0;
 	ND.z		= sqrt( 1.0 - saturate( dot( ND.xy, ND.xy ) ) );
@@ -187,6 +245,7 @@ void sload_pbr( inout surface_bumped S, p_bumped I, float4 Nu, float4 NuE )
 	N.y			= -N.y;
 #endif
 	S.normal	= N;
+#endif	//	PBR_ATMOS
 
 	S.pbr		= saturate( S.pbr );
 	S.pbr.y		= max( 0.02, S.pbr.y );

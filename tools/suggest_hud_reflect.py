@@ -7,8 +7,9 @@ How the option works (pbr_hud.h): for PBR textures the shader moves the roughnes
     rough' = lerp( 1, rough, k ) = 1 - k * ( 1 - rough )
 so the k that brings a texture's typical roughness to a target is
     k = ( 1 - target ) / ( 1 - rough )
-This tool measures the roughness of each _bump# (green channel; R metalness, B subsurface,
-A AO), takes a robust statistic of it (the median by default), and computes that k.
+This tool measures the roughness of each _bump# (green channel in both packings: IX-Ray's
+"material = pbr" has R metalness, B subsurface, A AO; Atmospherics' "material = 4.5", read from
+the texture's .ltx, has R AO, B metalness and no subsurface channel), takes a robust statistic of it (the median by default), and computes that k.
 
 Why the default target is 0.86: in the IX-Ray environment BRDF (ixray_brdf.h,
 ixr_env_brdf_approx) the share of the ambient that is sky reflection for a non-metal falls
@@ -137,6 +138,20 @@ def stat(v, how):
             "p75": np.percentile(v, 75)}[how]
 
 
+def is_atmos_packing(base):
+    """True when <base>.ltx says material = 4.5: the Atmospherics packing, where _bump# is
+    R = ambient occlusion, G = roughness, B = metalness (no subsurface channel)"""
+    ltx = base + ".ltx"
+    if not os.path.exists(ltx):
+        return False
+    text = open(ltx, encoding="cp1251", errors="replace").read()
+    m = re.search(r"^\s*material\s*=\s*([0-9.]+)", text, re.M | re.I)
+    try:
+        return bool(m) and abs(float(m.group(1)) - 4.5) < 1e-4
+    except ValueError:
+        return False
+
+
 def texture_base(path):
     """femme_arm_right(_bump#).dds -> folder/femme_arm_right"""
     b = re.sub(r"\.dds$", "", path, flags=re.I)
@@ -228,7 +243,12 @@ def main():
             print(f"  {name}: {bump}: {e}")
             bad += 1
             continue
-        metal, rough, sss, ao = (img[..., i].ravel() for i in range(4))
+        atmos = is_atmos_packing(base)
+        if atmos:   # material = 4.5: R AO, G roughness, B metal; subsurface only as SKIN_SSS
+            ao, rough, metal = (img[..., i].ravel() for i in range(3))
+            sss = np.zeros_like(rough)
+        else:       # IX-Ray packing: R metal, G roughness, B subsurface, A AO
+            metal, rough, sss, ao = (img[..., i].ravel() for i in range(4))
         keep = np.ones_like(rough, bool)
         if a.mask_alpha:
             keep = (ao > 0.0) & (ao < 1.0)
