@@ -804,6 +804,94 @@ float pbr_reflection_mirror( pbr_material M, float3 P )
 	return M.mirror * ( 1.0 - off );
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
+// Geometric horizon occlusion, ported from Atmospherics' hmodel.h (ATMOS_HORIZON, Hippobot).
+// A normal-mapped pixel can reflect a direction that points into its real surface (mostly at
+// grazing angles); that part of the ambient reflection fades out instead of showing the sky.
+// The real surface comes from the neighbouring G-buffer depths. Weapons and hands (closer than
+// SSLR_HUD_DEPTH) are rescaled to the HUD projection first. 0 = off.
+#ifndef PBR_GEO_HORIZON
+#	define PBR_GEO_HORIZON 1
+#endif
+
+#if PBR_GEO_HORIZON && !defined(USE_MSAA)
+
+#define PBR_HO_LOBE_K		4.75
+#define PBR_HO_LOBE_MIN		0.1
+#define PBR_HO_SLACK_WORLD	0.0
+#define PBR_HO_SLACK_HUD	0.15
+#define PBR_HO_HUD_FOV		0.45	// when the engine does not set m_hud_params.z
+
+#ifndef HM_HUD_PARAMS_DECLARED	// shared with Atmospherics' hmodel.h
+#define HM_HUD_PARAMS_DECLARED
+uniform float4 m_hud_params;
+#endif
+
+float pbr_ho_vis_lobe( float3 R, float3 n_geo, float3 n_sh, float3 V, float rough, float slack )
+{
+	n_geo	= normalize( n_geo );
+	n_geo	= ( dot( n_geo, V ) > 0.0 ) ? -n_geo : n_geo;
+	float w	= max( sin( min( PBR_HO_LOBE_K * atan( rough * rough ), 1.5 ) ), PBR_HO_LOBE_MIN );
+	float fg	= saturate( 0.5 + 0.5 * ( dot( R, n_geo ) + slack ) / w );
+	float fs	= saturate( 0.5 + 0.5 * dot( R, n_sh ) / w );
+	return saturate( fg / max( fs, 1e-3 ) );
+}
+
+// Multi-bounce occlusion (Jimenez et al. 2016), tinted by F0
+float3 pbr_ao_multibounce( float v, float3 albedo )
+{
+	float3 a =  2.0404 * albedo - 0.3324;
+	float3 b = -4.7951 * albedo + 0.6417;
+	float3 c =  2.7552 * albedo + 0.6903;
+	return max( v, ( ( v * a + b ) * v + c ) * v );
+}
+
+float3 pbr_geo_position( float2 pix )
+{
+	return s_position.Load( int3( pix, 0 ) ).z * float3( pix * pos_decompression_params.zw - pos_decompression_params.xy, 1.0 );
+}
+
+// 1 where the reflection stays above the real surface. P, N view space.
+float3 pbr_geo_horizon( pbr_material M, float3 P, float3 N )
+{
+	// Hippobot's hm_geo_gather / hm_geo_setup: the side with the smaller depth step
+	float2 pix	= floor( ( P.xy / P.z + pos_decompression_params.xy ) / pos_decompression_params.zw ) + 0.5;
+	float3 pc	= pbr_geo_position( pix );
+	float3 l	= pc - pbr_geo_position( pix + float2( -1.0,  0.0 ) );
+	float3 r	= pbr_geo_position( pix + float2(  1.0,  0.0 ) ) - pc;
+	float3 u	= pc - pbr_geo_position( pix + float2(  0.0, -1.0 ) );
+	float3 d	= pbr_geo_position( pix + float2(  0.0,  1.0 ) ) - pc;
+	float3 dPx	= ( abs( l.z ) < abs( r.z ) ) ? l : r;
+	float3 dPy	= ( abs( u.z ) < abs( d.z ) ) ? u : d;
+	float3 ng	= cross( dPy, dPx );
+	if( M.flora || !( max( abs( dPx.z ), abs( dPy.z ) ) < 0.04 * P.z && dot( ng, ng ) > 1e-8 * dot( dPx, dPx ) * dot( dPy, dPy ) ) )
+		return 1.0;
+
+	const bool hud	= P.z < SSLR_HUD_DEPTH;
+	float  hud_fov	= ( m_hud_params.z > 0.0 ) ? m_hud_params.z : PBR_HO_HUD_FOV;
+	float  hs		= hud ? tan( radians( hud_fov * 83.0 ) * 0.5 ) / abs( pos_decompression_params.y ) : 1.0;
+	float3 Vt		= normalize( float3( normalize( P ).xy * hs, normalize( P ).z ) );
+	float3 Rv		= reflect( Vt, N );
+	float3 a		= float3( dPx.xy * hs, dPx.z );
+	float3 b		= float3( dPy.xy * hs, dPy.z );
+	float  slack	= hud ? PBR_HO_SLACK_HUD : PBR_HO_SLACK_WORLD;
+	float  horizon	= pbr_ho_vis_lobe( Rv, cross( b, a ), N, Vt, M.roughness, slack );
+	[branch] if( hud )
+	{
+		// 16-bit depth on the close weapon: keep the most open of the neighbouring steps
+		float3 du	= ( Vt / Vt.z ) * exp2( floor( log2( max( P.z, 1e-4 ) ) ) - 10.0 );
+		horizon	= max( horizon, pbr_ho_vis_lobe( Rv, cross( b, a + du ), N, Vt, M.roughness, slack ) );
+		horizon	= max( horizon, pbr_ho_vis_lobe( Rv, cross( b, a - du ), N, Vt, M.roughness, slack ) );
+		horizon	= max( horizon, pbr_ho_vis_lobe( Rv, cross( b + du, a ), N, Vt, M.roughness, slack ) );
+		horizon	= max( horizon, pbr_ho_vis_lobe( Rv, cross( b - du, a ), N, Vt, M.roughness, slack ) );
+	}
+	return pbr_ao_multibounce( horizon, saturate( M.specular ) );
+}
+
+#else
+float3 pbr_geo_horizon( pbr_material M, float3 P, float3 N ) { return 1.0; }
+#endif	//	PBR_GEO_HORIZON
+
 // Linear ambient radiance (IX-Ray AmbientLightingImpl). occ = SSAO * material AO.
 // diffuse_scale multiplies the diffuse part only (SSS indirect light).
 float3 pbr_ambient_ex( pbr_material M, float3 P, float3 N, float hemi, float occ, float3 diffuse_scale )
@@ -824,6 +912,7 @@ float3 pbr_ambient_ex( pbr_material M, float3 P, float3 N, float hemi, float occ
 	// SSS "Improved gloss & wet surfaces": flora reflects a quarter of the environment
 	specular		*= M.flora ? 0.25 : 1.0;
 #endif
+	specular		*= pbr_geo_horizon( M, P, N );
 
 	return occ * lerp( diffuse, specular, ixr_env_F( M.specular, NdotV, M.roughness ) );
 }
