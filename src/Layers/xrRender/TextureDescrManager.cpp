@@ -231,16 +231,23 @@ void CTextureDescrMngr::LoadLTX(LPCSTR initial, map_TD& s_texture_details)
 				strconcat(sizeof(bump_name), bump_name, name, "_bump");
 		}
 
-		// IX-Ray PBR: "material = pbr" (or 4, the THM value) marks a metallic/roughness texture,
-		// as the THM material "PBR" does. Its G-buffer material id stays 1.0 (see LoadTHM).
+		// PBR textures, two packings:
+		//   "material = pbr" (or 4, the THM value): IX-Ray packing, as the THM material "PBR".
+		//     Its G-buffer material id stays 1.0 (see LoadTHM).
+		//   "material = 4.5": Atmospherics (Hippobot) packing, the community standard. The id
+		//     stays 4.5 so Atmospherics' own shaders still recognise it; the PBR shaders read it
+		//     as 1.0 under PBR_ATMOS (gbuffer_stage.h).
 		LPCSTR material = ini.line_exist("texture", "material") ? ini.r_string("texture", "material") : nullptr;
-		const bool use_pbr = material && (0 == stricmp(material, "pbr") ||
-			fsimilar(float(atof(material)), float(STextureParams::tmPBR_Material)));
+		const float material_value = material ? float(atof(material)) : 1.0f;
+		const bool use_pbr_ixray = material && (0 == stricmp(material, "pbr") ||
+			fsimilar(material_value, float(STextureParams::tmPBR_Material)));
+		const bool use_pbr_atmos = material && fsimilar(material_value, 4.5f);
 
 		texture_desc& desc = s_texture_details[name];
 		desc.m_spec = xr_new<texture_spec>();
-		desc.m_spec->m_use_pbr = use_pbr;
-		desc.m_spec->m_material = use_pbr ? 1.0f : (material ? float(atof(material)) : 1.0f);
+		desc.m_spec->m_use_pbr = use_pbr_ixray || use_pbr_atmos;
+		desc.m_spec->m_pbr_atmos = use_pbr_atmos;
+		desc.m_spec->m_material = use_pbr_ixray ? 1.0f : material_value;
 		desc.m_spec->m_bump_name = bump_name;
 		desc.m_spec->m_use_steep_parallax = stricmp(mode, "parallax") == 0;
 		ReadShaderOptions(ini, *desc.m_spec);
@@ -313,6 +320,12 @@ BOOL CTextureDescrMngr::UsePBRTextures(const shared_str& tex_name) const
 		}
 	}
 	return FALSE;
+}
+
+BOOL CTextureDescrMngr::UsePBRAtmosLayout(const shared_str& tex_name) const
+{
+	map_TD::const_iterator I = m_texture_details.find(tex_name);
+	return I != m_texture_details.end() && I->second.m_spec && I->second.m_spec->m_pbr_atmos;
 }
 
 const CTextureDescrMngr::shader_options* CTextureDescrMngr::GetShaderOptions(const shared_str& tex_name) const

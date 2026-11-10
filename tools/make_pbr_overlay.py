@@ -107,7 +107,7 @@ PATCH_NVG_STOCK_SCRIPT = True
 
 # Copy this repository's PBR-only headers into the overlay (see the caveat above).
 INCLUDE_REPO_HEADERS = True
-REPO_HEADERS = ["pbr_ixray.h", "pbr_hud.h", "ixray_brdf.h", "hdr_ibl.h", "sslr_apply.h", "sslr_settings.h",
+REPO_HEADERS = ["pbr_ixray.h", "pbr_hud.h", "pbr_surface.h", "ixray_brdf.h", "hdr_ibl.h", "sslr_apply.h", "sslr_settings.h",
                 "vslr_common.h", "skin_sss.h", "skin_sss_kernel.h", "sun_far_minmax.h", "sun_far_minmax.cs"]
 
 # Files whose failure stops the run: without them PBR textures are wrong. Any other file that
@@ -124,6 +124,7 @@ PBR_FILES = {
     "deffer_base_aref_bump.ps": compat.patch_hud,
     "deffer_base_hud_bump.ps": compat.patch_hud,
     "deffer_base_hud_aref_bump.ps": compat.patch_hud,
+    "sload.h": compat.patch_atmos_sload,	# Atmospherics' material = 4.5 parallax; n/a elsewhere
     "accum_sun.ps": compat.make_light_patch("sun"),
     "accum_sun_near.ps": compat.make_light_patch("sun"),
     "accum_sun_far.ps": compat.make_sun_far_patch(),

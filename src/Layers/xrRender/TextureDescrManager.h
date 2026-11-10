@@ -35,6 +35,7 @@ private:
 		float m_material = 1.0f;
 		bool m_use_steep_parallax = false;
 		bool m_use_pbr = false; // material == tmPBR_Material (IX-Ray PBR packing in bump/bump#)
+		bool m_pbr_atmos = false; // LTX "material = 4.5": PBR with the Atmospherics packing (implies m_use_pbr)
 		shader_options m_shader_options;
 	};
 
@@ -71,6 +72,7 @@ public:
 	BOOL GetDetailTexture(const shared_str& tex_name, LPCSTR& res, R_constant_setup* & CS) const;
 	BOOL UseSteepParallax(const shared_str& tex_name) const;
 	BOOL UsePBRTextures(const shared_str& tex_name) const;
+	BOOL UsePBRAtmosLayout(const shared_str& tex_name) const;
 	const shader_options* GetShaderOptions(const shared_str& tex_name) const;
 };
 #endif

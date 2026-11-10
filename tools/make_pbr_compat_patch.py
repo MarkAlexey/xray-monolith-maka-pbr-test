@@ -695,6 +695,16 @@ GBUFFER_PBR_DECL = """
 		Texture2D s_surface;
 #	endif
 #endif
+
+// Atmospherics-packed PBR textures (LTX "material = 4.5", PBR_ATMOS): the engine keeps their
+// material id at 4.5, so Atmospherics' own shaders still recognise them when these shaders are
+// not installed. Here they are PBR textures like any other: every shader reads them as a
+// "material = pbr" texture (id 1, xmaterial 0.375), which also keeps Atmospherics' own PBR
+// branches off. common.h defines xmaterial as L_material.w after including this file.
+#if defined(USE_PBR) && defined(PBR_ATMOS)
+float4 pbr_atmos_l_material() { return float4( L_material.xyz, ( 1.0 + 0.5 ) / 4.0 ); }
+#	define L_material pbr_atmos_l_material()
+#endif
 """
 
 GBUFFER_LOAD_SURFACE = """
@@ -710,6 +720,24 @@ float4 gbuffer_load_surface( float2 tc : TEXCOORD, float2 pos2d, uint iSample )
 }
 #endif
 """
+
+
+def patch_atmos_sload(text, what):
+    """Atmospherics' PBR sload.h (Hippobot, LTX material = 4.5): keep its sload_pbr() on for
+    Atmospherics-packed textures (PBR_ATMOS).
+
+    Under the PBR shaders, gbuffer_stage.h makes xmaterial read as a "material = pbr" texture for
+    PBR_ATMOS textures. That switches Atmospherics' own PBR branch off everywhere, as wanted,
+    but its sload.h also uses sload_pbr() to pick the parallax height: bump.b for its packing,
+    bump#.a otherwise (which the Atmospherics packing doesn't have). pbr_hud.h decodes the
+    material either way, from the same channels.
+    Any other sload.h (vanilla, SSS, ES, Atmospherics before its PBR): nothing to do (None).
+    """
+    if not re.search(r"\bbool[ \t]+sload_pbr[ \t]*\([ \t]*\)", text):
+        return None
+    return regex_once(text, r"(\bbool[ \t]+sload_pbr[ \t]*\([ \t]*\)\s*\{\s*)(return[^;]*;)",
+                      lambda m: m.group(1).rstrip(" \t") + "#ifdef PBR_ATMOS\t" + BANNER + "Atmospherics-packed PBR texture\n"
+                                "\treturn true;\n#else\n\t" + m.group(2) + "\n#endif", what)
 
 
 def patch_gbuffer_stage(text, what):

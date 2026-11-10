@@ -9,7 +9,10 @@ void fix_texture_name(LPSTR fn);
 // "<texture>.ltx" [shaders_options]). Each option is set as a define for the next compile and
 // appended to `name` ("A,B=2,"), which goes into the shader name so the shader cache keeps
 // every combination apart.
+// pbr_atmos / pbr_detail_atmos: the texture (detail texture) uses the Atmospherics packing,
+// LTX "material = 4.5" (PBR_ATMOS / PBR_ATMOS_DETAIL, see sload.h and pbr_hud.h)
 static void add_texture_shader_options(LPSTR name, u32 name_size, bool pbr, bool pbr_detail,
+                                       bool pbr_atmos, bool pbr_detail_atmos,
                                        const CTextureDescrMngr::shader_options* options)
 {
 	auto add = [&](LPCSTR option, LPCSTR value)
@@ -28,6 +31,10 @@ static void add_texture_shader_options(LPSTR name, u32 name_size, bool pbr, bool
 		add("USE_PBR", "1");
 	if (pbr_detail)
 		add("USE_PBR_DETAIL", "1");
+	if (pbr && pbr_atmos)
+		add("PBR_ATMOS", "1");
+	if (pbr_detail && pbr_detail_atmos)
+		add("PBR_ATMOS_DETAIL", "1");
 	if (options)
 	{
 		// The strings stay alive in the texture description, which outlives the compile
@@ -136,6 +143,8 @@ void uber_deffer(CBlender_Compile& C, bool hq, LPCSTR _vspec, LPCSTR _pspec, BOO
 	const bool pbr = bump && !!DEV->m_textures_description.UsePBRTextures(fname);
 	// A detail bump is decoded IX-Ray style only when its own THM is marked PBR as well
 	const bool pbr_detail = pbr && bHasDetailBump && !!DEV->m_textures_description.UsePBRTextures(dt);
+	const bool pbr_atmos = pbr && !!DEV->m_textures_description.UsePBRAtmosLayout(fname);
+	const bool pbr_detail_atmos = pbr_detail && !!DEV->m_textures_description.UsePBRAtmosLayout(dt);
 	const CTextureDescrMngr::shader_options* texture_options = DEV->m_textures_description.GetShaderOptions(fname);
 
 	if (bump && hq && RImplementation.o.dx11_enable_tessellation && C.TessMethod != 0)
@@ -173,7 +182,7 @@ void uber_deffer(CBlender_Compile& C, bool hq, LPCSTR _vspec, LPCSTR _pspec, BOO
 			xr_strcat(params, "USE_TDETAIL_BUMP,");
 		}
 
-		add_texture_shader_options(params, sizeof(params), pbr, pbr_detail, texture_options);
+		add_texture_shader_options(params, sizeof(params), pbr, pbr_detail, pbr_atmos, pbr_detail_atmos, texture_options);
 
 		xr_strcat(params, ")");
 
@@ -205,7 +214,7 @@ void uber_deffer(CBlender_Compile& C, bool hq, LPCSTR _vspec, LPCSTR _pspec, BOO
 	else
 	{
 		string256 options = "";
-		add_texture_shader_options(options, sizeof(options), pbr, pbr_detail, texture_options);
+		add_texture_shader_options(options, sizeof(options), pbr, pbr_detail, pbr_atmos, pbr_detail_atmos, texture_options);
 		if (options[0])
 		{
 			xr_strcat(ps, "(");
