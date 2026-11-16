@@ -482,8 +482,7 @@ void dx103DFluidRenderer::Draw(const dx103DFluidData& FluidData)
 	RImplementation.rmNormal();
 
 
-    // SV_Position is in the bound target's pixels, not the display's pixels.
-    PrepareCBuffer(FluidData, pTarget->get_width(), pTarget->get_height(), true);
+    PrepareCBuffer(FluidData, Device.dwWidth, Device.dwHeight, true);
 
 	RCache.set_c(strDiffuseLight, LightData.m_vLightIntencity.x, LightData.m_vLightIntencity.y,
 	             LightData.m_vLightIntencity.z, 1.0f);
@@ -500,10 +499,9 @@ void dx103DFluidRenderer::ComputeRayData(const dx103DFluidData &FluidData)
 
 	CRenderTarget* pTarget = RImplementation.Target;
 	pTarget->u_setrt(RT[RRT_RayDataTex], nullptr, nullptr, nullptr); // LDR RT
-	RImplementation.rmNormal();
 	RCache.set_Element(m_RendererTechnique[RS_CompRayData_Back]);
 
-    PrepareCBuffer(FluidData, pTarget->get_width(), pTarget->get_height(), false);
+    PrepareCBuffer(FluidData, Device.dwWidth, Device.dwHeight, false);
 
 	// Render volume back faces
 	// We output xyz=(0,-1,0) and w=min(sceneDepth, boxDepth)
@@ -518,7 +516,7 @@ void dx103DFluidRenderer::ComputeRayData(const dx103DFluidData &FluidData)
 	
 	RCache.set_Element(m_RendererTechnique[RS_CompRayData_Front]);
 
-    PrepareCBuffer(FluidData, pTarget->get_width(), pTarget->get_height(), true);
+    PrepareCBuffer(FluidData, Device.dwWidth, Device.dwHeight, true);
 
 	DrawBox();
 }
@@ -527,7 +525,6 @@ void dx103DFluidRenderer::ComputeEdgeTexture(const dx103DFluidData &FluidData)
 {
 	CRenderTarget* pTarget = RImplementation.Target;
     pTarget->u_setrt(RT[RRT_RayDataTexSmall], nullptr, nullptr, nullptr); // LDR RT
-	RImplementation.rmNormal();
 	RCache.set_Element(m_RendererTechnique[RS_QuadDownSampleRayDataTexture]);
 
 	// First setup viewport to match the size of the destination low-res texture
@@ -540,7 +537,6 @@ void dx103DFluidRenderer::ComputeEdgeTexture(const dx103DFluidData &FluidData)
 
 	// Create an edge texture, performing edge detection on 'rayDataTexSmall'
 	pTarget->u_setrt(RT[RRT_EdgeTex], nullptr, nullptr, nullptr); // LDR RT
-	RImplementation.rmNormal();
 
 	RCache.set_Element(m_RendererTechnique[RS_QuadEdgeDetect]);
     PrepareCBuffer(FluidData, m_iRenderTextureWidth, m_iRenderTextureHeight, true);

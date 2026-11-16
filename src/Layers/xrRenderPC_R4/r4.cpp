@@ -141,24 +141,19 @@ static class cl_LOD : public R_constant_setup
 } binder_LOD;
 
 // pos_decompression_params(2) for the owner and, frozen per frame, for recording contexts
-// (RenderContext::Synchronize).
+// (RenderContext::Synchronize). Same values the binders always set (no upscaler jitter here).
 Fvector4 CalculatePositionDecompression()
 {
     const float vert_tan = -1.0f * tanf(deg2rad(Device.fFOV / 2.0f));
     const float horz_tan = -vert_tan / Device.fASPECT;
-    // Scene resolution and the upscaler's raster jitter (both identity without DLSS / FSR3)
-    const float sx = 2.0f * horz_tan / RenderScreenWidth();
-    const float sy = 2.0f * vert_tan / RenderScreenHeight();
-    const auto jitter = dlss::RasterJitter();
     Fvector4 parameters;
-    return parameters.set(horz_tan + jitter.x * sx, vert_tan + jitter.y * sy, sx, sy);
+    return parameters.set(horz_tan, vert_tan, (2.0f * horz_tan) / float(Device.dwWidth), (2.0f * vert_tan) / float(Device.dwHeight));
 }
 
 Fvector4 CalculatePositionDimensions()
 {
-    const float w = float(RenderScreenWidth()), h = float(RenderScreenHeight());
     Fvector4 dimensions;
-    return dimensions.set(w, h, 1.0f / w, 1.0f / h);
+    return dimensions.set(float(Device.dwWidth), float(Device.dwHeight), 1.0f / float(Device.dwWidth), 1.0f / float(Device.dwHeight));
 }
 
 static class cl_pos_decompress_params : public R_constant_setup
@@ -721,7 +716,7 @@ void CRender::create()
 	GMBase.initialize();
 	FluidManager.Initialize(70, 70, 70);
 	//	FluidManager.Initialize( 100, 100, 100 );
-	FluidManager.SetScreenSize(dlss::RenderWidth(), dlss::RenderHeight());
+	FluidManager.SetScreenSize(Device.dwWidth, Device.dwHeight);
 
 	Device.ModelDefferClear = xr_make_delegate(Models, &CModelPool::DeleteQueuedDeffer);
 }
@@ -783,7 +778,7 @@ void CRender::reset_end()
 	}
 	//-AVO
 
-	FluidManager.SetScreenSize(dlss::RenderWidth(), dlss::RenderHeight());
+	FluidManager.SetScreenSize(Device.dwWidth, Device.dwHeight);
 
 	// Set this flag true to skip the first render frame,
 	// that some data is not ready in the first frame (for example device camera position)
@@ -2414,7 +2409,7 @@ LPCSTR CRender::shader_compile_target(LPCSTR pFunctionName, LPCSTR pTarget) cons
 				pTarget = "vs_4_0";
 			else if (HW.FeatureLevel == D3D_FEATURE_LEVEL_10_1)
 				pTarget = "vs_4_1";
-			else if (HW.FeatureLevel >= D3D_FEATURE_LEVEL_11_0)
+			else if (HW.FeatureLevel == D3D_FEATURE_LEVEL_11_0)
 				pTarget = "vs_5_0";
 		}
 		else if ('p' == pTarget[0])
@@ -2423,7 +2418,7 @@ LPCSTR CRender::shader_compile_target(LPCSTR pFunctionName, LPCSTR pTarget) cons
 				pTarget = "ps_4_0";
 			else if (HW.FeatureLevel == D3D_FEATURE_LEVEL_10_1)
 				pTarget = "ps_4_1";
-			else if (HW.FeatureLevel >= D3D_FEATURE_LEVEL_11_0)
+			else if (HW.FeatureLevel == D3D_FEATURE_LEVEL_11_0)
 				pTarget = "ps_5_0";
 		}
 		else if ('g' == pTarget[0])
@@ -2432,12 +2427,12 @@ LPCSTR CRender::shader_compile_target(LPCSTR pFunctionName, LPCSTR pTarget) cons
 				pTarget = "gs_4_0";
 			else if (HW.FeatureLevel == D3D_FEATURE_LEVEL_10_1)
 				pTarget = "gs_4_1";
-			else if (HW.FeatureLevel >= D3D_FEATURE_LEVEL_11_0)
+			else if (HW.FeatureLevel == D3D_FEATURE_LEVEL_11_0)
 				pTarget = "gs_5_0";
 		}
 		else if ('c' == pTarget[0])
 		{
-			if (HW.FeatureLevel >= D3D_FEATURE_LEVEL_11_0)
+			if (HW.FeatureLevel == D3D_FEATURE_LEVEL_11_0)
 				pTarget = "cs_5_0";
 		}
 	}

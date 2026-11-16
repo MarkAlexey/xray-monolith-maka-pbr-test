@@ -271,9 +271,6 @@ namespace R_dsgraph
 		mapSorted<float, true, false, false, false> mapCamAttachedSorted;
 		mapDSGraphItems<float, false> mapWater;
 #ifdef USE_DX11
-        // PDA and wearable screen glass are drawn after reconstruction.
-        mapDSGraphItems<float, true> mapHUDNativeUi;
-        bool hasNativeHudAttachments = false;
 		mapDSGraphItems<float, true> mapScopeHUDSorted;
 		mapDSGraphItems<float, true> mapPhysicalScopeGlass; // Actual routed, skinned glass; never optical ocular geometry.
 		mapDSGraphItems<float, true> mapScopeHUDObjective; // pip front objective geometry, shared by the SVP camera and forward optical-material pass
@@ -343,9 +340,6 @@ namespace R_dsgraph
 		template<bool free = true>
 		IC void clear_hud()
 		{
-#ifdef USE_DX11
-			hasNativeHudAttachments = false;
-#endif
 			if constexpr (free)
 			{
 				mapHUD.clear_and_free();
@@ -360,7 +354,6 @@ namespace R_dsgraph
 				mapCamAttachedSorted.Distort.clear_and_free();
 
 #ifdef USE_DX11
-                mapHUDNativeUi.clear_and_free();
 				mapScopeHUD.clear_and_free();
 				mapScopeHUDSorted.clear_and_free();
 				mapScopeHUDObjective.clear_and_free();
@@ -384,7 +377,6 @@ namespace R_dsgraph
 				mapCamAttachedSorted.Distort.clear();
 
 #ifdef USE_DX11
-                mapHUDNativeUi.clear();
 				mapScopeHUD.clear();
 				mapScopeHUDSorted.clear();
 				mapScopeHUDObjective.clear();

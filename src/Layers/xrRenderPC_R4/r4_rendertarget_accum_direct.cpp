@@ -50,8 +50,8 @@ void CRenderTarget::accum_direct(u32 sub_phase)
 	// Common calc for quad-rendering
 	u32 Offset;
 	u32 C = color_rgba(255, 255, 255, 255);
-	float _w = float(RenderScreenWidth());
-	float _h = float(RenderScreenHeight());
+	float _w = float(Device.dwWidth);
+	float _h = float(Device.dwHeight);
 	Fvector2 p0, p1;
 	p0.set(.5f / _w, .5f / _h);
 	p1.set((_w + .5f) / _w, (_h + .5f) / _h);
@@ -223,7 +223,7 @@ void CRenderTarget::accum_direct(u32 sub_phase)
 
 		// Make jitter texture
 		Fvector2 j0, j1;
-		float scale_X = float(RenderScreenWidth()) / float(TEX_jitter);
+		float scale_X = float(Device.dwWidth) / float(TEX_jitter);
 		//float	scale_Y				= float(Device.dwHeight)/ float(TEX_jitter);
 		float offset = (.5f / float(TEX_jitter));
 		j0.set(offset, offset);
@@ -363,8 +363,8 @@ void CRenderTarget::accum_direct_cascade(u32 sub_phase, Fmatrix& xform, Fmatrix&
 	// Common calc for quad-rendering
 	u32 Offset;
 	u32 C = color_rgba(255, 255, 255, 255);
-	float _w = float(RenderScreenWidth());
-	float _h = float(RenderScreenHeight());
+	float _w = float(Device.dwWidth);
+	float _h = float(Device.dwHeight);
 	Fvector2 p0, p1;
 	p0.set(.5f / _w, .5f / _h);
 	p1.set((_w + .5f) / _w, (_h + .5f) / _h);
@@ -526,7 +526,7 @@ void CRenderTarget::accum_direct_cascade(u32 sub_phase, Fmatrix& xform, Fmatrix&
 
 		// Make jitter texture
 		Fvector2 j0, j1;
-		float scale_X = float(RenderScreenWidth()) / float(TEX_jitter);
+		float scale_X = float(Device.dwWidth) / float(TEX_jitter);
 		//float	scale_Y				= float(Device.dwHeight)/ float(TEX_jitter);
 		float offset = (.5f / float(TEX_jitter));
 		j0.set(offset, offset);
@@ -723,7 +723,7 @@ void CRenderTarget::accum_direct_blend()
 	{
 		VERIFY(0);
 		if (! RImplementation.o.dx10_msaa)
-			u_setrt(rt_Accumulator,NULL,NULL, dlss::SceneDepth());
+			u_setrt(rt_Accumulator,NULL,NULL, HW.pBaseZB);
 		else
 			u_setrt(rt_Accumulator,NULL,NULL, rt_MSAADepth->pZRT);
 
@@ -731,8 +731,8 @@ void CRenderTarget::accum_direct_blend()
 		// Common calc for quad-rendering
 		u32 Offset;
 		u32 C = color_rgba(255, 255, 255, 255);
-		float _w = float(RenderScreenWidth());
-		float _h = float(RenderScreenHeight());
+		float _w = float(Device.dwWidth);
+		float _h = float(Device.dwHeight);
 		
 		Fvector2 p0, p1;
 		p0.set(0.0f, 0.0f);
@@ -804,7 +804,7 @@ void CRenderTarget::accum_direct_f(u32 sub_phase)
 	}
 	phase_accumulator();
 	if (! RImplementation.o.dx10_msaa)
-		u_setrt(rt_Generic_0,NULL,NULL, dlss::SceneDepth());
+		u_setrt(rt_Generic_0,NULL,NULL, HW.pBaseZB);
 	else
 		u_setrt(rt_Generic_0_r,NULL,NULL, RImplementation.Target->rt_MSAADepth->pZRT);
 
@@ -814,8 +814,8 @@ void CRenderTarget::accum_direct_f(u32 sub_phase)
 	// Common calc for quad-rendering
 	u32 Offset;
 	u32 C = color_rgba(255, 255, 255, 255);
-	float _w = float(RenderScreenWidth());
-	float _h = float(RenderScreenHeight());
+	float _w = float(Device.dwWidth);
+	float _h = float(Device.dwHeight);
 	Fvector2 p0, p1;
 	p0.set(.5f / _w, .5f / _h);
 	p1.set((_w + .5f) / _w, (_h + .5f) / _h);
@@ -913,7 +913,7 @@ void CRenderTarget::accum_direct_f(u32 sub_phase)
 	// Perform lighting
 	{
 		if (! RImplementation.o.dx10_msaa)
-			u_setrt(rt_Generic_0,NULL,NULL, dlss::SceneDepth()); // enshure RT setup
+			u_setrt(rt_Generic_0,NULL,NULL, HW.pBaseZB); // enshure RT setup
 		else
 			u_setrt(rt_Generic_0_r,NULL,NULL, RImplementation.Target->rt_MSAADepth->pZRT); // enshure RT setup
 		RCache.set_CullMode(CULL_NONE);
@@ -955,7 +955,7 @@ void CRenderTarget::accum_direct_f(u32 sub_phase)
 
 		// Make jitter texture
 		Fvector2 j0, j1;
-		float scale_X = float(RenderScreenWidth()) / float(TEX_jitter);
+		float scale_X = float(Device.dwWidth) / float(TEX_jitter);
 		//float	scale_Y				= float(Device.dwHeight)/ float(TEX_jitter);
 		float offset = (.5f / float(TEX_jitter));
 		j0.set(offset, offset);
@@ -1037,8 +1037,8 @@ void CRenderTarget::accum_direct_lum()
 	// Common calc for quad-rendering
 	u32 Offset;
 	// u32		C					= color_rgba	(255,255,255,255);
-	float _w = float(RenderScreenWidth());
-	float _h = float(RenderScreenHeight());
+	float _w = float(Device.dwWidth);
+	float _h = float(Device.dwHeight);
 	Fvector2 p0, p1;
 	p0.set(.5f / _w, .5f / _h);
 	p1.set((_w + .5f) / _w, (_h + .5f) / _h);
@@ -1069,7 +1069,7 @@ void CRenderTarget::accum_direct_lum()
 
 	// Make jitter texture
 	Fvector2 j0, j1;
-	float scale_X = float(RenderScreenWidth()) / float(TEX_jitter);
+	float scale_X = float(Device.dwWidth) / float(TEX_jitter);
 	//		float	scale_Y				= float(Device.dwHeight)/ float(TEX_jitter);
 	float offset = (.5f / float(TEX_jitter));
 	j0.set(offset, offset);
@@ -1191,8 +1191,8 @@ void CRenderTarget::accum_direct_volumetric(u32 sub_phase, const u32 Offset, con
 	if (tm_vol) svp_stats_sun_sub_begin(SUN_SUB_VOL);
 
 // SSS : Deprecated
-/*	float w = float(RenderScreenWidth());
-	float h = float(RenderScreenHeight());
+/*	float w = float(Device.dwWidth);
+	float h = float(Device.dwHeight);
 
 	if (RImplementation.o.ssfx_volumetric) 
 		set_viewport_size(HW.pContext, w / ps_ssfx_volumetric.w, h / ps_ssfx_volumetric.w);*/

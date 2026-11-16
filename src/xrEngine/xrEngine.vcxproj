@@ -1006,7 +1006,6 @@ xcopy /D /Y "$(xrSdkDir)binaries\tbbmalloc.dll" "$(OutDir)"</Command>
     <ClInclude Include="renderdoc_app.h" />
     <ClInclude Include="renderdoc_integration.h" />
     <ClInclude Include="Render.h" />
-    <ClInclude Include="RendererError.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="ShadersExternalData.h" />
     <ClInclude Include="shader_bus.h" />

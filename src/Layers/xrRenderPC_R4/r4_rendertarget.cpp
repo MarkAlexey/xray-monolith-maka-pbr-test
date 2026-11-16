@@ -36,86 +36,6 @@
 
 D3D_VIEWPORT custom_viewport[1] = { 0, 0, 0, 0, 0.f, 1.f };
 
-class CBlender_dlss_postprocess : public IBlender
-{
-public:
-    CBlender_dlss_postprocess() { description.CLS = 0; }
-    LPCSTR getComment() override { return "DLSS display-resolution postprocess"; }
-    BOOL canBeDetailed() override { return FALSE; }
-    BOOL canBeLMAPped() override { return FALSE; }
-    void Compile(CBlender_Compile& C) override
-    {
-        IBlender::Compile(C);
-        if (C.iElement != 0 && C.iElement != 4) return;
-        C.r_Pass("stub_notransform_postpr", C.iElement == 4 ? "postprocess_CM" : "postprocess",
-            FALSE, FALSE, FALSE, FALSE);
-        C.r_dx10Texture("s_base0", "$user$dlss_post_source");
-        C.r_dx10Texture("s_base1", "$user$dlss_post_source");
-        C.r_dx10Texture("s_noise", "fx\\fx_noise2");
-        if (C.iElement == 4)
-        {
-            C.r_dx10Texture("s_grad0", "$user$cmap0");
-            C.r_dx10Texture("s_grad1", "$user$cmap1");
-        }
-        C.r_dx10Sampler("smp_rtlinear");
-        C.r_dx10Sampler("smp_linear");
-        C.r_End();
-    }
-};
-
-class CBlender_dlss_menu : public IBlender
-{
-public:
-    CBlender_dlss_menu() { description.CLS = 0; }
-    LPCSTR getComment() override { return "Display-resolution menu"; }
-    BOOL canBeDetailed() override { return FALSE; }
-    BOOL canBeLMAPped() override { return FALSE; }
-    void Compile(CBlender_Compile& C) override
-    {
-        IBlender::Compile(C);
-        C.r_Pass("stub_notransform_t", "distort", FALSE, FALSE, FALSE);
-        C.r_dx10Texture("s_base", "$user$dlss_post_source");
-        C.r_dx10Texture("s_distort", "$user$dlss_post_color");
-        C.r_dx10Sampler("smp_rtlinear");
-        C.r_End();
-    }
-};
-
-class CBlender_dlss_copy : public IBlender
-{
-public:
-    CBlender_dlss_copy() { description.CLS = 0; }
-    LPCSTR getComment() override { return "DLSS resolve / spatial fallback"; }
-    BOOL canBeDetailed() override { return FALSE; }
-    BOOL canBeLMAPped() override { return FALSE; }
-    void Compile(CBlender_Compile& C) override
-    {
-        IBlender::Compile(C);
-        if (C.iElement > 2) return;
-        C.r_Pass("stub_screen_space", C.iElement == 2 ? "dlss_sharpen" : "dlss_copy", FALSE, FALSE, FALSE);
-        C.r_dx10Texture("s_image", C.iElement == 1 ? r2_RT_albedo : "$user$dlss_output");
-        C.r_dx10Sampler("smp_rtlinear");
-        C.r_End();
-    }
-};
-
-class CBlender_dlss_ui_depth : public IBlender
-{
-public:
-    CBlender_dlss_ui_depth() { description.CLS = 0; }
-    LPCSTR getComment() override { return "Native PDA screen occlusion depth"; }
-    BOOL canBeDetailed() override { return FALSE; }
-    BOOL canBeLMAPped() override { return FALSE; }
-    void Compile(CBlender_Compile& C) override
-    {
-        IBlender::Compile(C);
-        if (C.iElement != 0) return;
-        C.r_Pass("stub_screen_space", "dlss_ui_depth", FALSE, TRUE, TRUE);
-        C.r_dx10Texture("s_scene_depth", "$user$dlss_scene_depth");
-        C.r_End();
-    }
-};
-
 void CRenderTarget::set_viewport_size(ID3DDeviceContext * dev, float w, float h)
 {
 	custom_viewport[0].Width = w;
@@ -125,7 +45,6 @@ void CRenderTarget::set_viewport_size(ID3DDeviceContext * dev, float w, float h)
 
 void CRenderTarget::u_setrt(const ref_rt& _1, const ref_rt& _2, const ref_rt& _3, const ref_rt& _4, ID3DDepthStencilView* zb)
 {
-	if (zb == HW.pBaseZB) zb = dlss::SceneDepth();
 	VERIFY(_1 || zb);
 	if (_1)
 	{
@@ -163,7 +82,7 @@ void CRenderTarget::u_setrt(const ref_rt& _1, const ref_rt& _2, const ref_rt& _3
 	else RCache.set_RT(NULL, 2);
 	if (_4) RCache.set_RT(_4->pRT, 3);
 	else RCache.set_RT(NULL, 3);
-	RCache.set_ZB(zb == HW.pBaseZB ? dlss::SceneDepth() : zb);
+	RCache.set_ZB(zb);
 	//	RImplementation.rmNormal				();
 }
 
@@ -175,7 +94,6 @@ void CRenderTarget::u_setrt(const ref_rt& _1, const ref_rt& _2, const ref_rt& _3
 
 void CRenderTarget::u_setrt(const ref_rt& _1, const ref_rt& _2, const ref_rt& _3, ID3DDepthStencilView* zb)
 {
-	if (zb == HW.pBaseZB) zb = dlss::SceneDepth();
 	VERIFY(_1||zb);
 	if (_1)
 	{
@@ -214,13 +132,12 @@ void CRenderTarget::u_setrt(const ref_rt& _1, const ref_rt& _2, const ref_rt& _3
 	else RCache.set_RT(NULL, 1);
 	if (_3) RCache.set_RT(_3->pRT, 2);
 	else RCache.set_RT(NULL, 2);
-	RCache.set_ZB(zb == HW.pBaseZB ? dlss::SceneDepth() : zb);
+	RCache.set_ZB(zb);
 	//	RImplementation.rmNormal				();
 }
 
 void CRenderTarget::u_setrt(const ref_rt& _1, const ref_rt& _2, ID3DDepthStencilView* zb)
 {
-	if (zb == HW.pBaseZB) zb = dlss::SceneDepth();
 	VERIFY(_1||zb);
 	if (_1)
 	{
@@ -253,7 +170,7 @@ void CRenderTarget::u_setrt(const ref_rt& _1, const ref_rt& _2, ID3DDepthStencil
 	else RCache.set_RT(NULL, 0);
 	if (_2) RCache.set_RT(_2->pRT, 1);
 	else RCache.set_RT(NULL, 1);
-	RCache.set_ZB(zb == HW.pBaseZB ? dlss::SceneDepth() : zb);
+	RCache.set_ZB(zb);
 	//	RImplementation.rmNormal				();
 }
 
@@ -267,7 +184,7 @@ void CRenderTarget::u_setrt(u32 W, u32 H, ID3DRenderTargetView* _1, ID3DRenderTa
 	RCache.set_RT(_1, 0);
 	RCache.set_RT(_2, 1);
 	RCache.set_RT(_3, 2);
-	RCache.set_ZB(zb == HW.pBaseZB ? dlss::SceneDepth() : zb);
+	RCache.set_ZB(zb);
 	//	RImplementation.rmNormal				();
 }
 
@@ -277,8 +194,8 @@ void CRenderTarget::u_stencil_optimize(eStencilOptimizeMode eSOM)
 	VERIFY(RImplementation.o.nvstencil);
 	//RCache.set_ColorWriteEnable	(FALSE);
 	u32 Offset;
-	float _w = float(RenderScreenWidth());
-	float _h = float(RenderScreenHeight());
+	float _w = float(Device.dwWidth);
+	float _h = float(Device.dwHeight);
 	u32 C = color_rgba(255, 255, 255, 255);
 	float eps = 0;
 	float _dw = 0.5f;
@@ -344,8 +261,8 @@ void CRenderTarget::u_compute_texgen_jitter(Fmatrix& m_Texgen_J)
 	m_Texgen_J.mul(m_TexelAdjust, RCache.xforms.m_wvp);
 
 	// rescale - tile it
-	float scale_X = float(RenderScreenWidth()) / float(TEX_jitter);
-	float scale_Y = float(RenderScreenHeight()) / float(TEX_jitter);
+	float scale_X = float(Device.dwWidth) / float(TEX_jitter);
+	float scale_Y = float(Device.dwHeight) / float(TEX_jitter);
 	//float	offset			= (.5f / float(TEX_jitter));
 	m_TexelAdjust.scale(scale_X, scale_Y, 1.f);
 	//m_TexelAdjust.translate_over(offset,	offset,	0	);
@@ -486,9 +403,7 @@ void CRenderTarget::SetActive(bool force)
 	for (auto& r : RenderTargetRemaps)
 		r.first->surface_set(r.second->pSurface);
 
-	// main under DLSS / FSR3 keeps the render-size scene viewport (RenderScreenWidth is the
-	// display size outside the scene and for the SVP target)
-	set_viewport_size(HW.pContext, (float)RenderScreenWidth(), (float)RenderScreenHeight());
+	set_viewport_size(HW.pContext, (float)Device.dwWidth, (float)Device.dwHeight);
 	RCache.set_RT(baseRT, 0);
 	RCache.set_RT(nullptr, 1);
 	RCache.set_RT(nullptr, 2);
@@ -505,7 +420,6 @@ CRenderTarget::CRenderTarget()
 CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 	: Width(width), Height(height)
 {
-	dlss::InitializeTargets();
 	u32 SampleCount = 1;
 
 	if (ps_r_ssao_mode != 2/*hdao*/)
@@ -664,9 +578,8 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 
 	//	NORMAL
 	{
-		// main: scene resolution (smaller than the display with DLSS / FSR3); the PiP SVP target
-		// renders at its own extent and never goes through the upscaler
-		u32 w = isMain ? dlss::RenderWidth() : Width, h = isMain ? dlss::RenderHeight() : Height;
+		// the PiP SVP target renders at its own extent
+		u32 w = Width, h = Height;
 
 		// PiP base RT/ZB, main restores from the swapchain, SVP renders into its own
 		if (isMain)
@@ -739,7 +652,7 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 		// (and the legacy fakescope copy) have matching formats, else D3D rejects the copy
 		// pip rt_secondVP follows the SVP target (render extent), the DLSS stub copies the scene into it and
 		// the scope lens upscales it. Ascii repoints out_rtv to a display-res UAV target for the real eval
-		// main target: display resolution, drawn after the upscaler (legacy second viewport, PDA UI)
+		// main target: display resolution (legacy second viewport, PDA UI)
 		u32 svp_out_w = isMain ? Device.dwWidth : w;
 		u32 svp_out_h = isMain ? Device.dwHeight : h;
 		// pip DLSS output usually needs a UAV, add it ONLY on the SVP rt_secondVP at gate != 0. a BGRA
@@ -1108,8 +1021,8 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 
 	//SMAA
 	{
-		u32 w = dlss::RenderWidth();
-		u32 h = dlss::RenderHeight();
+		u32 w = Device.dwWidth;
+		u32 h = Device.dwHeight;
 
 		rt_smaa_edgetex = createUnique(r2_RT_smaa_edgetex, w, h, D3DFMT_A8R8G8B8);
 		rt_smaa_blendtex = createUnique(r2_RT_smaa_blendtex, w, h, D3DFMT_A8R8G8B8);
@@ -1146,13 +1059,13 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 		u32 h = 0;
 		if (RImplementation.o.ssao_half_data)
 		{
-			w = dlss::RenderWidth() / 2;
-			h = dlss::RenderHeight() / 2;
+			w = Device.dwWidth / 2;
+			h = Device.dwHeight / 2;
 		}
 		else
 		{
-			w = dlss::RenderWidth();
-			h = dlss::RenderHeight();
+			w = Device.dwWidth;
+			h = Device.dwHeight;
 		}
 
 		D3DFORMAT fmt = HW.Caps.id_vendor == 0x10DE ? D3DFMT_R32F : D3DFMT_R16F;
@@ -1190,9 +1103,8 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 	}
 	else if (RImplementation.o.sslr)
 	{
-		// scene resolution (smaller than the display with DLSS / FSR3): copies of rt_Generic_0 /
-		// rt_Position below must match them exactly
-		u32 w = dlss::RenderWidth(), h = dlss::RenderHeight();
+		// copies of rt_Generic_0 / rt_Position below must match them exactly
+		u32 w = Device.dwWidth, h = Device.dwHeight;
 		rt_sslr = createUnique(r2_RT_sslr, w, h, D3DFMT_A16B16G16R16F, 1, true);
 		rt_sslr_old.create(r2_RT_sslr_old, w, h, D3DFMT_A16B16G16R16F, 1, true);
 		rt_sslr_data.create(r2_RT_sslr_data, w, h, D3DFMT_A16B16G16R16F, 1, true);
@@ -1217,7 +1129,7 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 	if (RImplementation.o.skin_sss)
 	{
 		// per viewport: the PiP SVP blurs its own skin light (renderSceneLighting)
-		u32 w = isMain ? dlss::RenderWidth() : Width, h = isMain ? dlss::RenderHeight() : Height;
+		u32 w = Width, h = Height;
 		rt_skin_sss_tmp = createUnique(r2_RT_skin_sss_tmp, w, h, D3DFMT_A16B16G16R16F, 1);
 		rt_skin_sss = createUnique(r2_RT_skin_sss, w, h, D3DFMT_V16U16, 1);
 		s_skin_sss.create(b_skin_sss);
@@ -1237,7 +1149,7 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 	// HDAO
 	if (RImplementation.o.ssao_hdao && RImplementation.o.ssao_ultra)
 	{
-		u32 w = isMain ? dlss::RenderWidth() : Width, h = isMain ? dlss::RenderHeight() : Height;
+		u32 w = Width, h = Height;
 		rt_ssao_temp = createUnique(r2_RT_ssao_temp, w, h, D3DFMT_R16F, 1, true);
 		s_hdao_cs.create(b_hdao_cs, "r2\\ssao");
 		if (RImplementation.o.dx10_msaa)
@@ -1567,31 +1479,11 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 
 	// PP
 	s_postprocess.create("postprocess");
-	if (dlss::Configured())
-	{
-		rt_dlss_post_source.create("$user$dlss_post_source", Device.dwWidth, Device.dwHeight, D3DFMT_A16B16G16R16F);
-		rt_dlss_post_color.create("$user$dlss_post_color", Device.dwWidth, Device.dwHeight, D3DFMT_A16B16G16R16F);
-		t_dlss_output.create("$user$dlss_output");
-		t_dlss_output->surface_set(dlss::Output());
-		t_dlss_scene_depth.create("$user$dlss_scene_depth");
-		t_dlss_scene_depth->surface_set(dlss::SceneDepthTexture());
-		CBlender_dlss_ui_depth uiDepth;
-		s_dlss_ui_depth.create(&uiDepth, "dlss_ui_depth");
-		CBlender_dlss_postprocess blender;
-		s_dlss_postprocess.create(&blender, "dlss_postprocess");
-		CBlender_dlss_copy copy;
-		s_dlss_copy.create(&copy, "dlss_copy");
-	}
 	g_postprocess.create(D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_SPECULAR | D3DFVF_TEX3, RCache.Vertex.Buffer(),
 	                     RCache.QuadIB);
 
 	// Menu
-	if (dlss::Configured())
-	{
-		CBlender_dlss_menu menu;
-		s_menu.create(&menu, "dlss_menu");
-	}
-	else s_menu.create("distort");
+	s_menu.create("distort");
 	g_menu.create(FVF::F_TL, RCache.Vertex.Buffer(), RCache.QuadIB);
 
 	//
@@ -1602,14 +1494,7 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 CRenderTarget::~CRenderTarget()
 {
 	if (this == RImplementation.TargetMain)
-	{
-		// the upscaler's targets belong to the main target; the PiP SVP target is torn down and
-		// rebuilt on its own (resize, aim end) and must not release them
-		if (t_dlss_output) t_dlss_output->surface_set(nullptr);
-		if (t_dlss_scene_depth) t_dlss_scene_depth->surface_set(nullptr);
-		dlss::ReleaseTargets();
 		scope_vslr_destroy();
-	}
 	_RELEASE(t_ss_async);
 
 	// Textures
@@ -1757,8 +1642,8 @@ void CRenderTarget::reset_light_marker(u32& marker, bool bResetStencil)
 	if (bResetStencil)
 	{
 		u32 Offset;
-		float _w = float(RenderScreenWidth());
-		float _h = float(RenderScreenHeight());
+		float _w = float(Device.dwWidth);
+		float _h = float(Device.dwHeight);
 		u32 C = color_rgba(255, 255, 255, 255);
 		float eps = 0;
 		float _dw = 0.5f;

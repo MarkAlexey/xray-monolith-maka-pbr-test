@@ -1,5 +1,4 @@
 #include "stdafx.h"
-#include "RenderDimensions.h"
 
 extern Fvector4 ps_pp_bloom_thresh;
 extern Fvector4 ps_pp_bloom_weight;
@@ -10,7 +9,7 @@ void CRenderTarget::phase_pp_bloom()
 	u32 C = color_rgba(0, 0, 0, 255);
 
 	//Full resolution
-	float w = float(RenderScreenWidth());
+	float w = float(Device.dwWidth);
 
 ///////////////////////////////////////////////////////////////////////////////////
 ////Bloom pass

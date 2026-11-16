@@ -63,30 +63,28 @@ void CRender::render_menu()
 
 	// Main Render
 	{
-		Target->u_setrt(dlss::Configured() ? Target->rt_dlss_post_source : Target->rt_Generic_0, 0, 0, HW.pBaseZB);
-		rmNormal();
+		Target->u_setrt(Target->rt_Generic_0, 0, 0, HW.pBaseZB); // LDR RT
 		g_pGamePersistent->OnRenderPPUI_main(); // PP-UI
 	}
 
 	// Distort
 	{
 		FLOAT ColorRGBA[4] = {127.0f / 255.0f, 127.0f / 255.0f, 0.0f, 127.0f / 255.0f};
-		const ref_rt& distort = dlss::Configured() ? Target->rt_dlss_post_color : Target->rt_Generic_1;
-		Target->u_setrt(distort, 0, 0, HW.pBaseZB);
-		HW.pContext->ClearRenderTargetView(distort->pRT, ColorRGBA);
+		Target->u_setrt(Target->rt_Generic_1, 0, 0, HW.pBaseZB); // Now RT is a distortion mask
+		HW.pContext->ClearRenderTargetView(Target->rt_Generic_1->pRT, ColorRGBA);
 		g_pGamePersistent->OnRenderPPUI_PP(); // PP-UI
 	}
 
 	// Actual Display
-	Target->u_setrt(RenderScreenWidth(), RenderScreenHeight(), HW.pBaseRT,NULL,NULL, dlss::SceneDepth());
+	Target->u_setrt(Device.dwWidth, Device.dwHeight, HW.pBaseRT,NULL,NULL, HW.pBaseZB);
 	RCache.set_Shader(Target->s_menu);
 	RCache.set_Geometry(Target->g_menu);
 
 	Fvector2 p0, p1;
 	u32 Offset;
 	auto C = color_rgba(255, 255, 255, 255);
-	float _w = float(RenderScreenWidth());
-	float _h = float(RenderScreenHeight());
+	float _w = float(Device.dwWidth);
+	float _h = float(Device.dwHeight);
 	float d_Z = EPS_S;
 	float d_W = 1.f;
 	p0.set(.5f / _w, .5f / _h);
@@ -170,16 +168,12 @@ void CRender::Render()
 	if(ps_pfx_volumetric_debug){g_peak_volumetric_debug.Begin(Device.dwFrame);g_peak_volumetric_debug.dx11Seen=true;}
 	PIX_EVENT_C(CRender_Render, dx10_marker_frame);
 	dx10_annotate_frame();
-	dlss::EndScene();
-	GMBase.RGraph.mapHUDNativeUi.clear(); // Never retain packets across views/menu/reset.
-	GMBase.RGraph.hasNativeHudAttachments = false;
 
 	rmNormal();
 
 	bool _menu_pp = g_pGamePersistent ? g_pGamePersistent->OnRenderPPUI_query() : false;
 	if (_menu_pp)
 	{
-		dlss::EndScene(true);
 		render_menu();
 		return;
 	};
@@ -190,8 +184,7 @@ void CRender::Render()
 	if (!(g_pGameLevel && g_hud)
 		|| bMenu)
 	{
-		dlss::EndScene(true);
-		Target->u_setrt(RenderScreenWidth(), RenderScreenHeight(), HW.pBaseRT,NULL,NULL, dlss::SceneDepth());
+		Target->u_setrt(Device.dwWidth, Device.dwHeight, HW.pBaseRT,NULL,NULL, HW.pBaseZB);
 		return;
 	}
 
@@ -222,7 +215,6 @@ void CRender::Render()
 
 	//.	VERIFY					(g_pGameLevel && g_pGameLevel->pHUD);
 
-	dlss::BeginScene();
 	// Configure
 	RImplementation.o.distortion = FALSE; // disable distorion
 	Fcolor sun_color = ((light*)Lights.sun_adapted._get())->color;
@@ -249,11 +241,11 @@ void CRender::Render()
 		FLOAT ColorRGBA[4] = { 1.0f, 0.0f, 0.0f, 1.0f };
 		HW.pContext->ClearRenderTargetView(Target->rt_ssfx_hud->pRT, ColorRGBA);
 
-		Target->u_setrt(Target->rt_ssfx_hud, NULL, NULL, dlss::SceneDepth());
+		Target->u_setrt(Target->rt_ssfx_hud, NULL, NULL, HW.pBaseZB);
 		r_dsgraph_render_hud(true);
 
 		// Reset Depth
-		HW.pContext->ClearDepthStencilView(dlss::SceneDepth(), D3D_CLEAR_DEPTH, 1.0f, 0);
+		HW.pContext->ClearDepthStencilView(HW.pBaseZB, D3D_CLEAR_DEPTH, 1.0f, 0);
 	}*/
 
     // pip cpu cost of the main graph traverse plus capture, read by the fps audit overlay
@@ -334,8 +326,7 @@ void CRender::renderGBuffer(bool clearGraph)
 
     if (RImplementation.o.ssfx_motionvectors)
     {
-        PROF_EVENT("Render.MotionVectors.Sky");
-        Target->u_setrt(RenderScreenWidth(), RenderScreenHeight(), 0, 0, Target->rt_ssfx_motion_vectors->pRT, 0);
+        Target->u_setrt(Device.dwWidth, Device.dwHeight, 0, 0, Target->rt_ssfx_motion_vectors->pRT, 0);
 
         FLOAT ColorRGBA[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
         HW.pContext->ClearRenderTargetView(Target->rt_ssfx_motion_vectors->pRT, ColorRGBA);
@@ -351,7 +342,7 @@ void CRender::renderGBuffer(bool clearGraph)
 
 	if (ps_r2_ls_flags.test(R2FLAG_TERRAIN_PREPASS))
 	{
-		Target->u_setrt(RenderScreenWidth(), RenderScreenHeight(), NULL, NULL, NULL, !RImplementation.o.dx10_msaa ? dlss::SceneDepth() : Target->rt_MSAADepth->pZRT);
+		Target->u_setrt(Device.dwWidth, Device.dwHeight, NULL, NULL, NULL, !RImplementation.o.dx10_msaa ? HW.pBaseZB : Target->rt_MSAADepth->pZRT);
 	}
 
 	//******* Main render :: PART-0	-- first
@@ -376,7 +367,7 @@ void CRender::renderGBuffer(bool clearGraph)
 		&& !(Device.true_pip_on && Device.m_SecondViewport.IsSVPActive()))
 	{
 		ID3D11Resource* zbuffer_res;
-		dlss::SceneDepth()->GetResource(&zbuffer_res);
+		HW.pBaseZB->GetResource(&zbuffer_res);
 		HW.pContext->CopyResource(RImplementation.Target->rt_tempzb->pSurface, zbuffer_res);
 		_RELEASE(zbuffer_res);
 	}
@@ -418,7 +409,6 @@ void CRender::renderGBuffer(bool clearGraph)
 		if (Target == TargetMain) // pip weapon HUD only in the main view, not the scope image
 		{
 			GMBase.r_dsgraph_capture_hud();
-			if (dlss::Configured()) GMBase.r_dsgraph_extract_native_ui();
 			svp_stats::cpu_begin(svp_stats::CPU_HUD);
 			const bool svp_scope_aimed = g_pGamePersistent
 				&& (g_pGamePersistent->m_pGShaderConstants->hud_params.y > 0.005f
@@ -736,7 +726,7 @@ void CRender::renderSceneLighting(BOOL bSUN, bool svp)
 		// Render Emissive on `rt_ssfx_bloom_emissive`
 		FLOAT ColorRGBA[4] = { 0,0,0,0 };
 		HW.pContext->ClearRenderTargetView(Target->rt_ssfx_bloom_emissive->pRT, ColorRGBA);
-		Target->u_setrt(Target->rt_ssfx_bloom_emissive, NULL, NULL, !RImplementation.o.dx10_msaa ? dlss::SceneDepth() : Target->rt_MSAADepth->pZRT);
+		Target->u_setrt(Target->rt_ssfx_bloom_emissive, NULL, NULL, !RImplementation.o.dx10_msaa ? HW.pBaseZB : Target->rt_MSAADepth->pZRT);
 		// hud sorted glass (collimator dots, pda screen) stays out of the bloom emissive buffer,
 		// the bloom build's hud mask owns the hud response and feeding it here double counts unmasked
 		GMBase.r_dsgraph_render_emissive(true, ps_r__ssfx_bloom_hud != 0);
@@ -855,7 +845,7 @@ void CRender::render_forward()
 		if (g_hud && !(Device.true_pip_on && Device.m_SecondViewport.m_render_pass_is_svp))
 		{
 			PROF_EVENT("render_hud");
-			if (!GMBase.RGraph.hasNativeHudAttachments && g_hud->RenderActiveItemUIQuery())
+			if (g_hud->RenderActiveItemUIQuery())
 				GMBase.r_dsgraph_render_hud_ui();
 			if (g_hud->RenderCamAttachedUIQuery())
 				GMBase.r_dsgraph_render_cam_ui();
