@@ -539,11 +539,6 @@ void CRenderTarget::phase_combine()
 	if (RCache.stat.calls != water_calls0)
 		gen0_dirty = true;
 	Device.m_SecondViewport.force_water_reflect = false;
-
-	// Reactive mask for DLSS / FSR 3: the scene before rain and forward rendering
-	// (r4_rendertarget_phase_reactive.cpp; the render targets set above stay bound). Main view only
-	if (!svp_pass)
-		phase_reactive_snapshot();
 	tm_end(svp_stats::SEC_C_WATER);
 
 	tm_beg(svp_stats::SEC_C_RAIN);
@@ -617,9 +612,6 @@ void CRenderTarget::phase_combine()
 		}
 
 		if (g_pGamePersistent) g_pGamePersistent->OnRenderPPUI_main(); // PP-UI
-
-		// Reactive mask: what rain and forward rendering changed (restores the targets above)
-		phase_reactive_mask();
 	}
 	tm_end(svp_stats::SEC_C_FWD);
 

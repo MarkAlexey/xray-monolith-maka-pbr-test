@@ -22,7 +22,5 @@ Offset PreviousRasterJitter();
 ID3DDepthStencilView* SceneDepth();
 ID3D11Texture2D* SceneDepthTexture();
 ID3D11Texture2D* Output();
-// reactive: optional R8 mask of pixels that should follow this frame (DLSS bias current colour,
-// FSR 3 reactive), r4_rendertarget_phase_reactive.cpp
-bool Evaluate(ID3D11Texture2D* color, ID3D11Texture2D* motion, ID3D11Texture2D* reactive = nullptr);
+bool Evaluate(ID3D11Texture2D* color, ID3D11Texture2D* motion);
 }

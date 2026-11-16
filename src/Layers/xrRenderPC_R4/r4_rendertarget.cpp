@@ -4,7 +4,6 @@
 #include "blender_light_occq.h"
 #include "blender_sslr.h"
 #include "blender_skin_sss.h"
-#include "blender_upscaler_reactive.h"
 #include "blender_accum_csm.h"
 #include "blender_light_mask.h"
 #include "blender_light_direct.h"
@@ -599,9 +598,6 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 	// Skin subsurface scattering
 	b_skin_sss = xr_new<CBlender_skin_sss>();
 
-	// Reactive mask for DLSS / FSR 3
-	b_upscaler_reactive = xr_new<CBlender_upscaler_reactive>();
-
 	// HDAO
 	b_hdao_cs = xr_new<CBlender_CS_HDAO>();
 	if (RImplementation.o.dx10_msaa)
@@ -736,22 +732,6 @@ CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
 		//--DSR-- HeatVision_end
 
 		rt_Generic_temp = createUnique("$user$generic_temp", w, h, D3DFMT_A8R8G8B8, RImplementation.o.dx10_msaa ? SampleCount : 1);
-
-		// Reactive mask for DLSS / FSR 3: a copy of rt_Generic_0 (same size and format, for
-		// CopyResource) and the R8 mask (D3DFMT_L8 = DXGI_FORMAT_R8_UNORM), scene resolution.
-		// Neither upscaler runs with MSAA. Needs its shaders (r4_rendertarget_phase_reactive.cpp).
-		// Main target only: the PiP SVP never goes through the upscaler.
-		if (isMain)
-		{
-			string_path fn;
-			if (!RImplementation.o.dx10_msaa && FS.exist(fn, "$game_shaders$", "r3\\upscaler_reactive", ".ps")
-				&& FS.exist(fn, "$game_shaders$", "r3\\upscaler_reactive_debug", ".ps"))
-			{
-				rt_upscaler_opaque.create(r2_RT_upscaler_opaque, w, h, rt_Generic_0->fmt, 1);
-				rt_upscaler_reactive.create(r2_RT_upscaler_reactive, w, h, D3DFMT_L8, 1);
-				s_upscaler_reactive.create(b_upscaler_reactive);
-			}
-		}
 
 		rt_dof = createUnique(r2_RT_dof, w, h, D3DFMT_A8R8G8B8);
 
@@ -1758,7 +1738,6 @@ CRenderTarget::~CRenderTarget()
 	xr_delete(b_sslr);
 	release_skin_sss_timer();
 	xr_delete(b_skin_sss);
-	xr_delete(b_upscaler_reactive);
 	destroy_vslr();
 	xr_delete(b_vslr);
 	if (RImplementation.o.dx10_msaa)

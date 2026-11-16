@@ -207,13 +207,6 @@ extern ECORE_API int ps_r4_pbr_mirror_hud;
 extern ECORE_API int ps_r4_pbr_mirror_world;
 extern ECORE_API int ps_r4_vslr_localize;
 
-// Reactive mask for DLSS / FSR 3
-extern ECORE_API int ps_r__upscaler_reactive;
-extern ECORE_API float ps_r__upscaler_reactive_scale;
-extern ECORE_API float ps_r__upscaler_reactive_cutoff;
-extern ECORE_API float ps_r__upscaler_reactive_max;
-extern ECORE_API int ps_r__upscaler_reactive_debug;
-
 // Skin subsurface scattering
 extern ECORE_API int ps_r4_skin_sss;
 extern ECORE_API float ps_r4_skin_sss_width;
