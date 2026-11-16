@@ -25,17 +25,6 @@ void CRenderTarget::phase_nightvision()
 	//Set pass
 	RCache.set_Element(s_nightvision->E[ps_r2_nightvision]);
 #if defined(USE_DX11)
-	// Drawn after the upscaler, where dlss_params says "inactive": give the NVG shader the
-	// position buffer's real (render) size, or it reads it at display-sized coordinates
-	if (rt_Position && rt_Position->pSurface)
-	{
-		D3D11_TEXTURE2D_DESC pos_desc{};
-		rt_Position->pSurface->GetDesc(&pos_desc);
-		if (pos_desc.Width != Device.dwWidth || pos_desc.Height != Device.dwHeight)
-			RCache.set_c("dlss_params", 1.f, float(pos_desc.Width), float(pos_desc.Height), 0.f);
-	}
-#endif
-#if defined(USE_DX11)
 
 	// Optical focus is admitted only after this frame's actual lens and image.
 	RCache.set_c("scope_glass_nvg_focus", (this == RImplementation.TargetMain
