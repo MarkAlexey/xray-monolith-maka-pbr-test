@@ -11,8 +11,6 @@ static NVSDK_NGX_PerfQuality_Value NgxQuality(Quality quality)
 {
     switch (quality)
     {
-    // Ultra Quality uses custom input dimensions with the supported Quality mode.
-    case Quality::UltraQuality:
     case Quality::Quality: return NVSDK_NGX_PerfQuality_Value_MaxQuality;
     case Quality::Balanced: return NVSDK_NGX_PerfQuality_Value_Balanced;
     case Quality::Performance: return NVSDK_NGX_PerfQuality_Value_MaxPerf;
@@ -93,7 +91,7 @@ bool D3D11Backend::Initialize(ID3D11Device* device, const wchar_t* cachePath, Lo
 bool D3D11Backend::OptimalSize(Quality quality, Size display, Size& render)
 {
     render = {};
-    if (!m_parameters || quality == Quality::Off || quality > Quality::UltraQuality || !display.Valid())
+    if (!m_parameters || quality == Quality::Off || quality > Quality::UltraPerformance || !display.Valid())
     {
         if (m_log) m_log("DLSS optimal dimensions: missing capabilities, invalid quality or display size", unsigned(E_INVALIDARG));
         return false;
@@ -109,14 +107,14 @@ bool D3D11Backend::OptimalSize(Quality quality, Size display, Size& render)
         if (m_log) m_log("NGX returned invalid DLSS render dimensions", unsigned(E_INVALIDARG));
         return false;
     }
-    render = quality == Quality::UltraQuality ? UltraQualitySize(optimal, display) : optimal;
+    render = optimal;
     return true;
 }
 
 bool D3D11Backend::Create(Quality quality, Size render, Size display, bool hdr, Preset preset)
 {
     ReleaseFeature();
-    if (!m_parameters || !ValidPreset(preset) || quality == Quality::Off || quality > Quality::UltraQuality ||
+    if (!m_parameters || !ValidPreset(preset) || quality == Quality::Off || quality > Quality::UltraPerformance ||
         !render.Valid() || !display.Valid() || render.width > display.width || render.height > display.height)
     {
         if (m_log) m_log("DLSS feature creation: invalid capabilities, quality, preset or dimensions", unsigned(E_INVALIDARG));
