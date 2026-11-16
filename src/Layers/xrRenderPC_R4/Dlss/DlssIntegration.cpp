@@ -85,7 +85,6 @@ dlss::Size renderSize;
 dlss::Offset rasterJitter;
 dlss::Offset previousJitter;
 bool inScene = false, mainView = false, configured = false;
-bool hdrInput = false;
 unsigned jitterIndex = 0;
 Fvector lastPosition, lastDirection;
 float lastFov = 0;
@@ -255,9 +254,7 @@ void InitializeTargets()
                 "Select a valid display resolution and DLSS quality, then Apply again.");
             return;
         }
-        hdrInput = ps_r_dlss_hdr_input && RImplementation.o.dlss_hdr_input;
-        // No HDR10 output in this tree: the IsHDR flag means DLSS Linear Input only (brodrigz 0.7).
-        if (!backend.Create(quality, size, display, hdrInput, static_cast<Preset>(ps_r_dlss_preset)))
+        if (!backend.Create(quality, size, display, false /* no HDR10 in this tree */, static_cast<Preset>(ps_r_dlss_preset)))
         {
             ActivationFailed(BackendReason("DLSS feature creation failed."),
                 "Check the console/log and GPU driver/runtime. Reapply Upscaling or switch it Off.");
@@ -295,7 +292,7 @@ void InitializeTargets()
 
 void ReleaseTargets()
 {
-    inScene = mainView = configured = hdrInput = false;
+    inScene = mainView = configured = false;
     jitterIndex = 0;
     haveCamera = false;
     reportedEvaluation = false;
@@ -389,11 +386,9 @@ void SupportSummary(char* text, unsigned size)
 unsigned RenderWidth() { return renderSize.Valid() ? renderSize.width : Device.dwWidth; }
 unsigned RenderHeight() { return renderSize.Valid() ? renderSize.height : Device.dwHeight; }
 bool Configured() { return configured; }
-bool HdrInput() { return configured && hdrInput; }
 bool Active() { return configured && inScene && mainView && !ScopeTarget() && BackendReady(); }
 Offset RasterJitter() { return ScopeTarget() ? Offset{} : rasterJitter; }
 bool ScopePass() { return ScopeTarget(); }
-void InvalidateHistory() { ResetHistory(); }
 Offset PreviousRasterJitter() { return previousJitter; }
 ID3DDepthStencilView* SceneDepth() { return inScene && configured && !ScopeTarget() ? sceneDepthView.Get() : HW.pBaseZB; }
 ID3D11Texture2D* SceneDepthTexture() { return sceneDepth.Get(); }

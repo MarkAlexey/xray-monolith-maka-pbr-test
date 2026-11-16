@@ -17,11 +17,6 @@ public:
 	void reset_begin();
 	void reset_end();
 	IC BOOL valid() { return !!pTexture; }
-#ifdef USE_DX11
-	// Exchanges storage (surface, views, size, format) with another target while
-	// both keep their names. Swap again to restore.
-	void swap_storage(CRT& other);
-#endif
 
 public:
 	ID3DTexture2D* pSurface;
