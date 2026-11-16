@@ -32,7 +32,7 @@ Usage
 
 Needs in game
   - An exe with the shader bus 7+ and the HUD blood texture binding (branch
-    pbr-test-s3ds-mt-sss-lass-blood-dlss). On another exe the shader compiles to nothing or reads
+    pbr-test-s3ds-mt-sss-lass-perf / -bodycam). On another exe the shader compiles to nothing or reads
     an unbound atlas (no blood); nothing breaks.
   - SSS with its "HUD Raindrops" component: its HUD shaders pass the bind-pose position the
     stamps are placed with (I.RDrops). The tool stops on a HUD shader without it.

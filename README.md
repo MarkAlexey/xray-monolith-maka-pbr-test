@@ -19,7 +19,7 @@ Here is list of exe files for Anomaly 1.5.3 that contains all engine patches by 
 - **IX-Ray Team** ([ixray-1.6-stcop](https://github.com/ixray-team/ixray-1.6-stcop)): the PBR pipeline this is ported from
   - **LVutner**: PBR / BRDF shaders, SSLR, VSLR, cascaded sun shadows, the skin `sss()` approximation, and plenty of advice along the way
   - **ForserX**: Stochastic SSR / Hi-Z (after Tomasz Stachowiak), skin transmission, the bush glow fix, static fullscreen geometry
-  - **Drombeys**: reactive mask for translucent effects; compiling non-vertex shaders without the skinning mode
+  - **Drombeys**: compiling non-vertex shaders without the skinning mode
   - **mnelenpridumivat**: multithreaded THM loading; fast LocatorAPI init (with v2v3v4)
   - **v2v3v4**: fast LocatorAPI init (file system), wallmark optimisation
   - **NewKidHere**: sun cascade and spot light shadow caching (rewritten here)
@@ -27,8 +27,8 @@ Here is list of exe files for Anomaly 1.5.3 that contains all engine patches by 
 - **Zentient**: Procedural Preintegrated SSS
 
 **Performance**
-- **qkff99/v2v3v4** (AOEngine): multithreaded shadow recording, HOM, sun cascade, tree, skinning and scheduler optimisations, and the DLSS / FSR3 port
-- **brodrigz**: DLSS and FSR3 super resolution, and the DLSS / FSR3 shader compatibility patch
+- **qkff99/v2v3v4** (AOEngine): multithreaded shadow recording, HOM, sun cascade, tree, skinning and scheduler optimisations
+- **brodrigz**: the AO / indirect light fix at reduced resolution (from his DLSS / FSR3 build)
 - **TheLostInPlace**: grass rework (instancing, resident rows, occlusion culling, merge, thinning)
 - **Abhishek Mallepalli** ([noisethanks/xray-monolith](https://github.com/noisethanks/xray-monolith)): the oneTBB scheduler port, file index thread safety, and memory / Lua / network fixes
 
@@ -48,7 +48,7 @@ Here is list of exe files for Anomaly 1.5.3 that contains all engine patches by 
 - László Szirmay-Kalos et al.: distance impostors (2005)
 
 **SDKs**
-- NVIDIA DLSS, AMD FidelityFX FSR 3, Intel oneTBB
+- Intel oneTBB
 ## Personal Note from Author :
 
 I thank each and every author that code/program was used in my project.

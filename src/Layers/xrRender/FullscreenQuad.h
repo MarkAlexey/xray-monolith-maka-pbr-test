@@ -5,8 +5,7 @@
 //
 // The quad is exactly what those passes wrote: (0,h) (0,0) (w,h) (w,0) in pixels, z = EPS_S,
 // w = 1, UV 0..1, drawn as FVF::F_TL with RCache.QuadIB. w/h is the screen size the passes use
-// (CRenderTarget::draw_fullscreen_quad passes it: Device.dwWidth/dwHeight, or on the DLSS branch
-// RenderScreenWidth/Height, which is the render resolution inside the upscaled scene). The vertex
+// (CRenderTarget::draw_fullscreen_quad passes Device.dwWidth/dwHeight). The vertex
 // colour is part of the vertex (stub_notransform_t passes it on). So there is one buffer per
 // colour and size (at most MaxQuads; when they run out, all are dropped and rebuilt as needed).
 //
@@ -15,7 +14,7 @@
 //    different z keep filling the dynamic buffer themselves.
 //  - DX9 (R2) passes use half-texel UVs that depend on the size, and R2 is not what PBR runs on:
 //    there the quad is still written into the dynamic buffer every draw, as before.
-//  - A new size (resolution or upscaler quality change) simply adds buffers; the render target
+//  - A new size (resolution change) simply adds buffers; the render target
 //    and its quads are recreated on vid_restart anyway.
 //  - Owner thread only: the recorded (qkff99 MT) light passes draw their own quads.
 #include "FVF.h"

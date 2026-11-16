@@ -145,8 +145,8 @@ BOOL CRenderTarget::compute_light_scissor(light* L, BOOL near_intersect, Irect& 
 
 	// live camera, the svp replay reaches here with its own matrices and target size
 	const Fmatrix& FT = Device.mFullTransform;
-	const float fw = float(RenderScreenWidth()); // scene size (DLSS / FSR3), the SVP's own size
-	const float fh = float(RenderScreenHeight());
+	const float fw = float(Device.dwWidth); // the SVP's own size on its pass
+	const float fh = float(Device.dwHeight);
 
 	float x0 = flt_max, y0 = flt_max, x1 = -flt_max, y1 = -flt_max;
 	for (u32 c = 0; c < 8; ++c)
@@ -173,13 +173,13 @@ BOOL CRenderTarget::compute_light_scissor(light* L, BOOL near_intersect, Irect& 
 	}
 
 	// round outward so the rect never crops a pixel the unscissored draw would touch
-	R.x1 = clampr(iFloor(clampr(x0, 0.f, fw)), 0, int(RenderScreenWidth()));
-	R.x2 = clampr(iCeil(clampr(x1, 0.f, fw)), 0, int(RenderScreenWidth()));
-	R.y1 = clampr(iFloor(clampr(y0, 0.f, fh)), 0, int(RenderScreenHeight()));
-	R.y2 = clampr(iCeil(clampr(y1, 0.f, fh)), 0, int(RenderScreenHeight()));
+	R.x1 = clampr(iFloor(clampr(x0, 0.f, fw)), 0, int(Device.dwWidth));
+	R.x2 = clampr(iCeil(clampr(x1, 0.f, fw)), 0, int(Device.dwWidth));
+	R.y1 = clampr(iFloor(clampr(y0, 0.f, fh)), 0, int(Device.dwHeight));
+	R.y2 = clampr(iCeil(clampr(y1, 0.f, fh)), 0, int(Device.dwHeight));
 
 	// covers the frame anyway, skip the state change
-	if (R.x1 <= 0 && R.y1 <= 0 && R.x2 >= int(RenderScreenWidth()) && R.y2 >= int(RenderScreenHeight()))
+	if (R.x1 <= 0 && R.y1 <= 0 && R.x2 >= int(Device.dwWidth) && R.y2 >= int(Device.dwHeight))
 		return FALSE;
 	// an empty rect means the projection folded, keep the light rather than drop it
 	if (R.x2 <= R.x1 || R.y2 <= R.y1)

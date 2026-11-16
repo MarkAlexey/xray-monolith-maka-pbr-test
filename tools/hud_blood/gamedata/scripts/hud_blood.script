@@ -101,7 +101,7 @@ local S = {
 	projection_blend	= 1,		-- 0 weighted (thin ghost stains in the overlap), 1 union
 	union_fade_start	= 0.25,		-- union: the weaker projection's share where it disappears
 	union_fade_end		= 0.40,		-- ... and where it is at full strength
-	metal_dither		= true,		-- metal under blood: dithered metal / not metal (needs TAA, DLSS or FSR)
+	metal_dither		= true,		-- metal under blood: dithered metal / not metal (needs TAA)
 	down				= "0, -1, 0",	-- the HUD models' down axis (model space)
 }
 

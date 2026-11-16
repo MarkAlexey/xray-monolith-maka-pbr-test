@@ -216,7 +216,7 @@ void CRenderTarget::reticle_glow_compose_before_nightvision()
 // encoding of its combine)
 void CRenderTarget::reticle_glow_composite(const ref_rt& target, bool night_vision)
 {
-	const float w = float(RenderScreenWidth()), h = float(RenderScreenHeight()); // scene size (DLSS / FSR3)
+	const float w = float(Device.dwWidth), h = float(Device.dwHeight);
 	u32 offset = 0;
 	FVF::TL* pv = (FVF::TL*)RCache.Vertex.Lock(4, g_combine->vb_stride, offset);
 	const u32 C = color_rgba(0, 0, 0, 255);

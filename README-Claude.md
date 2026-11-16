@@ -1041,10 +1041,6 @@ more machinery than the gain was worth.
   converted passes (`Offset`, `d_Z`, `p0/p1`, ...) were removed with them.
 - DX9 (R2) uses half-texel UVs that depend on the size: there `draw_fullscreen_quad` still writes
   the dynamic buffer every draw, with the same vertices as before.
-- DLSS / FSR 3 branch: the passes size their quad with `RenderScreenWidth()` / `RenderScreenHeight()`
-  (the render resolution inside the upscaled scene, the display size after it), so the R4 target
-  hands that size to the helper; render and display size each get their own buffers. Only sites
-  sized with `RenderScreen*()` were converted there (the same 42).
 - `reset_light_marker` keeps its dynamic quad and binds the recording context's own stream on a
   qkff99 worker (`RenderContextId()`), as before.
 IX-Ray `c3f4bb38` (wallmark creation) was already in upstream Monolith.
@@ -1058,8 +1054,8 @@ grass sources and no new errors for the screen quad change. Not run in the game.
 Step 1 of porting [qkff99's branch](https://github.com/qkff99/xray-monolith/tree/codex/mt-consolidated-fixes)
 (same upstream base, 871e2491): the CPU-side render optimisations and their follow-up fixes, 30
 commits cherry-picked with the author kept (`-x` lines point at the original hashes). The
-multithreaded shadow recording (sun / local / rain on D3D11 deferred contexts) and DLSS / FSR3 are
-later steps and are not in here. None of these commits change the picture on purpose, and none
+multithreaded shadow recording (sun / local / rain on D3D11 deferred contexts) is a later step
+and is not in here (DLSS / FSR3 was on the old `-dlss` branches only and is removed here). None of these commits change the picture on purpose, and none
 adds a switch except the scheduler ceiling below.
 
 What is in:
@@ -1179,117 +1175,29 @@ Checked: `tools/check_cpp.py` over every R4 translation unit (228 files, so the 
 clang noise (`xr_vector` / `vector<bool>` shims, MSVC-only dependent template names). Not built
 with MSVC or run.
 
-## The `pbr-test-s3ds-mt-sss-lass-dlss` branch: DLSS / FSR 3
-
-`pbr-test-s3ds-mt-sss-lass` plus NVIDIA DLSS and AMD FSR 3 super resolution: qkff99's port
-(`bb6988ad`, `de29c960` and the occlusion fix of `c922790d`) of
-[brodrigz's xray-monolith 0.5](https://github.com/brodrigz/xray-monolith) (`854dd279`), which is
-based on OGSR's DLSS implementation (OGSR team, xrSimpAI). Kept as its own branch so the LASS
-branch stays upscaler-free.
-
-How it works: the scene renders at a lower resolution (`RenderScreenWidth()` / `Height()` while
-`dlss::BeginScene()` .. `EndScene()` is active) with a per-frame sub-pixel jitter. After the scene
-the upscaler (DLSS through NGX, or FSR 3.1 compiled into the exe) reconstructs it at display
-resolution from colour, depth and SSS's motion vectors; post-processing, the PDA screen and the UI
-draw at display resolution afterwards.
-
-Requirements (the engine checks them and otherwise renders natively with a red on-screen notice):
-Screen Space Shaders 23.5 (motion vectors), brodrigz's shader compatibility patch (it provides
-`dlss_*.ps` and the jitter-aware SSS files), MSAA off; DLSS needs an RTX GPU and
-`nvngx_dlss.dll` (shipped in `bin/`), FSR 3 needs feature level 11.1.
-
-| Command | Default | What it does |
-|---|---|---|
-| `r_upscaler` | dlss | `off`, `dlss`, `fsr3` |
-| `r_dlss_quality` | off | `off`, `dlaa`, `ultra_quality`, `quality`, `balanced`, `performance`, `ultra_performance` |
-| `r_dlss_preset` | default | DLSS model: `default`, `j`, `k`, `l`, `m` |
-| `r_fsr3_quality` | quality | `native_aa`, `ultra_quality`, `quality`, `balanced`, `performance`, `ultra_performance` |
-| `r_dlss_sharpness` | 0 | CAS sharpening after either upscaler, 0..1, applies immediately |
-
-Method / quality changes need `vid_restart` (the menu's Apply does it). The menu (brodrigz's
-`modxml_dlss_options.script`) has everything except `ultra_quality`, which is console-only.
-
-Adapted to this fork:
-
-- **PBR passes at scene resolution**: SSLR's targets (they copy `rt_Generic_0` / `rt_Position`)
-  and its dispatch, the one-pass CSM sun quad, VSLR's restore of the main viewport, MT local-light
-  volumetrics. The static screen-quad cache needs nothing (quads at the new size are new keys).
-- **MT shadows**: recording contexts get the frame's scene size and jitter for position
-  decompression (`RenderContext::Synchronize`, inside the scene); the recorded light accumulator
-  binds the scene depth; the DLSS shader constants are parallel-safe. The sampler cache is
-  qkff99's variant cache (the upscaler's mip bias switches per scene without recreating samplers)
-  with the workers' copy.
-- **No HDR10** in this tree: the upscalers are created for LDR colour, second-viewport and PDA UI
-  targets stay at display size.
-- **Light occlusion queries** draw depth-only (`c922790d`): the display-size back buffer with the
-  scene-size depth buffer made them fail with an upscaler.
-- **Grass**: the DLSS patch's `deffer_grass.vs` (uniform jitter, previous wind for motion vectors)
-  gets the instanced-grass paths in the GAMMA overlay; the engine already sets `wave_prev` /
-  `dir2D_prev` for every grass path.
-- **The DLSS patch on top of GAMMA's own overrides** (`build_shader_packs.py --top-layer`): the
-  patch ships whole files made from plain SSS / Atmospherics / stock Beef's NVGs. Where GAMMA
-  replaced one of them with its own rewrite, the patch's copy is not just dropped on top: its
-  changes are line-merged onto GAMMA's file (`deffer_impl_flat.ps` keeps GAMMA's terrain puddles),
-  or, when a line merge conflicts, re-applied by a known adapter (`night_vision.h`: GAMMA's
-  "nvg dof blur" NVGs keep their `NVGParams`, and the depth blur reads `s_position` at scene size).
-  Those files are added to the overlay too, since the overlay sits above the patch. A second DXC
-  pass compiles every shader the patch ships or whose headers it changes against the stack without
-  it; any new error fails the build. The patch's plain `night_vision.h` over GAMMA's NVG shaders is
-  exactly what broke `nightvision_gen_1.ps` (`unrecognized identifier 'NVGParams'`).
-
-Shaders: the DLSS shaders are **not** in this build's db0 (only the menu script and its strings
-are), so a missing patch is reported instead of half-working. CI attaches brodrigz's GAMMA
-compatibility patch 0.5 unchanged, downloads `nvngx_dlss.dll` 310.9.1 from NVIDIA's repository
-(SHA-256 pinned) into `bin/`, and builds the GAMMA shader packs with the patch's `base` and
-Atmospherics components on top (`build_shader_packs.py --top-layer`, `DLSS_PATCH_COMPONENTS` in the
-workflow). The packs target the October 2026 Atmospherics update only: `atmos_2026_10`
-(its AO, indirect light, SSR, SSS and terrain shaders), which `tools/make_dlss_atmos_component.py`
-added to the patch from that Atmospherics' own shaders with brodrigz's DLSS edits. Its SSR and IL
-files used to be optional installer ticks (page "2b"); left unticked, the base component's SSS
-`ssfx_ssr.ps` stayed and failed to compile against Atmospherics' `screenspace_reflections.h`
-(`SSFX_ScreenSpaceReflections: cannot convert output parameter from 'float4' to 'float'`), so
-they are now always part of `atmos_2026_10` (`atmos_rc7` for 2.69
-RC7.x and `base` alone for 2.68.93 remain possible values).
-
-Caveats:
-
-- Untested in game. qkff99 and brodrigz tested their builds; the PBR-specific parts above are new.
-- SSLR's temporal history is reprojected without removing the jitter, so reflections may be a
-  little softer with an upscaler (`r4_sslr_temporal 0` to compare).
-- PBR without SSS cannot use either upscaler (no motion vectors).
-
-Checked: `tools/check_cpp.py` over every R4 translation unit including `Dlss/`: only the known
-clang noise. The GAMMA zips built with the DLSS components compile with DXC with no new errors;
-the overlay's grass shader carries both the DLSS changes and the `DT_INST` paths. Not built with
-MSVC or run.
+## Release packaging and CI
 
 ### One shader installer (FOMOD) instead of loose GAMMA zips
 
-Four GAMMA zips (overlay / full pack, each with and without the DLSS patch merged in) were too easy
-to mix up, so the release now ships one Mod Organizer installer, `PBR_shaders_GAMMA_FOMOD.zip`,
-made by `tools/make_shader_fomod.py` from `build_shader_packs.py`'s zips:
+Separate GAMMA zips (overlay / full pack) were too easy to mix up, so the release ships one Mod
+Organizer installer, `PBR_shaders_GAMMA_FOMOD.zip`, made by `tools/make_shader_fomod.py` from
+`build_shader_packs.py`'s zips:
 
 - Page 1, install type: **Overlay** (recommended, highest priority) or **Full pack** (above GAMMA's
   shader mods).
-- Page 2, DLSS / FSR 3 (only on `-dlss` branches): **With** (packs built with `--top-layer` and the
-  patch's `DLSS_PATCH_COMPONENTS`) or **Without** (plain GAMMA stack). The overlay variant needs
-  brodrigz's patch installed below it; the full pack contains the DLSS shaders itself (the menu
-  script and strings are in the db0), so the patch is optional there.
-- Inside: `fomod/` and `variants/{overlay,full,overlay_dlss,full_dlss}/gamedata/`: game files
-  only. The installer used to also install a `docs/` folder (a README plus each variant's README /
-  PACK_REPORT) as "PBR shaders - Instructions" in the mod folder; that is off now
-  (`INSTALL_DOCS` in `tools/make_shader_fomod.py` brings it back). brodrigz's patch stays a
-  separate, unchanged download.
+- Inside: `fomod/` and `variants/{overlay,full}/gamedata/`: game files only. The installer used to
+  also install a `docs/` folder (a README plus each variant's README / PACK_REPORT) as "PBR
+  shaders - Instructions" in the mod folder; that is off now (`INSTALL_DOCS` in
+  `tools/make_shader_fomod.py` brings it back).
 
-CI: the shader job runs `build_shader_packs.py` once into `shader_packs/plain` and, on `-dlss`
-branches, once more with the top layers into `shader_packs/dlss`, then wraps them; only the FOMOD
-is uploaded and released. The tool is in the tools zip too (`--dry-run` lists the variants).
+CI: the shader job runs `build_shader_packs.py` once into `shader_packs/plain`, then wraps it; only
+the FOMOD is uploaded and released. The tool is in the tools zip too (`--dry-run` lists the
+variants).
 
 Checked: built locally from the same sources as CI; `fomod/ModuleConfig.xml` validates against
-the ModConfig 5.0 schema (with and without the DLSS page), each pattern's source folder holds the
-variant's files (24 / 277 / 26 / 282), and the DLSS full pack carries the patch's 12 untouched
-shaders plus the 3 merged ones (`deffer_impl_flat.ps`, `deffer_grass.vs`, `night_vision.h`).
-Not yet installed through Mod Organizer itself.
+the ModConfig 5.0 schema and each pattern's source folder holds the variant's files. After the
+DLSS removal the builder produces the same packs as before from the same sources (overlay 31 /
+full 302 files) and the same `ModuleConfig.xml`. Not yet installed through Mod Organizer itself.
 
 ### Profiled DX11 build in CI (Optick)
 
@@ -1308,13 +1216,13 @@ R4 translation units with `PROF_TAG` / `PROF_EVENT_DYNAMIC` or our own markers r
 against the profiler-off build. The packaging step was run locally with and without the profiled
 artifact. Not built with MSVC yet.
 
-## The `pbr-test-s3ds-mt-sss-lass-skin-dlss` branch: skin subsurface scattering (experiment)
+## Skin subsurface scattering (experiment)
 
 Screen-space subsurface scattering for first-person PBR skin (hands), after Jorge Jimenez's
 separable SSS (Jimenez et al. 2015, "Separable Subsurface Scattering"). Light reaching the skin
 spreads under it before it comes back out, red the furthest: shadow edges on the hands turn soft
-and warm instead of hard and grey. Specular highlights stay sharp. Based on the DLSS branch; its CI release is
-`pbr-test-lass-skin-dlss-latest`.
+and warm instead of hard and grey. Specular highlights stay sharp. First made on the
+`-skin-dlss` branch; part of the `-perf` and `-bodycam` branches.
 
 How it works (`gamedata/shaders/r3/skin_sss.h` has the details):
 
@@ -1387,7 +1295,7 @@ Caveats:
 
 ### Skin diffuse ramp (separate patch on top of skin SSS)
 
-Branch `pbr-test-s3ds-mt-sss-lass-skin-ramp-dlss`, shaders only (`pbr_ixray.h`). For PBR pixels
+Shaders only (`pbr_ixray.h`). For PBR pixels
 with a subsurface value, the diffuse N.L of every light is replaced by a ramp that softens and
 tints the shadow line, in the light passes themselves (no blur pass: also for world skin, with
 MSAA, and with `r4_skin_sss 0`). `PBR_SKIN_RAMP` at the top of the ramp block:
@@ -1449,14 +1357,15 @@ Checked: DXC compiles the new shaders on the vanilla stack and on SSS + ES + Oct
 Atmospherics with the generated overlay (no new errors); `tools/check_cpp.py` no new errors.
 Untested in game.
 
-## The `pbr-test-s3ds-mt-sss-lass-bodycam-dlss` branch: Bodycam / true PiP scopes (asuparabekon)
+## The `pbr-test-s3ds-mt-sss-lass-bodycam` branch: Bodycam / true PiP scopes (asuparabekon)
 
-`pbr-test-s3ds-mt-sss-lass-perf-dlss` with asuparabekon's
+`pbr-test-s3ds-mt-sss-lass-perf` with asuparabekon's
 [xray-monolith-bodycam](https://github.com/asuparabekon/xray-monolith-bodycam) (`bodycam-mt`,
 V0.3.1, `84a127c8`) merged in: the bodycam camera / weapon handling layer, true picture-in-picture
 scopes (`r__svpscope 2`, the scope rendered as a second camera at the objective lens), SVG vector
 reticles, scope glass and its reflections, the camera collision sweep, and the bodycam
-script / config / shader files in the exe's gamedata. Frame generation is not on this branch.
+script / config / shader files in the exe's gamedata. First merged on the `-dlss` branches; DLSS
+and FSR 3 are removed here.
 
 The two histories were not linked (this branch was squash-merged from upstream `871e2491`,
 bodycam sits on upstream `f768576c`), so the merge was done between a synthetic commit of each
@@ -1478,20 +1387,11 @@ conflicted; the decisions that are not "keep both":
 
 ### What had to change for PiP to work with this branch's features
 
-- **DLSS / FSR 3.** The scope viewport renders into its own target at its own size, between the
-  main G-buffer and the main combine, while the upscaler's scene is open. While the scope target
-  is active (`m_render_pass_is_svp`), `RenderScreenWidth/Height()` return the scope size,
-  `dlss::SceneDepth()` returns the scope's own depth, the raster jitter is zero and `dlss::Active()`
-  is false; the scope combine skips `phase_dlss_postprocess`, so it neither evaluates the upscaler
-  on the scope image nor closes the main scene early. `TargetMain->SetActive()` restores the
-  render-size viewport. Bodycam's scene passes that drew with display dimensions (light scissor,
-  NVG objective split, reticle glow) use the scene size.
 - **Per-viewport targets.** PBR's third G-buffer target (`rt_Surface`), the skin SSS targets and
   the SSLR result are created per viewport (bodycam's `createUnique` remap), so the scope pass no
   longer overwrites the main view's. The scope skips SSLR and VSLR capture: it gets its own cleared
   SSLR target (no hit) and samples the main VSLR capture. Skin SSS blurs the scope's skin light
-  too. Upscaler-only targets (reactive mask, post targets) belong to the main target, and only
-  the main target's destructor releases the upscaler.
+  too.
 - **IX-Ray CSM.** Creating the scope target no longer turns `o.sun_csm` off (the scope has no
   shadow atlas of its own); the scope target shares the main CSM array, and the CSM pass is
   replayed into the scope through bodycam's `dual_accum` hook like the legacy cascades.
@@ -1521,10 +1421,10 @@ conflicted; the decisions that are not "keep both":
 
 ### Known limits
 
-- With DLSS / FSR 3 on, the NVG objective split (`svp_nvg_pass`) and the reticle glow before NVG
-  do not run (night vision runs after the upscaler there); the regular night vision does.
-- Not tested in game. HDR10, MSAA (bodycam turns PiP off under MSAA) and frame generation are not
-  part of this branch.
+- Not tested in game. HDR10 and MSAA (bodycam turns PiP off under MSAA) are not part of this
+  branch.
+- Bodycam's own SVP DLSS scaffolding (`SvpDlss.h`, the internal `r__svp_dlss` gate, default 0, a
+  bilinear stub without any SDK) is upstream bodycam code and stays as it is.
 
 ### How it was checked
 

@@ -27,8 +27,8 @@ bool CRenderTarget::svp_nvg_pass()
 		++svp_stats_nvg_split;
 
 	const u32 color = color_rgba(0, 0, 0, 255);
-	const float width = float(RenderScreenWidth()); // scene size (DLSS / FSR3)
-	const float height = float(RenderScreenHeight());
+	const float width = float(Device.dwWidth);
+	const float height = float(Device.dwHeight);
 	u32 offset = 0;
 	ref_rt& destination = RImplementation.o.dx10_msaa ? rt_Generic : rt_Color;
 

@@ -86,7 +86,7 @@ struct skin_sss_timer
 		if (samples >= 120)
 		{
 			Msg("* Skin SSS: %.3f ms GPU (both blur passes, average of %u frames, %ux%u, %s)", sum_ms / double(samples),
-				samples, RenderScreenWidth(), RenderScreenHeight(), ps_r4_skin_sss_debug ? "debug view on" : "debug off");
+				samples, Device.dwWidth, Device.dwHeight, ps_r4_skin_sss_debug ? "debug view on" : "debug off");
 			sum_ms = 0.0;
 			samples = 0;
 		}

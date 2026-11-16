@@ -29,19 +29,6 @@
 # bin/ also gets tbbmalloc.dll (same oneTBB release), the scalable allocator the exes load only
 # when started with -tbbmalloc (A/B test); without it they never touch it.
 #
-# DLSS / FSR3 branches (name ends in "-dlss", e.g. pbr-test-s3ds-mt-sss-lass-dlss)
-#   - bin/ also gets NVIDIA's DLSS runtime, nvngx_dlss.dll, downloaded from NVIDIA's own
-#     repository and checked against DLSS_DLL_SHA256 (the build fails if it does not match).
-#     FSR3 is built into the exe and needs no DLL.
-#   - The DLSS / FSR3 shader compatibility patch (brodrigz, .github/pbr-release/dlss/) is
-#     attached to the release; the in-game DLSS/FSR3 shaders come only from it. It is brodrigz's
-#     0.5 plus components for the October 2026 Atmospherics update (atmos_2026_10,
-#     better_beefs_atmos_2026_10), made by tools/make_dlss_atmos_component.py from that
-#     Atmospherics' own shaders with his DLSS edits.
-#   - The shader packs are built twice, for the plain GAMMA stack and with that patch's
-#     components on top of it (DLSS_PATCH_COMPONENTS); the FOMOD's second page picks between
-#     them. Overlay + DLSS: DLSS patch first, then the PBR overlay above it.
-#
 # Profiled build (ProfiledDX11)
 #   Upstream's ProfiledDX11 configuration defines XRCORE_PROFILER, so every PROF_EVENT /
 #   PROF_TAG / PROF_FRAME in the engine (about 500 markers, the qkff99 shadow / HOM / grass
@@ -93,7 +80,7 @@ name: PBR-Test build
 
 on:
   push:
-    branches: [ "pbr-test-s3ds-mt-sss", "pbr-test-s3ds-mt-sss-lass", "pbr-test-s3ds-mt-sss-lass-dlss", "pbr-test-s3ds-mt-sss-lass-skin-dlss", "pbr-test-s3ds-mt-sss-lass-perf-dlss", "pbr-test-s3ds-mt-sss-lass-bodycam-dlss" ]
+    branches: [ "pbr-test-s3ds-mt-sss", "pbr-test-s3ds-mt-sss-lass", "pbr-test-s3ds-mt-sss-lass-perf", "pbr-test-s3ds-mt-sss-lass-bodycam" ]
     paths:
       - "src/**"
       - "gamedata/**"
@@ -125,17 +112,6 @@ env:
   PACK_GAMEDATA_NAME: 00_modded_exes_gamedata.db0
   PACKAGE_NAME: STALKER-Anomaly-PBR-Test
   RETENTION_DAYS: 3
-  # DLSS branches only (see above). NVIDIA DLSS 310.9.1, the runtime brodrigz's 0.5 build uses.
-  DLSS_DLL_URL: https://raw.githubusercontent.com/NVIDIA/DLSS/v310.9.1/lib/Windows_x86_64/rel/nvngx_dlss.dll
-  DLSS_DLL_SHA256: 3975567b8943c53acce397f2b72380092f84f162d00b0d2c7d08a1025c563983
-  DLSS_PATCH_ZIP: .github/pbr-release/dlss/dlss-binaries-GAMMA-compatibility-patch-0.5.zip
-  # Patch components stacked on top of the GAMMA shader sources, lowest first. "base" is the
-  # SSS 23.5 part; then the Atmospherics components matching the sources repository's
-  # atmospherics/. The packs target the October 2026 Atmospherics update only (it is faster;
-  # the older versions are not supported by these packs): "atmos_2026_10" (its AO, IL, SSR, SSS
-  # and terrain shaders; Atmospherics' SSR / IL files are needed whatever its ATMOS_SSR /
-  # ATMOS_IL choice). Other values: "atmos_rc7" for 2.69 RC7.x, nothing for 2.68.93.
-  DLSS_PATCH_COMPONENTS: base atmos_2026_10
 
 jobs:
   pack_gamedata:
@@ -276,18 +252,6 @@ jobs:
           build=.github/pbr-release/build_shader_packs.py
           # Plain GAMMA stack: overlay + full pack (FOMOD variants "overlay" and "full")
           python $build --sources shader-sources --out shader_packs/plain --dxc "$dxc"
-          dlss=()
-          if [[ "$GITHUB_REF_NAME" == *-dlss ]]; then
-            # Again with brodrigz's DLSS patch folded on top (variants "overlay_dlss", "full_dlss")
-            mkdir -p dlss_patch && unzip -q "$DLSS_PATCH_ZIP" -d dlss_patch
-            top=()
-            for c in $DLSS_PATCH_COMPONENTS; do
-              [ -d "dlss_patch/components/$c" ] || { echo "::error::DLSS patch has no component $c"; exit 1; }
-              top+=(--top-layer "dlss_patch/components/$c")
-            done
-            python $build --sources shader-sources --out shader_packs/dlss --dxc "$dxc" "${top[@]}"
-            dlss=(--dlss-overlay shader_packs/dlss/PBR_overlay_GAMMA.zip --dlss-full shader_packs/dlss/PBR_shaders_GAMMA.zip)
-          fi
           # HUD blood (experiment): the blood call added to the packs' HUD shaders, with the atlas
           # from the sources repository
           blood=()
@@ -301,7 +265,7 @@ jobs:
           fi
           # One Mod Organizer installer instead of loose zips
           fomod=(python tools/make_shader_fomod.py --overlay shader_packs/plain/PBR_overlay_GAMMA.zip
-              --full shader_packs/plain/PBR_shaders_GAMMA.zip "${dlss[@]}"
+              --full shader_packs/plain/PBR_shaders_GAMMA.zip
               --version "$(date -u +'%Y.%-m.%-d')-${GITHUB_SHA::8}" --out shader_packs/PBR_shaders_GAMMA_FOMOD.zip)
           if ! "${fomod[@]}" "${blood[@]}"; then
             [ ${#blood[@]} -eq 0 ] && exit 1
@@ -372,13 +336,6 @@ jobs:
           if [ -f sdk/binaries/tbb12.dll ]; then cp sdk/binaries/tbb12.dll pkg/bin/; fi
           # oneTBB's scalable allocator: only loaded with -tbbmalloc (xrMemory_subst_msvc.cpp)
           if [ -f sdk/binaries/tbbmalloc.dll ]; then cp sdk/binaries/tbbmalloc.dll pkg/bin/; fi
-          if [[ "$GITHUB_REF_NAME" == *-dlss ]]; then
-            # NVIDIA's DLSS runtime next to the exes (pinned version and checksum)
-            curl -sSL --fail -o pkg/bin/nvngx_dlss.dll "$DLSS_DLL_URL"
-            echo "$DLSS_DLL_SHA256  pkg/bin/nvngx_dlss.dll" | sha256sum -c -
-            # The DLSS / FSR3 shader compatibility patch, as its author ships it
-            cp "$DLSS_PATCH_ZIP" .
-          fi
           # PDBs (debug symbols, large) go in their own zip: dropped next to the exes they make
           # crash logs readable
           mkdir -p pdb

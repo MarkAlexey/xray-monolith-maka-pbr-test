@@ -141,7 +141,7 @@ static class cl_LOD : public R_constant_setup
 } binder_LOD;
 
 // pos_decompression_params(2) for the owner and, frozen per frame, for recording contexts
-// (RenderContext::Synchronize). Same values the binders always set (no upscaler jitter here).
+// (RenderContext::Synchronize). Same values the binders always set.
 Fvector4 CalculatePositionDecompression()
 {
     const float vert_tan = -1.0f * tanf(deg2rad(Device.fFOV / 2.0f));

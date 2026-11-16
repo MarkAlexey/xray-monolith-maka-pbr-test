@@ -5,14 +5,11 @@ make_shader_fomod.py - wrap the GAMMA shader packs into ONE Mod Organizer instal
 build_shader_packs.py makes two zips per shader stack:
   PBR_overlay_GAMMA.zip   only the files PBR needs, patched from GAMMA's own stack (installed last)
   PBR_shaders_GAMMA.zip   GAMMA's whole shader stack with PBR merged in (replaces GAMMA's shader mods)
-On a DLSS / FSR3 branch it makes them twice: once for the plain GAMMA stack and once with
-brodrigz's DLSS compatibility patch folded on top (--top-layer). Picking the wrong one of four
-zips is easy; this tool puts them in one FOMOD that asks two questions and installs exactly one:
+This tool puts them in one FOMOD that asks which one to install and installs exactly one:
 
   Page 1  Install type     Overlay (recommended) | Full pack
-  Page 2  DLSS / FSR 3     With DLSS / FSR 3     | Without            (only with --dlss-* zips)
-  Page 3  HUD blood        With (experiment)     | Without            (only with --blood)
-  Page 4  NVG mod          Beef's NVGs (GAMMA)   | Better Beef's NVGs (when extras/better_beefs_nvg exists)
+  Page 2  HUD blood        With (experiment)     | Without            (only with --blood)
+  Page 3  NVG mod          Beef's NVGs (GAMMA)   | Better Beef's NVGs (when extras/better_beefs_nvg exists)
 
 The NVG page installs nothing for Beef's NVGs: the shaders handle both NVG scripts (make_pbr_overlay.py,
 PATCH_NVG_STOCK_SCRIPT). Better Beef's NVGs adds extras/better_beefs_nvg (a script that applies Better
@@ -23,22 +20,19 @@ variant was picked: its HUD shaders are the variants' own deffer_base_hud_bump.p
 deffer_base_hud_aref_bump.ps with the blood call, so the tool stops when the variants do not all
 share the same two files (the blood zip would then fit only some of them).
 
-Layout inside the zip, the same as brodrigz's DLSS / FSR3 compatibility patch zip so the two
-read alike:
+Layout inside the zip:
   README.txt                       how to install (also docs/README.txt)
-  components/<id>/gamedata/...     one folder per variant: overlay, full, overlay_dlss, full_dlss
+  components/<id>/gamedata/...     one folder per variant: overlay, full
                                    (+ hud_blood with --blood)
   docs/README.txt, docs/CREDITS.txt, docs/<id>_<report>   (each variant's own README / PACK_REPORT)
   fomod/info.xml, fomod/ModuleConfig.xml
   selections/<id>.txt              which variant was picked, one line each
 The chosen variant's gamedata/ lands in the mod's gamedata/. With INSTALL_DOCS on, docs/ and the
 picked selections/<id>.txt are also installed into DOCS_DEST ("PBR shaders - Instructions", no game
-files there), like the DLSS patch does with its instructions folder; off (default), only game files
-are installed and the instructions stay in the archive.
+files there); off (default), only game files are installed and the instructions stay in the archive.
 
 Usage
   python make_shader_fomod.py --overlay plain/PBR_overlay_GAMMA.zip --full plain/PBR_shaders_GAMMA.zip \\
-      [--dlss-overlay dlss/PBR_overlay_GAMMA.zip --dlss-full dlss/PBR_shaders_GAMMA.zip] \\
       [--blood "HUD blood.zip"] --out PBR_shaders_GAMMA_FOMOD.zip [--version 2026.10.20] [--dry-run]
   --dry-run lists what would go into the installer and writes nothing.
 
@@ -46,11 +40,6 @@ Caveats
   - The variants are built for GAMMA's shader stack as it was in the sources repository when the
     release was built. A different Atmospherics or NVG mod than GAMMA's needs a rebuilt overlay
     (tools/make_pbr_overlay.py), not this installer.
-  - "With DLSS / FSR 3" is built with brodrigz's 0.5 patch and the Atmospherics component the
-    release was built with (DLSS_PATCH_COMPONENTS in the workflow). The overlay needs that patch
-    installed below it; its Better Beef's NVGs option is for that mod only (GAMMA ships its own
-    NVG files, and that option replaces combine_2_naa.ps). The full pack already contains the patch's
-    shaders (its menu script and strings are in the engine's db0), so the patch is optional there.
   - Mod Organizer remembers the last choices; reinstalling with "Replace" removes files of a
     previous choice, "Merge" keeps them (pick Replace).
 """
@@ -76,12 +65,10 @@ DOCS_DEST = "PBR shaders - Instructions"     # folder in the mod for the docs (n
 NVG_BETTER_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "extras", "better_beefs_nvg")
 NVG_ID = "better_beefs_nvg"
 
-# Variant id -> (install type flag, dlss flag, label)
+# Variant id -> (install type flag, label)
 VARIANTS = {
-    "overlay":      ("overlay", "off", "Overlay"),
-    "full":         ("full",    "off", "Full pack"),
-    "overlay_dlss": ("overlay", "on",  "Overlay, DLSS / FSR 3"),
-    "full_dlss":    ("full",    "on",  "Full pack, DLSS / FSR 3"),
+    "overlay": ("overlay", "Overlay"),
+    "full":    ("full",    "Full pack"),
 }
 
 OVERLAY_TEXT = ("Only the shader files PBR needs, patched from GAMMA's own versions. Every other GAMMA "
@@ -90,11 +77,6 @@ OVERLAY_TEXT = ("Only the shader files PBR needs, patched from GAMMA's own versi
 FULL_TEXT = ("GAMMA's complete shader stack (Enhanced Shaders, Screen Space Shaders, Atmospherics, "
              "Beef's NVGs, GAMMA's shader overrides) with PBR merged in, as one mod.\n\nPut it above "
              "all of them; they can stay enabled below it or be disabled.")
-DLSS_ON_TEXT = ("PBR merged with brodrigz's DLSS / FSR3 compatibility patch 0.5 (attached to this release).\n\n"
-                "Overlay: install that patch first (its \"Better Beef's NVGs\" option only if you have that mod) and put this "
-                "mod ABOVE it. The files both change (night_vision.h, deffer_impl_flat.ps, the grass shader) "
-                "are merged here, so the patch's own copies must lose to these.\n\n"
-                "Full pack: the DLSS shaders are already inside; the patch can stay below it or be left out.")
 BLOOD_ON_TEXT = ("Blood on the player's hands and weapons (experiment): grows with hits, bleeding and close kills, "
                  "dries, flakes off, washes off in the rain and can be wiped off with a cloth (\"Wipe off blood\" "
                  "on cloths).\n\nNeeds SSS's HUD Raindrops component (GAMMA has it). Tuning: "
@@ -109,8 +91,6 @@ NVG_BEEF_TEXT = ("GAMMA's Beef's NVGs (\"189- Beef's NVG - theRealBeef\"), or an
 NVG_BETTER_TEXT = ("Better Beef's NVGs (indiesunpraiser) installed.\n\nAdds one script that applies Better Beef's MCM "
                    "settings (colour, washout, bloom, halo, blur) when another mod's NVG script wins over Better Beef's "
                    "(Bodycam Shaders ships one). With Better Beef's own script active it does nothing.")
-DLSS_OFF_TEXT = ("Plain GAMMA shaders, no DLSS / FSR3 shaders. Upscaling stays off; picking DLSS or FSR 3 "
-                 "in the menu shows which shader is missing.")
 
 README = """PBR SHADERS (GAMMA) - {version}
 {website}
@@ -120,14 +100,14 @@ INSTALL
 1. Install the PBR-Test binaries (bin/ and db/ of the release zip) into the Anomaly folder.
 2. Install this ZIP through MO2:
    - Page 1: Overlay (recommended) or Full pack.
-{dlss_line}{blood_line}3. Overlay: enable this mod at the very bottom of MO2's left pane (highest priority,
+{blood_line}3. Overlay: enable this mod at the very bottom of MO2's left pane (highest priority,
    above every shader mod). Every file of it must show as winning.
    Full pack: enable it above GAMMA's shader mods; they can stay enabled below it.
-{dlss_steps}4. Clear the shader cache (delete appdata/shaders_cache/r4) and start the game.
+4. Clear the shader cache (delete appdata/shaders_cache/r4) and start the game.
 
 UPDATING OR CHANGING OPTIONS
 ---------------------------
-Reinstall this archive when changing the install type, the DLSS / FSR 3, HUD blood or NVG choice.
+Reinstall this archive when changing the install type, the HUD blood or the NVG choice.
 Choose REPLACE in MO2 so files from your old selections are removed.
 
 OTHER SHADER STACKS
@@ -167,10 +147,6 @@ https://www.moddb.com/addons/beefs-shader-based-nvgs-v10
 
 indiesunpraiser - Better Beef's NVGs
 https://www.moddb.com/mods/stalker-anomaly/addons/better-beefs-nvg-indiesunpraiser/
-
-bepis (brodrigz) - DLSS / FSR3 compatibility patch; OGSR team and xrSimpAI - original DLSS
-implementation
-https://github.com/brodrigz/xray-monolith
 
 GAMMA and its shader overrides, GSC Game World, Anomaly, themrdemonized/xray-monolith and fork
 contributors
@@ -217,14 +193,10 @@ def step(name, group, kind, plugins):
             '\n          </plugins>\n        </group>\n      </optionalFileGroups>\n    </installStep>')
 
 
-def module_config(variants, with_dlss, with_blood, version, with_nvg=False):
+def module_config(variants, with_blood, version, with_nvg=False):
     steps = [step("1. Install type", "Pick one", "SelectExactlyOne", [
         plugin("Overlay (recommended)", OVERLAY_TEXT, {"type": "overlay"}, "Recommended"),
         plugin("Full pack", FULL_TEXT, {"type": "full"}, "Optional")])]
-    if with_dlss:
-        steps.append(step("2. DLSS / FSR 3", "Upscaling shaders", "SelectExactlyOne", [
-            plugin("With DLSS / FSR 3 (recommended)", DLSS_ON_TEXT, {"dlss": "on"}, "Recommended"),
-            plugin("Without DLSS / FSR 3", DLSS_OFF_TEXT, {"dlss": "off"}, "Optional")]))
     if with_blood:
         steps.append(step(f"{len(steps) + 1}. HUD blood", "Blood on hands and weapons", "SelectExactlyOne", [
             plugin("With HUD blood (experiment)", BLOOD_ON_TEXT, {"blood": "on"}, "Recommended"),
@@ -235,10 +207,8 @@ def module_config(variants, with_dlss, with_blood, version, with_nvg=False):
             plugin("Better Beef's NVGs", NVG_BETTER_TEXT, {"nvg": "better"}, "Optional")]))
     patterns = []
     for vid in variants:
-        typ, dlss, _ = VARIANTS[vid]
+        typ, _ = VARIANTS[vid]
         deps = f'\n          <flagDependency flag="type" value="{typ}" />'
-        if with_dlss:
-            deps += f'\n          <flagDependency flag="dlss" value="{dlss}" />'
         files = f'\n          <folder source="components\\{vid}\\gamedata" destination="gamedata" priority="0" />'
         if INSTALL_DOCS:
             files += (f'\n          <file source="selections\\{vid}.txt" '
@@ -271,13 +241,13 @@ def info_xml(version, with_blood):
     return ('<?xml version="1.0" encoding="utf-8"?>\n<fomod>'
             f'\n  <Name>{escape(MOD_NAME)}</Name>\n  <Author>{escape(AUTHOR)}</Author>'
             f'\n  <Version>{escape(version)}</Version>'
-            '\n  <Description>PBR shader files for GAMMA: overlay or full pack, with or without the DLSS / FSR3 shaders'
+            '\n  <Description>PBR shader files for GAMMA: overlay or full pack'
             + (', optional HUD blood (experiment)' if with_blood else '') + '.</Description>'
             f'\n  <Website>{escape(WEBSITE)}</Website>\n</fomod>\n')
 
 
 def selection_text(vid, version):
-    _, _, label = VARIANTS[vid]
+    _, label = VARIANTS[vid]
     return f"Selected: {label}.\nBuilt: {version}\n"
 
 
@@ -285,27 +255,20 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--overlay", required=True)
     ap.add_argument("--full", required=True)
-    ap.add_argument("--dlss-overlay")
-    ap.add_argument("--dlss-full")
     ap.add_argument("--blood", help="HUD blood zip (tools/make_hud_blood_overlay.py): adds the HUD blood page")
     ap.add_argument("--out", required=True)
     ap.add_argument("--version", default=datetime.date.today().strftime("%Y.%m.%d"))
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
 
-    if bool(a.dlss_overlay) != bool(a.dlss_full):
-        sys.exit("error: give both --dlss-overlay and --dlss-full, or neither")
     sources = {"overlay": a.overlay, "full": a.full}
-    if a.dlss_overlay:
-        sources.update(overlay_dlss=a.dlss_overlay, full_dlss=a.dlss_full)
-    with_dlss = "overlay_dlss" in sources
 
     packs = {vid: read_pack(p) for vid, p in sources.items()}
     reports = []
     for vid, (files, top) in packs.items():
         game = [k for k in files if k.lower().startswith("gamedata/")]
         docs = [k for k in files if not k.lower().startswith("gamedata/")]
-        print(f"{vid:13} {VARIANTS[vid][2]:24} {len(game):4} game files, docs: {', '.join(docs) or '-'}  <- {sources[vid]}")
+        print(f"{vid:13} {VARIANTS[vid][1]:24} {len(game):4} game files, docs: {', '.join(docs) or '-'}  <- {sources[vid]}")
         reports += [f"  {vid}_{d}" for d in docs]
 
     blood = None
@@ -325,12 +288,7 @@ def main():
         print(f"{BLOOD_ID:13} {'HUD blood (experiment)':24} {len(game):4} game files, docs: {', '.join(docs) or '-'}  <- {a.blood}")
         reports += [f"  {BLOOD_ID}_{d}" for d in docs]
 
-    dlss_line = "   - Page 2: With DLSS / FSR 3 (recommended) or Without.\n" if with_dlss else ""
-    dlss_steps = ("   Overlay with DLSS / FSR 3: install brodrigz's DLSS / FSR3 compatibility patch first\n"
-                  "   (its Better Beef's NVGs option only if you have that mod) and put this mod ABOVE it.\n"
-                  "   The full pack already has the DLSS shaders; the patch is optional there.\n"
-                  "   In game: Settings > Video > Basic: MSAA Off, then DLSS or FSR 3, Apply.\n") if with_dlss else ""
-    blood_line = (f"   - Page {3 if with_dlss else 2}: With HUD blood (experiment) or Without.\n") if blood else ""
+    blood_line = "   - Page 2: With HUD blood (experiment) or Without.\n" if blood else ""
     nvg = {}
     nvg_root = os.path.join(NVG_BETTER_DIR, "gamedata")
     for dp, _, fs in os.walk(nvg_root):
@@ -340,10 +298,9 @@ def main():
                 nvg["gamedata/" + os.path.relpath(full, nvg_root).replace(os.sep, "/")] = fh.read()
     if nvg:
         print(f"{NVG_ID:13} {'Better Beef NVG bridge':24} {len(nvg):4} game files  <- {NVG_BETTER_DIR}")
-    nvg_page = 2 + bool(with_dlss) + bool(blood)
+    nvg_page = 2 + bool(blood)
     nvg_line = (f"   - Page {nvg_page}: Beef's NVGs (GAMMA default) or Better Beef's NVGs, the one you use.\n") if nvg else ""
-    readme = README.format(version=a.version, website=WEBSITE, dlss_line=dlss_line, blood_line=blood_line + nvg_line,
-                           dlss_steps=dlss_steps,
+    readme = README.format(version=a.version, website=WEBSITE, blood_line=blood_line + nvg_line,
                            reports="\n".join(reports) or "  (none)")
     credits = CREDITS.format(website=WEBSITE)
     if a.dry_run:
@@ -372,7 +329,7 @@ def main():
             if not rel.lower().startswith("gamedata/"):
                 z.writestr(f"docs/{BLOOD_ID}_{rel}", data)
         z.writestr("fomod/info.xml", crlf(info_xml(a.version, bool(blood))))
-        z.writestr("fomod/ModuleConfig.xml", crlf(module_config(list(sources), with_dlss, bool(blood), a.version, bool(nvg))))
+        z.writestr("fomod/ModuleConfig.xml", crlf(module_config(list(sources), bool(blood), a.version, bool(nvg))))
         z.writestr("README.txt", crlf(readme))
         for vid in packs:
             z.writestr(f"selections/{vid}.txt", crlf(selection_text(vid, a.version)))

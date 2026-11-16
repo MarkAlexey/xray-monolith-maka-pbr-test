@@ -3,7 +3,6 @@
 #include <functional> // pip draw_scope phase bind callback
 #include "../xrRender/ColorMapManager.h"
 #include "../xrRender/FullscreenQuad.h"
-#include "../xrRender/RenderDimensions.h"
 #include "../xrRender/light_db.h"
 #include "SvpDlss.h" // pip SVP DLSS-SR input contract
 #include "svp_reference_packet.h"
@@ -548,7 +547,7 @@ public:
 
 	CRenderTarget();
 	// Draws the full-screen post-process quad (FullscreenQuad.h) with the element already set
-	void draw_fullscreen_quad(u32 color) { m_fullscreen_quad.Draw(color, g_combine, RenderScreenWidth(), RenderScreenHeight()); }
+	void draw_fullscreen_quad(u32 color) { m_fullscreen_quad.Draw(color, g_combine, Device.dwWidth, Device.dwHeight); }
 	CRenderTarget(LPCSTR name, u32 width, u32 height);
 	~CRenderTarget();
 	void SetActive(bool force = false);
