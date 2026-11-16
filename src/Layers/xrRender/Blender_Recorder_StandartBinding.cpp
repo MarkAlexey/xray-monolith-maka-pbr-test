@@ -1131,10 +1131,7 @@ static class ssfx_ao : public NativeConstantSetup
 {
 	virtual void setup(R_constant* C)
 	{
-		// .x is the AO res divisor; match the [1, 8] clamp phase_ssfx_ao renders with
-		Fvector4 v = ps_ssfx_ao;
-		v.x = clampr(v.x, 1.0f, 8.0f);
-		RCache.set_c(C, v);
+		RCache.set_c(C, ps_ssfx_ao);
 	}
 }    ssfx_ao;
 
@@ -1150,10 +1147,7 @@ static class ssfx_il : public NativeConstantSetup
 {
 	virtual void setup(R_constant* C)
 	{
-		// .x is the IL res divisor; match the [1, 8] clamp phase_ssfx_il renders with
-		Fvector4 v = ps_ssfx_il;
-		v.x = clampr(v.x, 1.0f, 8.0f);
-		RCache.set_c(C, v);
+		RCache.set_c(C, ps_ssfx_il);
 	}
 }    ssfx_il;
 
