@@ -1,5 +1,4 @@
 #include "stdafx.h"
-#include "RenderDimensions.h"
 #include "../../xrEngine/xr_object.h"
 #include "FBasicVisual.h"
 #include "SkeletonCustom.h"
@@ -252,8 +251,8 @@ void CRender::render_lights(light_Package& LP)
 					if (L->flags.bVolumetric && RImplementation.o.advancedpp && ps_r2_ls_flags.is(R2FLAG_VOLUMETRIC_LIGHTS))
 					{
 #ifdef USE_DX11
-						float w = float(RenderScreenWidth());
-						float h = float(RenderScreenHeight());
+						float w = float(Device.dwWidth);
+						float h = float(Device.dwHeight);
 
 						if (RImplementation.o.ssfx_volumetric)
 							Target->set_viewport_size(HW.pContext, w / RImplementation.o.volsize, h / RImplementation.o.volsize);

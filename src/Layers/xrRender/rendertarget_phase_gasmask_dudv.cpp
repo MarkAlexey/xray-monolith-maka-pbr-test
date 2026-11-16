@@ -1,5 +1,4 @@
 #include "stdafx.h"
-#include "RenderDimensions.h"
 
 void CRenderTarget::phase_gasmask_dudv()
 {
@@ -11,11 +10,7 @@ void CRenderTarget::phase_gasmask_dudv()
 	//////////////////////////////////////////////////////////////////////////
 	//Set MSAA/NonMSAA rendertarget
 #if defined(USE_DX10) || defined(USE_DX11)
-#if defined(USE_DX11)
-    ref_rt& dest_rt = PostprocessColor();
-#else
 	ref_rt& dest_rt = RImplementation.o.dx10_msaa ? rt_Generic : rt_Color;
-#endif
 	u_setrt(dest_rt, nullptr, nullptr, nullptr);
 #else
 	u_setrt(rt_Generic_0, nullptr, nullptr, nullptr);
@@ -34,10 +29,6 @@ void CRenderTarget::phase_gasmask_dudv()
 	draw_fullscreen_quad(C);
 	
 #if defined(USE_DX10) || defined(USE_DX11)
-#if defined(USE_DX11)
-    HW.pContext->CopyResource(PostprocessSource()->pSurface, dest_rt->pSurface);
-#else
 	HW.pContext->CopyResource(rt_Generic_0->pTexture->surface_get(), dest_rt->pTexture->surface_get());
-#endif
 #endif
 };

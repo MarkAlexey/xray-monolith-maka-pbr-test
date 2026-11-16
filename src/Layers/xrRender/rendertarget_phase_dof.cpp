@@ -1,5 +1,4 @@
 #include "stdafx.h"
-#include "RenderDimensions.h"
 
 void CRenderTarget::phase_dof()
 {
@@ -8,7 +7,7 @@ void CRenderTarget::phase_dof()
 
 	//DoF vectors
 	Fvector2 vDofKernel;
-	vDofKernel.set(0.5f / RenderScreenWidth(), 0.5f / RenderScreenHeight());
+	vDofKernel.set(0.5f / Device.dwWidth, 0.5f / Device.dwHeight);
 	vDofKernel.mul(ps_r2_dof_kernel_size);
 	Fvector3 dof;
 	g_pGamePersistent->GetCurrentDof(dof);
