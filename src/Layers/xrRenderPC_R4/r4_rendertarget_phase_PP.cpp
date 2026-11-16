@@ -1,7 +1,4 @@
 #include "stdafx.h"
-#ifdef XR_DX12_BRIDGE
-#include "Dlss/FrameGeneration.h"
-#endif
 #include "r4_rendertarget.h"
 #include "../../xrEngine/CustomHUD.h"
 #include "../../xrEngine/igame_persistent.h"
@@ -129,9 +126,6 @@ ref_rt& CRenderTarget::PostprocessSource()
 
 void CRenderTarget::phase_dlss_postprocess()
 {
-#ifdef XR_DX12_BRIDGE
-    fg::CaptureScene();
-#endif
     if (!dlss::Configured())
     {
         dlss::EndScene();
