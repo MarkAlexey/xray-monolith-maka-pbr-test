@@ -271,9 +271,6 @@ namespace R_dsgraph
         bool hasNativeHudAttachments = false;
 		mapDSGraphItems<float, true> mapScopeHUDSorted;
 		mapDSGraphItems<float, false> mapScopeHUD;
-		// Particles and laser beams drawn after the upscaler, with the post chain.
-		mapDSGraphItems<float, true> mapDlssEffects;
-		mapDSGraphItems<float, true> mapDlssHudEffects;
 #endif
 		template<bool free = true>
 		IC void clear_graph(RenderQueueArray& queue, u32 _priority)
@@ -300,9 +297,6 @@ namespace R_dsgraph
 				mapDynamicSorted.Emissive.clear_and_free();
 				mapDynamicSorted.Sorted.clear_and_free();
 				mapDynamicSorted.Distort.clear_and_free();
-#ifdef USE_DX11
-				mapDlssEffects.clear_and_free();
-#endif
 			}
 			else
 			{
@@ -310,9 +304,6 @@ namespace R_dsgraph
 				mapDynamicSorted.Emissive.clear();
 				mapDynamicSorted.Sorted.clear();
 				mapDynamicSorted.Distort.clear();
-#ifdef USE_DX11
-				mapDlssEffects.clear();
-#endif
 			}
 		}
 
@@ -359,7 +350,6 @@ namespace R_dsgraph
 
 #ifdef USE_DX11
                 mapHUDNativeUi.clear_and_free();
-                mapDlssHudEffects.clear_and_free();
 				mapScopeHUD.clear_and_free();
 				mapScopeHUDSorted.clear_and_free();
 #endif
@@ -379,7 +369,6 @@ namespace R_dsgraph
 
 #ifdef USE_DX11
                 mapHUDNativeUi.clear();
-                mapDlssHudEffects.clear();
 				mapScopeHUD.clear();
 				mapScopeHUDSorted.clear();
 #endif
