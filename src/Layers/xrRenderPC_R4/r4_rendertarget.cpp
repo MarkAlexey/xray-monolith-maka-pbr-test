@@ -970,7 +970,7 @@ CRenderTarget::CRenderTarget()
 	// (dx10TextureUtils.cpp).
 	if (RImplementation.o.skin_sss)
 	{
-		u32 w = dlss::RenderWidth(), h = dlss::RenderHeight();
+		u32 w = Device.dwWidth, h = Device.dwHeight;
 		rt_skin_sss_tmp.create(r2_RT_skin_sss_tmp, w, h, D3DFMT_A16B16G16R16F, 1);
 		rt_skin_sss.create(r2_RT_skin_sss, w, h, D3DFMT_V16U16, 1);
 		s_skin_sss.create(b_skin_sss);

@@ -5,7 +5,7 @@ void CRenderTarget::phase_gasmask_dudv()
 	//Constants
 	u32 C = color_rgba(0, 0, 0, 255);
 
-	float w = float(RenderScreenWidth());
+	float w = float(Device.dwWidth);
 
 	//////////////////////////////////////////////////////////////////////////
 	//Set MSAA/NonMSAA rendertarget

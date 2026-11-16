@@ -40,8 +40,8 @@
 //    metal reflection), roughness wet -> dry, wet blood flattens the original normal, the
 //    stamps' own normal on top; thin parts dry first.
 //  - Metal under blood is dithered (LV's idea, row 11.w): a pixel is either metal or not, by a
-//    4x4 Bayer threshold, instead of an in-between metalness that no real surface has. TAA /
-//    DLSS / FSR average the pattern into a proper mix of steel and blood; without temporal AA
+//    4x4 Bayer threshold, instead of an in-between metalness that no real surface has. TAA
+//    averages the pattern into a proper mix of steel and blood; without temporal AA
 //    it can show as a fine 4x4 pattern on thin blood over metal.
 //
 // Data, all from the shader bus (docs/shader_bus.md), written by gamedata/scripts/hud_blood.script:

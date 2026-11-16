@@ -1119,6 +1119,13 @@ int APIENTRY WinMain_impl(HINSTANCE hInstance,
 
 	InitSettings();
 	Msg(XRAY_MONOLITH_VERSION);
+	// Identifies the PBR-Test binaries in support logs before anything renderer-related can fail.
+#if defined(__AVX__)
+	const char* const binaryVariant = "DX11-AVX";
+#else
+	const char* const binaryVariant = "DX11";
+#endif
+	Msg("[PBR-Test] %s build of %s", binaryVariant, __DATE__);
 
 	{
 		FS_FileSet fset;

@@ -77,7 +77,7 @@ xr_token qsun_quality_token [ ] = {
 };
 
 u32 ps_r3_msaa = 0; //	=	0;
-// MSAA removed: PBR, CSM, SSLR, skin SSS and DLSS / FSR need it off (Atmospherics' SSR fails to compile)
+// MSAA removed: PBR, CSM, SSLR and skin SSS need it off (Atmospherics' SSR fails to compile)
 xr_token qmsaa_token [ ] = {
 	{"st_opt_off", 0},
 	{0, 0}

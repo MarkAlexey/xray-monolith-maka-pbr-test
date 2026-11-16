@@ -1,6 +1,6 @@
 # STALKER Anomaly – Modded Exes with IX-Ray PBR (PBR-Test)
 
-Automatic build of [`pbr-test-s3ds-mt-sss-lass-dlss`](https://github.com/{{REPO}}/tree/{{SHA}}) at commit
+Automatic build of [`pbr-test-s3ds-mt-sss-lass-perf`](https://github.com/{{REPO}}/tree/{{SHA}}) at commit
 `{{SHORT_SHA}}`, built {{DATE}} (UTC).
 
 This branch adds Zira3l137's [xray-monolith-lass](https://github.com/Zira3l137/xray-monolith-lass)
@@ -9,11 +9,6 @@ they need) and alpha-tested surfaces that honour their authored ref. It also car
 grass rendering rework and qkff99's CPU-side render optimisations and multithreaded shadow
 recording (from their `mt-consolidated-fixes` branch). LASS's picture-in-picture scopes
 are not included.
-
-**This is the DLSS / FSR3 build:** NVIDIA DLSS and AMD FSR 3 super resolution, ported by qkff99
-from [brodrigz's xray-monolith](https://github.com/brodrigz/xray-monolith) (0.5, based on OGSR's
-implementation by the OGSR team and xrSimpAI). Upscaling needs Screen Space Shaders 23.5 (its
-motion vectors) and brodrigz's shader compatibility patch, which is attached to this release.
 
 Demonized's Modded Exes (multithreaded build) with physically based materials ported from IX-Ray,
 IX-Ray screen-space reflections (SSLR), single-pass cascaded sun shadows (CSM) and HDR reflections,
@@ -26,12 +21,11 @@ plus engine support for Screen Space Shaders. DX11 only.
 
 | File | What it is |
 |---|---|
-| `*_latest.zip` / `*_<version>.zip` | the exes and NVIDIA's DLSS runtime `nvngx_dlss.dll` 310.9.1 (`bin/`), and the PBR gamedata (`db/mods/00_modded_exes_gamedata.db0`) |
-| `dlss-binaries-GAMMA-compatibility-patch-0.5.zip` | brodrigz's DLSS / FSR3 shader compatibility patch (FOMOD for Mod Organizer), unchanged |
+| `*_latest.zip` / `*_<version>.zip` | the exes (`bin/`) and the PBR gamedata (`db/mods/00_modded_exes_gamedata.db0`) |
 | `*_pdb.zip` | debug symbols; put the `.pdb` files next to the exes for readable crash logs |
 | `*_tools.zip` | Python tools: SSS/ES compatibility patch generator, PBR overlay generator, shader pack builder, shader FOMOD builder, PBR texture packer |
 | `*_profiled.zip` | developers: `AnomalyDX11_Profiled.exe`, the DX11 exe with the Optick profiler compiled in (see its README) |
-| `PBR_shaders_GAMMA_FOMOD.zip` | GAMMA: the PBR shaders as one Mod Organizer installer: overlay (recommended) or full pack, with or without DLSS / FSR 3 |
+| `PBR_shaders_GAMMA_FOMOD.zip` | GAMMA: the PBR shaders as one Mod Organizer installer: overlay (recommended) or full pack |
 
 ## Install
 
@@ -44,7 +38,7 @@ plus engine support for Screen Space Shaders. DX11 only.
 ### With GAMMA
 
 Install `PBR_shaders_GAMMA_FOMOD.zip` (when this release has it) in Mod Organizer like any other
-mod. Its installer asks two things:
+mod. Its installer asks:
 
 1. **Install type**
    - **Overlay (recommended):** only the files PBR needs, made from GAMMA's own versions, so every
@@ -53,27 +47,11 @@ mod. Its installer asks two things:
    - **Full pack:** GAMMA's complete shader stack (Enhanced Shaders, Screen Space Shaders,
      Atmospherics, Beef's NVGs and GAMMA's shader overrides) with PBR merged in, as one mod above
      all of them.
-2. **DLSS / FSR 3:** with the upscaling shaders (merged with brodrigz's patch, see below) or
-   without them.
+2. **HUD blood** (experiment) and **NVG mod** (Beef's NVGs or Better Beef's NVGs), when the
+   release has them.
 
 To change an answer later, reinstall the archive and pick **Replace** (Merge keeps the files of the
 old choice).
-
-### DLSS / FSR 3
-
-1. Install the main zip as above (`nvngx_dlss.dll` goes into `bin/` with the exes).
-2. Install `dlss-binaries-GAMMA-compatibility-patch-0.5.zip` in Mod Organizer and pick your
-   Atmospherics version and add-ons in its installer (see its README). Put it below SSS,
-   Atmospherics and the other shader mods in the left pane (higher priority).
-3. Install the PBR shader FOMOD with **With DLSS / FSR 3** on its second page. As an **overlay**, put
-   it **above** the DLSS patch: the files both change (`night_vision.h`, `deffer_impl_flat.ps`, the
-   grass shader) are merged in the overlay, so the patch's copies must lose. Pick the patch's "Better Beef's
-   NVGs" option only if you really have Better Beef's NVGs installed (GAMMA ships its own NVGs). The **full pack** already contains the DLSS shaders;
-   with it, the DLSS patch can stay below it or be left out.
-4. Clear `appdata/shaders_cache/r4`, start the game, set MSAA Off, then pick DLSS or FSR 3 in
-   Settings > Video > Basic and Apply. DLSS needs an NVIDIA RTX GPU; FSR 3 runs on any GPU with
-   Direct3D feature level 11.1. The console says `[DLSS] ACTIVE` / `[FSR3] ACTIVE` once it works;
-   a red on-screen message explains a failure.
 
 The shader installer is built for GAMMA's shader stack at the time of this release; if GAMMA updates its shaders,
 generate your own overlay with `make_pbr_overlay.py` from the tools zip. Delete
@@ -156,11 +134,5 @@ crashes, set the four to 0 in `user.ltx` and report which one fixed it.
 qkff99's other optimisations have no switches. `sheduler_budget_max` (5): ceiling of the per-frame
 object-update budget in ms (IX-Ray value); raise it (up to 66, the old value) if NPCs react late in
 busy scenes.
-
-DLSS / FSR3: `r_upscaler` (off / dlss / fsr3), `r_dlss_quality` (off, dlaa, ultra_quality, quality,
-balanced, performance, ultra_performance), `r_dlss_preset` (default, j, k, l, m), `r_fsr3_quality`
-(native_aa, ultra_quality, quality, balanced, performance, ultra_performance), `r_dlss_sharpness`
-(0..1, CAS sharpening for either method). The menu has everything but `ultra_quality` (console only).
-Method and quality changes need `vid_restart`.
 
 Details, caveats and the full change list: [README-Claude.md](https://github.com/{{REPO}}/blob/{{SHA}}/README-Claude.md).

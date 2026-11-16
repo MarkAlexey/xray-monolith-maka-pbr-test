@@ -462,8 +462,8 @@ void CRenderTarget::phase_ssfx_water_waves()
 	//Constants
 	u32 C = color_rgba(0, 0, 0, 255);
 
-	u32 w = RenderScreenWidth();
-	u32 h = RenderScreenHeight();
+	u32 w = Device.dwWidth;
+	u32 h = Device.dwHeight;
 
 	set_viewport_size(HW.pContext, 512, 512);
 

@@ -2,7 +2,6 @@
 
 #include "../xrRender/ColorMapManager.h"
 #include "../xrRender/FullscreenQuad.h"
-#include "../xrRender/RenderDimensions.h"
 #include "../xrRender/light_db.h"
 class light;
 struct RecordedLight;
@@ -444,7 +443,7 @@ private:
 public:
 	CRenderTarget();
 	// Draws the full-screen post-process quad (FullscreenQuad.h) with the element already set
-	void draw_fullscreen_quad(u32 color) { m_fullscreen_quad.Draw(color, g_combine, RenderScreenWidth(), RenderScreenHeight()); }
+	void draw_fullscreen_quad(u32 color) { m_fullscreen_quad.Draw(color, g_combine, Device.dwWidth, Device.dwHeight); }
 	~CRenderTarget();
 	void accum_point_geom_create();
 	void accum_point_geom_destroy();

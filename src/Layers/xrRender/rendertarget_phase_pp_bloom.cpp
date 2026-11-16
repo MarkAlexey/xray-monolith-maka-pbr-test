@@ -9,7 +9,7 @@ void CRenderTarget::phase_pp_bloom()
 	u32 C = color_rgba(0, 0, 0, 255);
 
 	//Full resolution
-	float w = float(RenderScreenWidth());
+	float w = float(Device.dwWidth);
 
 ///////////////////////////////////////////////////////////////////////////////////
 ////Bloom pass
