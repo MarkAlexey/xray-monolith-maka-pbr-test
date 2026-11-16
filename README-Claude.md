@@ -1332,3 +1332,27 @@ Branch `pbr-test-s3ds-mt-sss-lass-skin-ixdev-dlss` (local), shaders only:
   the Hi-Z trace of that commit is not ported.
 
 Each has a 0 setting that restores the previous behaviour.
+
+## Hi-Z traced SSLR (`r4_sslr_hiz`, needs a restart, experiment)
+
+After Stachowiak 2015 ("Stochastic Screen-Space Reflections") and IX-Ray develop `454d9ecd`.
+World rays walk a min-depth pyramid instead of 24 fixed steps, skipping empty space a whole
+cell at a time, so long rays find thin or distant hits the fixed steps jump over.
+
+- Pyramid (`sslr_hiz_copy.cs`, `sslr_hiz_reduce.cs`): R32F, full mip chain at scene resolution,
+  built each frame before the trace. It stores -1 / view depth: linear along a screen-space ray
+  (the trace interpolates exactly that), nearest surface = smallest. Sky and first-person pixels
+  are farthest, so rays pass behind the weapon as with the march.
+- Trace (`sslr_render.cs`, `sslr_hiz_trace`): in level-0 pixel units, the cell of a pixel at
+  level n being pixel >> n clamped to the last cell. IX-Ray scales the UV by each level's size,
+  which on odd-sized levels puts some pixels into the neighbouring cell and misses their
+  surfaces; found and fixed with a CPU simulation against a brute-force march (2000 rays, odd
+  and even sizes, all agree but one ray grazing a pixel corner; 5-6 iterations on average).
+- Hits go through the same thickness, back-face and last-frame visibility tests as before. A hit
+  the thickness test rejects (the ray went behind a thin object) is marched the old way
+  (`SSLR_HIZ_FALLBACK 1`, `sslr_settings.h`). `SSLR_HIZ_ITERATIONS` 64.
+- The log shows `IX-Ray SSLR trace: Hi-Z` (or `linear march`) and the pyramid size.
+
+Checked: DXC compiles the new shaders on the vanilla stack and on SSS + ES + October 2026
+Atmospherics with the generated overlay (no new errors); `tools/check_cpp.py` no new errors.
+Untested in game.
