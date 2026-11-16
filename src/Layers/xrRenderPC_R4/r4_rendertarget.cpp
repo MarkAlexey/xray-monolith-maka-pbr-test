@@ -472,14 +472,11 @@ void CRenderTarget::SetActive(bool force)
 
 	RImplementation.ViewBase.CreateFromMatrix(Device.mFullTransform, FRUSTUM_P_LRTB + FRUSTUM_P_FAR);
 
-	// main: the display size (Width/Height is the scene size under DLSS / FSR 3)
-	const u32 deviceWidth = isMain ? DisplayWidth : Width;
-	const u32 deviceHeight = isMain ? DisplayHeight : Height;
-	Device.dwWidth = deviceWidth;
-	Device.dwHeight = deviceHeight;
-	Device.fASPECT = (float)deviceHeight / (float)deviceWidth;
-	Device.fWidth_2 = deviceWidth >> 1;
-	Device.fHeight_2 = deviceHeight >> 1;
+	Device.dwWidth = Width;
+	Device.dwHeight = Height;
+	Device.fASPECT = (float)Height / (float)Width;
+	Device.fWidth_2 = Width >> 1;
+	Device.fHeight_2 = Height >> 1;
 
 	// the bind cache keys on STextureList/CTexture identity (R_Backend set_Textures), so the
 	// surface_set remap below is invisible to it, a full invalidate forces every RT/texture/
@@ -507,17 +504,9 @@ CRenderTarget::CRenderTarget()
 }
 
 CRenderTarget::CRenderTarget(LPCSTR name, u32 width, u32 height)
-	: Width(width), Height(height), DisplayWidth(width), DisplayHeight(height)
+	: Width(width), Height(height)
 {
-	// The upscaler belongs to the main target. The PiP SVP target is created mid-frame (ADS-in,
-	// adaptive resize): re-initializing DLSS there released and rebuilt the feature and closed
-	// the open scene (scene depth, viewport and jitter fell back to display size for that frame).
-	if (!name)
-	{
-		dlss::InitializeTargets();
-		Width = dlss::RenderWidth();
-		Height = dlss::RenderHeight();
-	}
+	dlss::InitializeTargets();
 	u32 SampleCount = 1;
 
 	if (ps_r_ssao_mode != 2/*hdao*/)
